@@ -2,8 +2,10 @@
 
 from datetime import date
 from decimal import Decimal
+from runpy import run_path
 from uuid import uuid4
 
+from beancount_ui.app import create_app
 from beancount_ui.finance import FinanceInput, compose_finance
 from beancount_ui.ledger import Ledger, read_files
 from beancount_ui.models import BatchMutation
@@ -11,9 +13,19 @@ from beancount_ui.query import daily_view, transactions
 from beancount_ui.sync import Sync
 from beancount_ui.writer import Writer
 from conftest import git
+from fastapi.testclient import TestClient
 from test_orders import process, purchase
 from test_sync import backup, connect
 from test_writer import mutation
+
+
+def test_container_gate_api_sequence_and_server_restart(sync):
+    gate = run_path("scripts/container_smoke.py")
+    with TestClient(create_app(sync.settings)) as client:
+        request, journal = gate["prepare_requests"](client)
+        assert journal["expenses"] == {"CNY": "44.10"}
+    with TestClient(create_app(sync.settings)) as restarted:
+        gate["recover_request"](restarted, request)
 
 
 def test_multiday_month_boundary_business_totals_and_restart(sync):

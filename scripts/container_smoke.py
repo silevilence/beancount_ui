@@ -11,13 +11,10 @@ from pathlib import Path
 from uuid import uuid4
 
 import httpx
-from playwright.sync_api import sync_playwright
 
-IMAGE = sys.argv[1]
 NAME = "beancount-release-smoke"
 TOKEN = "isolated-container-smoke-token-32-characters"
 EVIDENCE = Path("container-evidence")
-EVIDENCE.mkdir(exist_ok=True)
 
 
 def command(*args):
@@ -34,8 +31,50 @@ def git(path, *args):
 
 def api(client, path, payload=None):
     response = client.get(path) if payload is None else client.post(path, json=payload)
+    if response.is_error:
+        raise RuntimeError(f"{path}: HTTP {response.status_code}: {response.text}")
     response.raise_for_status()
     return response.json()
+
+
+def prepare_requests(client):
+    status = api(client, "/api/ledger")
+    assert not status["errors"]
+    preview = api(client, "/api/sync/preview", {"revision": status["revision"]})
+    assert api(client, "/api/sync/connect", {"revision": preview["revision"]})["connected"]
+    request = {
+        "request_id": str(uuid4()),
+        "revision": status["revision"],
+        "raw": '2026-09-30 * "container saved"\n'
+        "  Expenses:Food 18.60 CNY\n  Assets:Cash -18.60 CNY\n",
+    }
+    api(client, "/api/preview", request)
+    api(client, "/api/commit", {"request_id": request["request_id"]})
+    p = api(client, "/api/sync/backup-preview", {})
+    assert (
+        api(
+            client,
+            "/api/sync/backup",
+            {
+                "revision": p["revision"],
+                "head": p["head"],
+            },
+        )["sync"]
+        == "已同步"
+    )
+    request["request_id"] = str(uuid4())
+    request["revision"] = api(client, "/api/ledger")["revision"]
+    request["raw"] = request["raw"].replace("container saved", "after recreation")
+    api(client, "/api/preview", request)
+    return request, api(client, "/api/journal?day=2026-09-30")
+
+
+def recover_request(client, request):
+    assert api(client, "/api/ledger")["revision"] == request["revision"]
+    for _ in range(2):
+        assert api(client, "/api/commit", {"request_id": request["request_id"]})["status"] == "done"
+    assert api(client, "/api/journal?day=2026-09-30")["expenses"] == {"CNY": "62.70"}
+    assert not api(client, "/api/ledger")["errors"]
 
 
 def start(data):
@@ -63,6 +102,8 @@ def start(data):
 
 
 def main():
+    from playwright.sync_api import sync_playwright
+
     # No mounted ledger is present in the image itself, and it runs without root.
     assert docker("image", "inspect", "--format", "{{.Config.User}}", IMAGE) == "10001:10001"
     assert docker("run", "--rm", "--entrypoint", "find", IMAGE, "/data", "-type", "f") == ""
@@ -108,45 +149,11 @@ def main():
                 assert httpx.get(client.base_url.join("/api/ledger")).status_code == 401
                 assert httpx.post(client.base_url.join("/api/commit"), json={}).status_code == 401
                 assert client.get("/").status_code == 200
-                status = api(client, "/api/ledger")
-                assert not status["errors"]
-                preview = api(client, "/api/sync/preview", {})
-                assert api(
-                    client,
-                    "/api/sync/connect",
-                    {
-                        "revision": preview["revision"],
-                    },
-                )["connected"]
-                request = {
-                    "request_id": str(uuid4()),
-                    "revision": status["revision"],
-                    "raw": '2026-09-30 * "container saved"\n'
-                    "  Expenses:Food 18.60 CNY\n  Assets:Cash -18.60 CNY\n",
-                }
-                api(client, "/api/preview", request)
-                api(client, "/api/commit", {"request_id": request["request_id"]})
-                p = api(client, "/api/sync/backup-preview", {})
-                assert (
-                    api(
-                        client,
-                        "/api/sync/backup",
-                        {
-                            "revision": p["revision"],
-                            "head": p["head"],
-                        },
-                    )["sync"]
-                    == "已同步"
-                )
+                request, journal = prepare_requests(client)
                 assert git(root, "rev-parse", "HEAD") == git(
                     data / "remote.git", "rev-parse", "master-1"
                 )
                 # Preserve a pending server request as well as a browser draft across recreation.
-                request["request_id"] = str(uuid4())
-                request["revision"] = api(client, "/api/ledger")["revision"]
-                request["raw"] = request["raw"].replace("container saved", "after recreation")
-                api(client, "/api/preview", request)
-                journal = api(client, "/api/journal?day=2026-09-30")
                 with sync_playwright() as playwright:
                     browser = playwright.chromium.launch()
                     page = browser.new_page(viewport={"width": 1280, "height": 900})
@@ -172,27 +179,7 @@ def main():
                     )
                     docker("rm", "-f", NAME)
                     start(data)
-                    assert api(client, "/api/ledger")["revision"] == request["revision"]
-                    assert (
-                        api(
-                            client,
-                            "/api/commit",
-                            {
-                                "request_id": request["request_id"],
-                            },
-                        )["status"]
-                        == "done"
-                    )
-                    assert (
-                        api(
-                            client,
-                            "/api/commit",
-                            {
-                                "request_id": request["request_id"],
-                            },
-                        )["status"]
-                        == "done"
-                    )
+                    recover_request(client, request)
                     page.reload()
                     page.locator('input[type="password"]').fill(TOKEN)
                     page.get_by_role("button", name="登录", exact=True).click()
@@ -245,4 +232,6 @@ def main():
 
 
 if __name__ == "__main__":
+    IMAGE = sys.argv[1]
+    EVIDENCE.mkdir(exist_ok=True)
     main()
