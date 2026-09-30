@@ -189,3 +189,106 @@ def test_save_through_api_then_push(sync):
     response = client.post("/api/sync/backup", json={"revision": p["revision"], "head": p["head"]})
     assert response.status_code == 200, response.text
     assert client.get("/api/journal?day=2026-09-30").json()["sync"] == "已同步"
+
+
+@pytest.fixture
+def peer(sync, tmp_path):
+    other = tmp_path / "peer"
+    subprocess.run(
+        [
+            "git",
+            "clone",
+            "--branch",
+            "master-1",
+            git(sync.root, "remote", "get-url", "origin"),
+            str(other),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    git(other, "config", "user.email", "test@example.invalid")
+    git(other, "config", "user.name", "Peer")
+    return other
+
+
+def append_commit(root, text):
+    path = root / "index.bean"
+    path.write_bytes(path.read_bytes() + text.encode())
+    git(root, "add", "index.bean")
+    git(root, "commit", "-m", "ledger edit")
+    return git(root, "rev-parse", "HEAD")
+
+
+def test_clean_fast_forward_validates_before_update(sync, peer):
+    connect(sync)
+    expected = append_commit(peer, "; peer\n")
+    git(peer, "push")
+    assert backup(sync)["sync"] == "已同步"
+    assert git(sync.root, "rev-parse", "HEAD") == expected
+    assert b"; peer" in (sync.root / "index.bean").read_bytes()
+    append_commit(peer, "INVALID\n")
+    git(peer, "push")
+    with pytest.raises(LedgerError, match="远端账本校验失败"):
+        backup(sync)
+    assert git(sync.root, "rev-parse", "HEAD") == expected
+    assert not sync.ledger.refresh().errors
+
+
+def test_dirty_remote_update_and_divergence_preserve_both_sides(sync, peer):
+    connect(sync)
+    append_commit(peer, "; peer\n")
+    git(peer, "push")
+    local = sync.root / "index.bean"
+    local.write_bytes(local.read_bytes() + b"; local\n")
+    content = local.read_bytes()
+    with pytest.raises(LedgerError, match="未处理变更"):
+        backup(sync)
+    assert local.read_bytes() == content
+    git(sync.root, "add", "index.bean")
+    git(sync.root, "commit", "-m", "local ledger")
+    with pytest.raises(LedgerError, match="历史分叉"):
+        backup(sync)
+    assert sync.state()["blocked"]
+    # A human merges both sides; the app never chooses a side.
+    result = subprocess.run(
+        ["git", "-C", str(sync.root), "merge", "FETCH_HEAD"], capture_output=True
+    )
+    assert result.returncode != 0
+    with pytest.raises(LedgerError, match="冲突"):
+        backup(sync)
+    local.write_bytes(content + b"; peer\n")
+    git(sync.root, "add", "index.bean")
+    git(sync.root, "commit", "-m", "resolve preserving both")
+    assert backup(sync)["sync"] == "已同步"
+    assert not sync.state()["blocked"]
+    assert b"; local" in local.read_bytes() and b"; peer" in local.read_bytes()
+
+
+def test_offline_valid_local_ledger_still_writable(sync, monkeypatch):
+    from uuid import uuid4
+
+    from beancount_ui.models import Mutation
+    from beancount_ui.sync import GitFailure
+
+    connect(sync)
+    original = sync.git
+
+    def offline(*args, **kwargs):
+        if args[0] == "fetch":
+            raise GitFailure("offline")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync, "git", offline)
+    with pytest.raises(LedgerError, match="offline"):
+        backup(sync)
+    p = sync.writer.preview(
+        Mutation.model_validate(
+            {
+                "request_id": str(uuid4()),
+                "revision": sync.ledger.refresh().revision,
+                "raw": '2026-09-30 * "offline"\n  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n',
+            }
+        )
+    )
+    assert sync.writer.commit(p["request_id"])["status"] == "done"
+    assert not sync.ledger.refresh().errors

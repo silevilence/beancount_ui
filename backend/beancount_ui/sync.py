@@ -33,6 +33,10 @@ class GitFailure(LedgerError):
     pass
 
 
+class SyncBlocked(LedgerError):
+    pass
+
+
 def safe_remote(remote: str) -> str:
     # Credentials must live in a helper, never in a URL/config/API response.
     if not remote or remote.startswith("-") or any(c in remote for c in "\n\r\0"):
@@ -106,8 +110,17 @@ class Sync:
             raise LedgerError("请先完成接入预览与确认")
         return remote
 
+    def require_resolved(self):
+        git_dir = Path(self.git("rev-parse", "--absolute-git-dir"))
+        if self.git("ls-files", "-u") or any(
+            (git_dir / name).exists()
+            for name in ("MERGE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD")
+        ):
+            raise SyncBlocked("仓库存在未完成的合并/变基或冲突；请人工解决并完成操作，再立即同步")
+
     def plan(self):
         self.require_connected()
+        self.require_resolved()
         head = self.git("rev-parse", "HEAD")
         snap = self.ledger.refresh()
         if snap.errors:
@@ -157,8 +170,27 @@ class Sync:
         return remote_head
 
     def check_remote(self, head, remote_head):
-        if self.git("merge-base", head, remote_head) != remote_head:
-            raise LedgerError("远端有新记录或历史分叉，请先人工核对；未自动合并")
+        self.require_resolved()
+        try:
+            base = self.git("merge-base", head, remote_head)
+        except GitFailure as exc:
+            raise SyncBlocked("本地与远端历史无共同基点，请人工核对仓库") from exc
+        if base == remote_head:
+            return False
+        if base != head:
+            raise SyncBlocked("历史分叉；请备份两侧内容并人工合并，解决后重新校验与立即同步")
+        if self.changes():
+            raise SyncBlocked("远端有新记录且本地有未处理变更；请先保留并人工处理，再立即同步")
+        remote = load_snapshot(self.tree_files(remote_head), self.settings.entry)
+        if remote.errors:
+            raise SyncBlocked("远端账本校验失败；保留当前有效本地版本，请修复远端后重试")
+        for item in self.git("ls-tree", "-rz", remote_head).split("\0"):
+            if item and not item.startswith(("100644 blob ", "100755 blob ")):
+                raise SyncBlocked("远端含符号链接或子模块，请人工核对")
+        self.git("merge", "--ff-only", "--no-edit", remote_head)
+        if self.ledger.refresh().errors:
+            raise SyncBlocked("更新后账本校验失败，请检查外部修改；暂停同步")
+        return True
 
     def validate_outgoing(self, remote_head, head):
         for commit in self.git("rev-list", "--reverse", f"{remote_head}..{head}").splitlines():
@@ -198,11 +230,13 @@ class Sync:
         try:
             with self.writer.guard():
                 remote = self.require_connected()
+                self.require_resolved()
                 plan, snap = self.plan()
                 if plan["revision"] != request.revision or plan["head"] != request.head:
                     raise LedgerError("备份预览已过期，请重新预览")
                 remote_head = self.fetch(remote)
-                self.check_remote(plan["head"], remote_head)
+                if self.check_remote(plan["head"], remote_head):
+                    plan, snap = self.plan()
                 self.validate_outgoing(remote_head, plan["head"])
                 head = self.commit_snapshot(plan, snap) if plan["files"] else plan["head"]
                 if head != remote_head:
@@ -217,10 +251,13 @@ class Sync:
                     synced_head=head,
                     synced_revision=plan["revision"],
                     remote_head=head,
+                    blocked=False,
                 )
         except LedgerError as exc:
             with self.writer.lock:
-                self.save(message=f"备份失败：{exc}", error=str(exc))
+                self.save(
+                    message=f"备份失败：{exc}", error=str(exc), blocked=isinstance(exc, SyncBlocked)
+                )
             raise
         return self.status()
 
