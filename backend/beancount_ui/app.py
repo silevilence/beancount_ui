@@ -1,8 +1,11 @@
+from datetime import date
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from .config import Settings
 from .ledger import Ledger, LedgerError
+from .query import daily_view
 
 
 def create_app(settings: Settings | None = None):
@@ -25,6 +28,10 @@ def create_app(settings: Settings | None = None):
     @app.get("/api/ledger")
     def status():
         return get_ledger().status()
+
+    @app.get("/api/journal")
+    def journal(day: date | None = None, payee: str = "", narration: str = "", account: str = ""):
+        return daily_view(get_ledger(), day, payee, narration, account)
 
     @app.get("/api/health")
     def health():
