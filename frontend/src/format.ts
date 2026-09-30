@@ -56,6 +56,43 @@ export function clockOf(date: Date): string {
   }).format(date);
 }
 
+/** 绝对时间戳：09/30 21:05（Asia/Shanghai）。非法输入返回空串，由调用方回退。 */
+export function stampOf(iso: string): string {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return "";
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(at);
+}
+
+/** 多久之前：刚刚 / N 分钟前 / N 小时前 / N 天前；超过一周回退到绝对时间。 */
+export function timeAgo(iso?: string, now = Date.now()): string {
+  if (!iso) return "";
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return "";
+  const seconds = Math.floor((now - at) / 1000);
+  if (seconds < 60) return "刚刚";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)} 小时前`;
+  if (seconds < 604_800) return `${Math.floor(seconds / 86_400)} 天前`;
+  return stampOf(iso);
+}
+
+/** 距目标时刻还有多久：N 秒后 / N 分钟后 / N 小时后；已到期返回「即将执行」。 */
+export function untilWhen(epochSeconds?: number, now = Date.now()): string {
+  if (!epochSeconds) return "";
+  const seconds = Math.round(epochSeconds - now / 1000);
+  if (seconds <= 1) return "即将执行";
+  if (seconds < 60) return `${seconds} 秒后`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} 分钟后`;
+  return `${(seconds / 3600).toFixed(1)} 小时后`;
+}
+
 /** 千分位分组，小数至少两位、更多位保留原样；精确值不丢失。 */
 export function money(amount: string, currency = ""): string {
   const negative = amount.startsWith("-");

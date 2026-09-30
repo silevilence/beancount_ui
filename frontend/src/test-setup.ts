@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+import { resetSync } from "./syncStatus";
 HTMLDialogElement.prototype.showModal = function () {
   this.setAttribute("open", "");
 };
@@ -11,4 +12,5 @@ afterEach(() => {
   cleanup();
   localStorage.clear();
   vi.unstubAllGlobals();
+  resetSync();
 });

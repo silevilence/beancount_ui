@@ -8,7 +8,15 @@ import {
 import BatchEditor, { draftKey } from "./BatchEditor";
 import Editor, { readPending } from "./Editor";
 import JournalPanel, { type Filters } from "./Journal";
+import SyncDialog from "./SyncDialog";
 import SyncPanel from "./SyncPanel";
+import {
+  syncDetail,
+  syncLabel,
+  syncTone,
+  trimReason,
+  useSyncSnapshot,
+} from "./syncStatus";
 import { Chip, Notice } from "./ui";
 import {
   byCurrency,
@@ -111,7 +119,9 @@ export default function App() {
   }>();
   const [hasPending, setHasPending] = useState(() => !!readPending());
   const [drafts, setDrafts] = useState(0);
+  const [backupOpen, setBackupOpen] = useState<{ auto: boolean } | null>(null);
   const [updated, setUpdated] = useState<Date>();
+  const sync = useSyncSnapshot();
   const sequence = useRef(0);
   const search = useRef<HTMLInputElement>(null);
   const refresh = useCallback(async () => {
@@ -165,6 +175,9 @@ export default function App() {
       } else if (event.key === "b") {
         event.preventDefault();
         if (canEditRow) setBatch(true);
+      } else if (event.key === "s") {
+        event.preventDefault();
+        setBackupOpen({ auto: false });
       } else if (event.key === "/") {
         event.preventDefault();
         search.current?.focus();
@@ -196,8 +209,21 @@ export default function App() {
           <span className={`status-chip ${ready ? "ok" : "warn"}`}>
             <span className="dot" />
             {status}
-            <small>{ledger?.git.sync || "等待连接"}</small>
+            <small>
+              {ledger
+                ? `${ledger.files.length} 文件 · ${ledger.entry_count} 条指令`
+                : "等待连接"}
+            </small>
           </span>
+          <button
+            className={`status-chip backup ${syncTone(sync.status)}`}
+            title="打开备份中心"
+            onClick={() => setBackupOpen({ auto: true })}
+          >
+            <span className="dot" />
+            {syncLabel(sync.status)}
+            <small>{syncDetail(sync.status)}</small>
+          </button>
           <span className="clock">
             {updated ? `更新于 ${clockOf(updated)}` : "正在读取…"}
           </span>
@@ -281,6 +307,39 @@ export default function App() {
           账本校验失败，以下保留上一次有效视图，已暂停写入。
         </Notice>
       )}
+      {sync.status?.blocked && (
+        <Notice
+          tone="error"
+          action={
+            <button
+              className="ghost small"
+              onClick={() => setBackupOpen({ auto: false })}
+            >
+              打开备份中心
+            </button>
+          }
+        >
+          备份已暂停：
+          {trimReason(sync.status.error || "仓库存在未完成的合并或冲突")}
+          。已保存的记录仍在本地，人工解决后重新同步即可恢复。
+        </Notice>
+      )}
+      {sync.status?.connected && sync.status.error && !sync.status.blocked && (
+        <Notice
+          tone="warn"
+          action={
+            <button
+              className="ghost small"
+              onClick={() => setBackupOpen({ auto: true })}
+            >
+              打开备份中心
+            </button>
+          }
+        >
+          备份未完成：{trimReason(sync.status.error)}
+          。已保存的记录仍在本地，无需重复录入。
+        </Notice>
+      )}
       {!!ledger?.errors.length && (
         <Notice tone="error">
           {ledger.errors.map((item, index) => (
@@ -339,7 +398,7 @@ export default function App() {
           onDelete={(row) => setEditor({ row, operation: "delete" })}
         />
         <aside className="rail">
-          <SyncPanel onChanged={refresh} />
+          <SyncPanel onOpen={(auto) => setBackupOpen({ auto: !!auto })} />
           <section className="panel card">
             <div className="panel-head">
               <h2>待记便笺</h2>
@@ -390,7 +449,7 @@ export default function App() {
                     </dd>
                   </div>
                   <div>
-                    <dt>同步</dt>
+                    <dt>本地 Git</dt>
                     <dd>{ledger.git.sync}</dd>
                   </div>
                 </dl>
@@ -427,6 +486,9 @@ export default function App() {
                 <kbd>b</kbd> 补记工作台
               </li>
               <li>
+                <kbd>s</kbd> 备份中心
+              </li>
+              <li>
                 <kbd>/</kbd> 聚焦搜索
               </li>
               <li>
@@ -442,6 +504,13 @@ export default function App() {
       <footer className="page-footer">
         日用账本 / 本地记账，日常有据。<span>Asia/Shanghai</span>
       </footer>
+      {backupOpen && (
+        <SyncDialog
+          auto={backupOpen.auto}
+          onClose={() => setBackupOpen(null)}
+          onChanged={refresh}
+        />
+      )}
       {batch && journal && (
         <BatchEditor
           journal={journal}

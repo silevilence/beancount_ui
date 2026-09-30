@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { api, setAccessToken } from "./api";
+import { api, reasonOf, setAccessToken } from "./api";
 
+/** 访问门禁：本机模式自动进入；私网模式先登录，口令只保留在页面内存。 */
 export default function AccessGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [required, setRequired] = useState(false);
@@ -17,7 +18,7 @@ export default function AccessGate({ children }: { children: ReactNode }) {
       setRequired(result.required);
       setReady(result.authenticated);
     } catch (e) {
-      setError(String(e));
+      setError(reasonOf(e));
     } finally {
       setBusy(false);
     }
@@ -29,17 +30,22 @@ export default function AccessGate({ children }: { children: ReactNode }) {
     return (
       <>
         {required && (
-          <div className="access-bar">
-            <span>个人访问已认证</span>
-            <button
-              onClick={() => {
-                setAccessToken("");
-                setToken("");
-                setReady(false);
-              }}
-            >
-              退出
-            </button>
+          <div className="access-bar" role="status">
+            <span className="access-pill">
+              <span className="dot" />
+              个人访问已认证
+              <button
+                className="ghost small"
+                onClick={() => {
+                  setAccessToken("");
+                  setToken("");
+                  setError("");
+                  setReady(false);
+                }}
+              >
+                退出
+              </button>
+            </span>
           </div>
         )}
         {children}
@@ -47,10 +53,27 @@ export default function AccessGate({ children }: { children: ReactNode }) {
     );
   return (
     <main className="access-screen">
-      <section className="panel card">
-        <h1>日用账本</h1>
-        <p>个人访问 · Asia/Shanghai</p>
-        {error && <p role="alert">{error}</p>}
+      <section className="panel card access-card">
+        <div className="brand">
+          <span className="brand-mark">账</span>
+          <span>
+            日用账本
+            <small>THE DAILY LEDGER · 本地记账</small>
+          </span>
+        </div>
+        <div>
+          <h2>个人访问</h2>
+          <p className="muted">
+            {required
+              ? "私有网络部署：账本读取、写入与备份控制都需要本页口令。"
+              : "本机模式无需口令；正在确认服务端访问配置。"}
+          </p>
+        </div>
+        {error && (
+          <p className="access-error" role="alert">
+            {error}
+          </p>
+        )}
         {required ? (
           <form
             onSubmit={(e) => {
@@ -59,19 +82,27 @@ export default function AccessGate({ children }: { children: ReactNode }) {
               void check();
             }}
           >
-            <label>
+            <label className="field">
               个人访问口令
               <input
                 type="password"
+                autoFocus
                 autoComplete="current-password"
                 value={token}
-                onChange={(e) => setToken(e.target.value)}
+                onChange={(e) => {
+                  setToken(e.target.value);
+                  setError("");
+                }}
               />
             </label>
-            <p className="muted">
-              使用服务端配置的应用口令。口令只保留在本页内存，刷新后重新登录。
+            <button className="cta" disabled={busy || !token}>
+              {busy ? "验证中…" : "登录"}
+            </button>
+            <p className="muted small">
+              口令由服务端配置，不是 GitHub
+              令牌；只保留在当前页内存，刷新后需重新登录。请通过受控私网或加密
+              VPN 访问。
             </p>
-            <button disabled={busy || !token}>登录</button>
           </form>
         ) : (
           <button disabled={busy} onClick={() => void check()}>

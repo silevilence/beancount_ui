@@ -43,7 +43,9 @@ it("口令只存内存，登录失败可更正且可以退出", async () => {
   expect(screen.queryByText("私人账本")).not.toBeInTheDocument();
   fireEvent.change(input, { target: { value: "wrong" } });
   fireEvent.click(screen.getByText("登录"));
-  expect(await screen.findByRole("alert")).toHaveTextContent("口令错误");
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("口令错误");
+  expect(alert).not.toHaveTextContent("Error:");
   fireEvent.change(input, { target: { value: "app-secret" } });
   fireEvent.click(screen.getByText("登录"));
   expect(await screen.findByText("私人账本")).toBeInTheDocument();

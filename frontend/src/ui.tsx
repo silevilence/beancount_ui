@@ -23,7 +23,8 @@ export type ChipTone =
   | "income"
   | "transfer"
   | "warn"
-  | "ok";
+  | "ok"
+  | "danger";
 
 /** 状态小标签：类型、草稿、未结清、已退款等短标记。 */
 export function Chip({

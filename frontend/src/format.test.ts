@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  stampOf,
+  timeAgo,
+  untilWhen,
   businessLabel,
   byCurrency,
   clockOf,
@@ -125,7 +128,7 @@ describe("diff", () => {
     "--- a/txs/2026/09.bean",
     "+++ b/txs/2026/09.bean",
     "@@ -1,2 +1,3 @@",
-    " 2026-09-30 * \"食堂\" \"午饭\"",
+    ' 2026-09-30 * "食堂" "午饭"',
     "+  Expenses:Food 25.50 CNY",
     "-  Expenses:Food 12.00 CNY",
   ].join("\n");
@@ -192,5 +195,28 @@ describe("workbench labels", () => {
     expect(signedTone("0")).toBe("zero");
     expect(signedTone("-1.20")).toBe("neg");
     expect(signedTone("10")).toBe("pos");
+  });
+
+  it("formats relative and absolute timestamps for the backup UI", () => {
+    const now = Date.parse("2026-09-30T12:00:00+08:00");
+    expect(stampOf("2026-09-30T13:05:00+08:00")).toBe("09/30 13:05");
+    expect(stampOf("not-a-date")).toBe("");
+    expect(timeAgo("not-a-date", now)).toBe("");
+    expect(timeAgo("2026-09-30T11:59:30+08:00", now)).toBe("刚刚");
+    expect(timeAgo("2026-09-30T11:55:00+08:00", now)).toBe("5 分钟前");
+    expect(timeAgo("2026-09-30T09:00:00+08:00", now)).toBe("3 小时前");
+    expect(timeAgo("2026-09-28T12:00:00+08:00", now)).toBe("2 天前");
+    expect(timeAgo("2026-09-01T12:00:00+08:00", now)).toBe("09/01 12:00");
+    expect(timeAgo(undefined, now)).toBe("");
+  });
+
+  it("counts down to the next scheduled check", () => {
+    const now = Date.parse("2026-09-30T12:00:00+08:00");
+    const at = (seconds: number) => now / 1000 + seconds;
+    expect(untilWhen(undefined, now)).toBe("");
+    expect(untilWhen(at(0), now)).toBe("即将执行");
+    expect(untilWhen(at(30), now)).toBe("30 秒后");
+    expect(untilWhen(at(120), now)).toBe("2 分钟后");
+    expect(untilWhen(at(7200), now)).toBe("2.0 小时后");
   });
 });

@@ -60,6 +60,11 @@ export class ApiError extends Error {
   }
 }
 
+/** 错误文本：使用 Error 的 message（含服务端 detail），避免界面出现 "Error: " 前缀。 */
+export function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 let accessToken = "";
 export function setAccessToken(token: string) {
   accessToken = token;

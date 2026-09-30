@@ -83,10 +83,42 @@ function view(day: string, over: Payload = {}) {
   };
 }
 
-function routing(handler: (url: URL) => Reply) {
-  return vi.fn(async (input: string) =>
-    handler(new URL(String(input), "http://local")),
+function sync(over: Payload = {}) {
+  return {
+    connected: true,
+    enabled: false,
+    remote: "https://example.invalid/ledger.git",
+    branch: "master-1",
+    sync: "已同步",
+    ahead: 0,
+    last_success: new Date(Date.now() - 60_000).toISOString(),
+    changes: [],
+    ...over,
+  };
+}
+
+function routing(handler: (url: URL) => Reply, backup: Payload = sync()) {
+  return vi.fn(async (input: string) => {
+    const url = new URL(String(input), "http://local");
+    return url.pathname === "/api/sync" ? ok(backup) : handler(url);
+  });
+}
+
+/** 手动泵：按路径解析挂起请求，避免依赖请求发起顺序。 */
+function deferredFetch() {
+  const queue: { path: string; resolve: (reply: Reply) => void }[] = [];
+  const fetcher = vi.fn(
+    (input: string) =>
+      new Promise<Reply>((resolve) => {
+        queue.push({
+          path: new URL(String(input), "http://local").pathname,
+          resolve,
+        });
+      }),
   );
+  const pending = (path: string) =>
+    queue.filter((item) => item.path === path);
+  return { fetcher, pending };
 }
 
 it("按日期展示流水与合计，可切换日期、筛选并记录便笺", async () => {
@@ -141,42 +173,41 @@ it("按日期展示流水与合计，可切换日期、筛选并记录便笺", a
 });
 
 it("读取失败时提示连接异常且不伪装旧视图", async () => {
-  const pending: ((value: Reply) => void)[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(() => new Promise<Reply>((resolve) => pending.push(resolve))),
-  );
+  const { fetcher, pending } = deferredFetch();
+  vi.stubGlobal("fetch", fetcher);
   render(<App />);
   expect(screen.getByText("正在读取账本…")).toBeInTheDocument();
   expect(screen.getByText("正在读取账本信息…")).toBeInTheDocument();
   expect(screen.getByText("正在读取…")).toBeInTheDocument();
   expect(screen.getByText("—")).toBeInTheDocument();
   act(() => {
-    pending[0](ok(status()));
-    pending[1](fail("请配置账本"));
+    pending("/api/ledger")[0].resolve(ok(status()));
+    pending("/api/journal")[0].resolve(fail("请配置账本"));
+    pending("/api/sync")[0].resolve(ok(sync()));
   });
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent("请配置账本");
   expect(alert).not.toHaveTextContent("无法确认最新状态");
   expect(screen.getByText("连接异常")).toBeInTheDocument();
   expect(screen.getByText("未连接")).toBeInTheDocument();
+  expect(screen.getByText("已同步")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "＋ 记一笔" })).toBeDisabled();
 });
 
 it("旧请求不会覆盖新选择的日期", async () => {
-  const pending: ((value: Reply) => void)[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(() => new Promise<Reply>((resolve) => pending.push(resolve))),
-  );
+  const { fetcher, pending } = deferredFetch();
+  vi.stubGlobal("fetch", fetcher);
   render(<App />);
   fireEvent.change(screen.getByLabelText("记账日期"), {
     target: { value: "2026-09-29" },
   });
-  await waitFor(() => expect(pending.length).toBe(4));
+  await waitFor(() =>
+    expect(pending("/api/journal").length).toBe(2),
+  );
+  const journals = pending("/api/journal");
   act(() => {
-    pending[2](ok(status()));
-    pending[3](
+    pending("/api/ledger")[1].resolve(ok(status()));
+    journals[1].resolve(
       ok(
         view("2026-09-29", {
           transactions: [{ ...row, id: "new", payee: "新视图" }],
@@ -186,8 +217,8 @@ it("旧请求不会覆盖新选择的日期", async () => {
   });
   expect(await screen.findByText("新视图")).toBeInTheDocument();
   act(() => {
-    pending[0](ok(status()));
-    pending[1](
+    pending("/api/ledger")[0].resolve(ok(status()));
+    journals[0].resolve(
       ok(
         view("2026-09-30", {
           transactions: [{ ...row, id: "old", payee: "旧视图" }],
@@ -224,6 +255,12 @@ it("快捷键打开录入、聚焦搜索与刷新，输入中不触发", async (
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   fireEvent.keyDown(window, { key: "/" });
   expect(searchBox).toHaveFocus();
+  fireEvent.keyDown(window, { key: "s" });
+  expect(await screen.findByRole("dialog")).toHaveAccessibleName("备份中心");
+  fireEvent.click(screen.getByLabelText("关闭备份"));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
   const beforeRefresh = journalCalls;
   fireEvent.keyDown(window, { key: "r" });
   await waitFor(() => expect(journalCalls).toBeGreaterThan(beforeRefresh));
@@ -304,6 +341,63 @@ it("待确认请求可恢复，恢复期间暂停记录操作", async () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
   );
   expect(screen.getByText("修改")).toBeDisabled();
+});
+
+it("顶栏备份状态直接打开备份中心并自动预览", async () => {
+  const fetcher = routing((url) => {
+    if (url.pathname === "/api/ledger") return ok(status());
+    if (url.pathname === "/api/sync/backup-preview")
+      return ok({
+        revision: "r",
+        head: "h",
+        files: ["txs/2026/09.bean"],
+        excluded: ["secret.log"],
+        message: "账本备份：1 个文件",
+        diff: "+saved\n",
+        outgoing_count: 0,
+      });
+    return ok(view("2026-09-30"));
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: /已同步/ }));
+  expect(await screen.findByRole("dialog")).toHaveAccessibleName("备份中心");
+  expect(await screen.findByText("secret.log")).toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText("关闭备份"));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
+});
+
+it("备份失败显示待备份提示，暂停时给出人工处理指引", async () => {
+  const failing = routing(
+    (url) =>
+      url.pathname === "/api/ledger" ? ok(status()) : ok(view("2026-09-30")),
+    sync({ sync: "已保存 · 待提交", error: "网络不可用" }),
+  );
+  vi.stubGlobal("fetch", failing);
+  const first = render(<App />);
+  expect(
+    await screen.findByText(
+      "备份未完成：网络不可用。已保存的记录仍在本地，无需重复录入。",
+    ),
+  ).toBeInTheDocument();
+  first.unmount();
+
+  const forks = routing(
+    (url) =>
+      url.pathname === "/api/ledger" ? ok(status()) : ok(view("2026-09-30")),
+    sync({
+      sync: "已保存 · 待提交",
+      blocked: true,
+      error: "历史分叉；请备份两侧内容并人工合并",
+    }),
+  );
+  vi.stubGlobal("fetch", forks);
+  render(<App />);
+  expect(
+    await screen.findByText(/备份已暂停：历史分叉/),
+  ).toBeInTheDocument();
 });
 
 it("修改与删除从流水直接进入编辑器", async () => {
@@ -403,6 +497,7 @@ it("从工作台完成一笔录入并刷新当日视图", async () => {
   const fetcher = vi.fn(async (path: string, options?: RequestInit) => {
     const url = new URL(String(path), "http://local");
     if (url.pathname === "/api/ledger") return ok(status());
+    if (url.pathname === "/api/sync") return ok(sync());
     if (url.pathname === "/api/journal") {
       journalCalls += 1;
       return ok(
