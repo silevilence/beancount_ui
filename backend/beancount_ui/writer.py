@@ -8,6 +8,7 @@ import os
 import sqlite3
 import tempfile
 from contextlib import closing, contextmanager
+from decimal import Decimal
 from pathlib import Path
 
 from beancount.core import data
@@ -179,6 +180,7 @@ class Writer:
                 raise LedgerError("账本已变化，请重新加载并预览")
             files = dict(snapshot.files)
             targets = []
+            warnings = []
             items = mutation.items if isinstance(mutation, BatchMutation) else [mutation]
             for index, item in enumerate(items, 1):
                 try:
@@ -218,6 +220,16 @@ class Writer:
                             raw = basic_edit(row, item.entry, quote) if item.entry else item.raw
                             parse_single(raw, "ordinary")
                         replace_record(files, row, raw)
+                    if raw and item.business != "balance":
+                        parsed = parse_single(raw, "ordinary")
+                        if any(
+                            isinstance(getattr(p.units, "number", None), Decimal)
+                            and p.units.number == 0
+                            for p in parsed.postings
+                        ):
+                            warnings.append(
+                                f"第 {index} 笔含零金额分录，请确认；不会根据备注推算或补值。"
+                            )
                     candidate = load_snapshot(files)
                     if candidate.errors:
                         message = "\n".join(
@@ -251,6 +263,7 @@ class Writer:
                 "request_id": request_id,
                 "target": target,
                 "items": targets,
+                "warnings": warnings,
                 "diffs": diffs,
                 "revision": candidate.revision,
                 "status": "preview",

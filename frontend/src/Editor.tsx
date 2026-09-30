@@ -24,6 +24,7 @@ export interface EntryFields {
 }
 
 interface Preview {
+  warnings?: string[];
   request_id: string;
   target: string;
   diffs: Record<string, string>;
@@ -494,6 +495,7 @@ export default function Editor({
       )}
       {preview && (
         <section className="preview">
+          {preview.warnings?.map(w => <Notice key={w}>{w}</Notice>)}
           <div className="preview-head">
             <h3>保存预览</h3>
             <span className="target">{preview.target}</span>
