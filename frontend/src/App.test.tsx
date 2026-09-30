@@ -1,49 +1,135 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import App from "./App";
 import { PENDING_KEY } from "./Editor";
 
-const status = {
-  writable: true,
-  version: "3.2.3",
-  files: [],
-  errors: [],
-  git: { sync: "待提交" },
-  include_graph: {},
-  unreferenced: [],
+type Payload = Record<string, unknown>;
+type Reply = { ok: boolean; status?: number; json: () => Promise<unknown> };
+
+const ok = (data: unknown): Reply => ({ ok: true, json: async () => data });
+
+const fail = (detail: string, status = 422): Reply => ({
+  ok: false,
+  status,
+  json: async () => ({ detail }),
+});
+
+const PENDING_NOTICE = "有一笔待确认的保存请求，重试不会重复入账。";
+
+function status(over: Payload = {}) {
+  return {
+    entry: "main.beancount",
+    version: "3.2.3",
+    revision: "r1",
+    writable: true,
+    errors: [],
+    files: ["main.beancount", "index.bean"],
+    include_graph: { "main.beancount": ["index.bean"], "index.bean": [] },
+    unreferenced: [],
+    entry_count: 12,
+    accounts: [],
+    git: {
+      repository: true,
+      branch: "master-1",
+      commit: "abcdef1234",
+      changes: [],
+      sync: "待提交",
+    },
+    ...over,
+  };
+}
+
+const row = {
+  id: "r1",
+  date: "2026-09-30",
+  payee: "测试商户",
+  narration: "午饭",
+  kind: "消费",
+  tags: ["dining"],
+  postings: [
+    { account: "Expenses:Food", amount: "25.50", currency: "CNY" },
+    { account: "Assets:Cash", amount: "-25.50", currency: "CNY" },
+  ],
+  file: "txs/2026/09.bean",
+  line: 2,
+  raw: '2026-09-30 * "测试商户" "午饭"\n  Expenses:Food 25.50 CNY\n  Assets:Cash -25.50 CNY\n',
+  simple: true,
+  readonly: false,
+  note: "",
 };
-it("filters by date and payee, distinguishes stale data and drafts", async () => {
-  const fetcher = vi.fn().mockImplementation(async (url: string) => ({
-    ok: true,
-    json: async () =>
-      url === "/api/ledger"
-        ? status
-        : {
-            date: new URL(`http://local${url}`).searchParams.get("day"),
-            stale: true,
-            transactions: [],
+
+function view(day: string, over: Payload = {}) {
+  return {
+    date: day,
+    revision: "a".repeat(64),
+    view_revision: "a".repeat(64),
+    stale: false,
+    errors: [],
+    transactions: [],
+    expenses: {},
+    income: {},
+    accounts: [],
+    sync: "待提交",
+    ...over,
+  };
+}
+
+function routing(handler: (url: URL) => Reply) {
+  return vi.fn(async (input: string) =>
+    handler(new URL(String(input), "http://local")),
+  );
+}
+
+it("按日期展示流水与合计，可切换日期、筛选并记录便笺", async () => {
+  const fetcher = routing((url) =>
+    url.pathname === "/api/ledger"
+      ? ok(status())
+      : ok(
+          view(url.searchParams.get("day") ?? "", {
+            transactions: [row],
             expenses: { CNY: "25.50" },
             income: { CNY: "100.12" },
-            accounts: [],
-          },
-  }));
+          }),
+        ),
+  );
   vi.stubGlobal("fetch", fetcher);
   render(<App />);
-  expect(await screen.findByText("25.50 CNY")).toBeInTheDocument();
-  expect(screen.getByRole("alert")).toHaveTextContent("上一次有效视图");
-  fireEvent.change(screen.getByLabelText("记账日期"), {
-    target: { value: "2026-09-30" },
-  });
-  fireEvent.change(screen.getByPlaceholderText("筛选商户"), {
+  expect(await screen.findByText("测试商户")).toBeInTheDocument();
+  expect(screen.getAllByText("25.50 CNY").length).toBeGreaterThan(0);
+  expect(screen.getByText("74.62 CNY")).toBeInTheDocument();
+  expect(screen.getAllByText("今天")).toHaveLength(2);
+  expect(screen.getByText("-25.50 CNY")).toBeInTheDocument();
+  expect(screen.getAllByText("1 笔")).toHaveLength(2);
+  expect(screen.getByText("Expenses:Food")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "今天" })).toBeDisabled();
+
+  fireEvent.click(screen.getByRole("button", { name: "前一天" }));
+  await waitFor(() => expect(screen.getAllByText("今天")).toHaveLength(1));
+  expect(screen.getByRole("button", { name: "今天" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "后一天" }));
+  await waitFor(() => expect(screen.getAllByText("今天")).toHaveLength(2));
+  expect(screen.getByRole("button", { name: "今天" })).toBeDisabled();
+
+  fireEvent.change(screen.getByLabelText("商户"), {
     target: { value: "食堂" },
   });
   await waitFor(() =>
     expect(
-      fetcher.mock.calls.some(([url]) =>
-        String(url).includes("day=2026-09-30&payee="),
+      fetcher.mock.calls.some(([input]) =>
+        String(input).includes("payee=%E9%A3%9F%E5%A0%82"),
       ),
     ).toBe(true),
   );
+  fireEvent.click(screen.getByText("清空筛选"));
+  await waitFor(() => expect(screen.getByLabelText("商户")).toHaveValue(""));
+
   fireEvent.change(screen.getByLabelText("待记便笺"), {
     target: { value: "待记 20 元" },
   });
@@ -52,90 +138,148 @@ it("filters by date and payee, distinguishes stale data and drafts", async () =>
   expect(screen.getByLabelText("待记便笺")).toHaveValue("");
 });
 
-it("renders the journal and configuration errors", async () => {
+it("读取失败时提示连接异常且不伪装旧视图", async () => {
+  const pending: ((value: Reply) => void)[] = [];
   vi.stubGlobal(
     "fetch",
-    vi
-      .fn()
-      .mockResolvedValue({
-        ok: false,
-        json: async () => ({ detail: "请配置账本" }),
-      }),
+    vi.fn(() => new Promise<Reply>((resolve) => pending.push(resolve))),
   );
   render(<App />);
-  expect(
-    screen.getByRole("heading", { name: "把日子，记清楚。" }),
-  ).toBeInTheDocument();
-  expect(await screen.findByRole("alert")).toHaveTextContent("请配置账本");
+  expect(screen.getByText("正在读取账本…")).toBeInTheDocument();
+  expect(screen.getByText("正在读取账本信息…")).toBeInTheDocument();
+  expect(screen.getByText("正在读取…")).toBeInTheDocument();
+  expect(screen.getByText("—")).toBeInTheDocument();
+  act(() => {
+    pending[0](ok(status()));
+    pending[1](fail("请配置账本"));
+  });
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("请配置账本");
+  expect(alert).not.toHaveTextContent("无法确认最新状态");
+  expect(screen.getByText("连接异常")).toBeInTheDocument();
+  expect(screen.getByText("未连接")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "＋ 记一笔" })).toBeDisabled();
 });
 
-it("shows sources and diagnostics, opens edit/delete and resumes a pending preview", async () => {
-  const row = {
-    id: "record",
-    date: "2026-09-30",
-    payee: "测试商户",
-    narration: "午饭",
-    kind: "消费",
-    tags: [],
-    postings: [
-      { account: "Expenses:Food", amount: "12", currency: "CNY" },
-      { account: "Assets:Cash", amount: "-12", currency: "CNY" },
-    ],
-    file: "txs/2026/08.bean",
-    line: 2,
-    raw: '2026-09-30 * "测试商户" "午饭"\n  Expenses:Food 12 CNY\n  Assets:Cash -12 CNY\n',
-    simple: true,
-    readonly: false,
-    note: "",
-  };
+it("旧请求不会覆盖新选择的日期", async () => {
+  const pending: ((value: Reply) => void)[] = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockImplementation(async (url: string) => ({
-      ok: true,
-      json: async () =>
-        url === "/api/ledger"
-          ? {
-              ...status,
-              git: {
-                sync: "待提交",
-                branch: "master-1",
-                commit: "abcdef123",
-                changes: ["M txs/2026/08.bean"],
-              },
-              errors: [{ file: "bad.bean", line: 1, message: "诊断示例" }],
-              unreferenced: ["extra.bean"],
-            }
-          : {
-              date: new URL(`http://local${url}`).searchParams.get("day"),
-              revision: "a".repeat(64),
-              stale: false,
-              transactions: [
-                row,
-                {
-                  ...row,
-                  id: "other",
-                  payee: "",
-                  kind: "收入",
-                  simple: false,
-                  tags: ["salary"],
-                },
-              ],
-              expenses: { CNY: "12" },
-              income: {},
-              accounts: [],
-              sync: "待提交",
-            },
-    })),
+    vi.fn(() => new Promise<Reply>((resolve) => pending.push(resolve))),
   );
   render(<App />);
-  expect(await screen.findByText("测试商户")).toBeInTheDocument();
-  expect(screen.getByText("bad.bean:1 · 诊断示例")).toBeInTheDocument();
-  fireEvent.click(screen.getByText("修改"));
+  fireEvent.change(screen.getByLabelText("记账日期"), {
+    target: { value: "2026-09-29" },
+  });
+  await waitFor(() => expect(pending.length).toBe(4));
+  act(() => {
+    pending[2](ok(status()));
+    pending[3](
+      ok(
+        view("2026-09-29", {
+          transactions: [{ ...row, id: "new", payee: "新视图" }],
+        }),
+      ),
+    );
+  });
+  expect(await screen.findByText("新视图")).toBeInTheDocument();
+  act(() => {
+    pending[0](ok(status()));
+    pending[1](
+      ok(
+        view("2026-09-30", {
+          transactions: [{ ...row, id: "old", payee: "旧视图" }],
+        }),
+      ),
+    );
+  });
+  await waitFor(() =>
+    expect(screen.queryByText("旧视图")).not.toBeInTheDocument(),
+  );
+  expect(screen.getByText("新视图")).toBeInTheDocument();
+});
+
+it("快捷键打开录入、聚焦搜索与刷新，输入中不触发", async () => {
+  let journalCalls = 0;
+  const fetcher = routing((url) => {
+    if (url.pathname === "/api/ledger") return ok(status());
+    journalCalls += 1;
+    return ok(view(url.searchParams.get("day") ?? "", { transactions: [row] }));
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<App />);
+  await screen.findByText("测试商户");
+  const before = journalCalls;
+  fireEvent.keyDown(window, { key: "x" });
+  expect(journalCalls).toBe(before);
+  fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "n" });
   expect(await screen.findByRole("dialog")).toBeInTheDocument();
   fireEvent.click(screen.getByLabelText("关闭编辑"));
-  fireEvent.click(screen.getAllByText("删除")[0]);
-  expect(await screen.findByText("预览删除影响")).toBeInTheDocument();
-  fireEvent.click(screen.getByLabelText("关闭编辑"));
+  const searchBox = screen.getByLabelText("商户");
+  fireEvent.keyDown(searchBox, { key: "n" });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "/" });
+  expect(searchBox).toHaveFocus();
+  const beforeRefresh = journalCalls;
+  fireEvent.keyDown(window, { key: "r" });
+  await waitFor(() => expect(journalCalls).toBeGreaterThan(beforeRefresh));
+});
+
+it("账本诊断、包含关系、未纳入文件与只读记录", async () => {
+  const readonlyRow = {
+    ...row,
+    id: "gnucash",
+    payee: "",
+    narration: "历史导入",
+    tags: ["imported"],
+    readonly: true,
+  };
+  const complexRow = { ...row, id: "complex", payee: "", simple: false };
+  const fetcher = routing((url) =>
+    url.pathname === "/api/ledger"
+      ? ok(
+          status({
+            errors: [{ file: "bad.bean", line: 1, message: "诊断示例" }],
+            unreferenced: ["extra.bean"],
+            git: {
+              repository: true,
+              branch: "",
+              changes: ["M txs/2026/09.bean"],
+              sync: "待提交",
+            },
+            include_graph: {
+              "main.beancount": ["index.bean", "missing.bean"],
+              "index.bean": [],
+            },
+          }),
+        )
+      : ok(view("2026-09-30", { transactions: [readonlyRow, complexRow] })),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  render(<App />);
+  expect(await screen.findByText("bad.bean:1 · 诊断示例")).toBeInTheDocument();
+  expect(screen.getByText("历史导入只读")).toBeInTheDocument();
+  expect(screen.queryByText("修改")).not.toBeInTheDocument();
+  expect(screen.getByText("高级编辑")).toBeInTheDocument();
+  expect(screen.getByText("#imported")).toBeInTheDocument();
+  expect(screen.getByText("复杂分录")).toBeInTheDocument();
+  expect(screen.getByText("未纳入文件：extra.bean")).toBeInTheDocument();
+  expect(screen.getByText("无 Git 仓库 · 无提交")).toBeInTheDocument();
+  expect(screen.getByText("M txs/2026/09.bean")).toBeInTheDocument();
+  fireEvent.click(screen.getByText("包含关系"));
+  expect(screen.getByText("missing.bean")).toBeInTheDocument();
+  expect(screen.getByText("index.bean")).toBeInTheDocument();
+});
+
+it("待确认请求可恢复，恢复期间暂停记录操作", async () => {
+  const fetcher = routing((url) =>
+    url.pathname === "/api/ledger"
+      ? ok(status())
+      : ok(view("2026-09-30", { transactions: [row] })),
+  );
+  vi.stubGlobal("fetch", fetcher);
   localStorage.setItem(
     PENDING_KEY,
     JSON.stringify({
@@ -148,8 +292,154 @@ it("shows sources and diagnostics, opens edit/delete and resumes a pending previ
       },
     }),
   );
-  fireEvent.click(screen.getByText("＋ 记一笔"));
+  render(<App />);
+  expect(await screen.findByText(PENDING_NOTICE)).toBeInTheDocument();
+  expect(screen.getByText("修改")).toBeDisabled();
+  fireEvent.click(screen.getByText("恢复原请求"));
+  expect(await screen.findByLabelText("Beancount 原文")).toHaveValue(row.raw);
   fireEvent.click(screen.getByLabelText("关闭编辑"));
-  fireEvent.click(await screen.findByText("恢复原请求"));
-  expect(screen.getByLabelText("Beancount 原文")).toHaveValue(row.raw);
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
+  expect(screen.getByText("修改")).toBeDisabled();
+});
+
+it("修改与删除从流水直接进入编辑器", async () => {
+  const fetcher = routing((url) =>
+    url.pathname === "/api/ledger"
+      ? ok(status())
+      : ok(view("2026-09-30", { transactions: [row] })),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  render(<App />);
+  fireEvent.click(await screen.findByText("修改"));
+  expect(screen.getByText("纠正这笔记录")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("金额"), {
+    target: { value: "26.00" },
+  });
+  fireEvent.click(screen.getByLabelText("关闭编辑"));
+  fireEvent.click(screen.getByText("删除"));
+  expect(screen.getByText("删除误记记录")).toBeInTheDocument();
+  expect(
+    within(screen.getByRole("dialog")).getByText(/Expenses:Food 25.50 CNY/),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText("关闭编辑"));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
+});
+
+it("空流水、刷新失败与重新加载", async () => {
+  let ledgerFails = false;
+  const fetcher = routing((url) => {
+    if (url.pathname === "/api/ledger")
+      return ledgerFails ? fail("账本暂不可用", 503) : ok(status());
+    return ok(view(url.searchParams.get("day") ?? ""));
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<App />);
+  expect(
+    await screen.findByText("这一天还没有匹配的记录。"),
+  ).toBeInTheDocument();
+  expect(screen.getAllByText("0.00")).toHaveLength(3);
+  expect(screen.getAllByText("0 笔")).toHaveLength(2);
+  ledgerFails = true;
+  fireEvent.click(screen.getByText("刷新"));
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("账本暂不可用");
+  expect(alert).toHaveTextContent("当前为上一次有效视图");
+  ledgerFails = false;
+  fireEvent.click(screen.getByText("重新加载"));
+  await waitFor(() =>
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
+  );
+});
+
+it("账本校验失败时保留旧视图并暂停写入", async () => {
+  const fetcher = routing((url) =>
+    url.pathname === "/api/ledger"
+      ? ok(status())
+      : ok(view("2020-01-01", { stale: true })),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  render(<App />);
+  expect(
+    await screen.findByText("账本校验失败，以下保留上一次有效视图，已暂停写入。"),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "＋ 记一笔" })).toBeDisabled();
+  expect(screen.getByText("读取中")).toBeInTheDocument();
+});
+
+it("原文可复制，剪贴板不可用时保持原提示", async () => {
+  const fetcher = routing((url) =>
+    url.pathname === "/api/ledger"
+      ? ok(status())
+      : ok(view("2026-09-30", { transactions: [row] })),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  Object.defineProperty(navigator, "clipboard", {
+    value: undefined,
+    configurable: true,
+  });
+  render(<App />);
+  fireEvent.click(await screen.findByText("查看原文"));
+  fireEvent.click(screen.getByText("复制"));
+  expect(screen.queryByText("已复制")).not.toBeInTheDocument();
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText },
+    configurable: true,
+  });
+  fireEvent.click(screen.getByText("复制"));
+  expect(await screen.findByText("已复制")).toBeInTheDocument();
+  expect(writeText).toHaveBeenCalledWith(row.raw);
+});
+
+it("从工作台完成一笔录入并刷新当日视图", async () => {
+  const requests: Record<string, unknown>[] = [];
+  let journalCalls = 0;
+  const fetcher = vi.fn(async (path: string, options?: RequestInit) => {
+    const url = new URL(String(path), "http://local");
+    if (url.pathname === "/api/ledger") return ok(status());
+    if (url.pathname === "/api/journal") {
+      journalCalls += 1;
+      return ok(
+        view(url.searchParams.get("day") ?? "2026-09-30", {
+          transactions: [row],
+          accounts: [
+            { name: "Expenses:Food", currencies: ["CNY"] },
+            { name: "Assets:Cash", currencies: ["CNY"] },
+          ],
+        }),
+      );
+    }
+    const body = JSON.parse(String(options?.body)) as Record<string, unknown>;
+    requests.push(body);
+    return ok({
+      request_id: body.request_id,
+      target: "txs/2026/09.bean",
+      diffs: { "txs/2026/09.bean": "+  Expenses:Food 12.30 CNY" },
+      status: "committed",
+      revision: "b".repeat(64),
+    });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "＋ 记一笔" }));
+  fireEvent.change(screen.getByLabelText("金额"), {
+    target: { value: "12.30" },
+  });
+  fireEvent.change(screen.getByLabelText("支出分类"), {
+    target: { value: "Expenses:Food" },
+  });
+  fireEvent.change(screen.getByLabelText("付款账户"), {
+    target: { value: "Assets:Cash" },
+  });
+  fireEvent.click(screen.getByText("预览并校验"));
+  fireEvent.click(await screen.findByText("确认保存"));
+  expect(await screen.findByText("本次已录入")).toBeInTheDocument();
+  expect(screen.getByText("12.30 CNY")).toBeInTheDocument();
+  expect(requests[1].request_id).toBe(requests[0].request_id);
+  expect(journalCalls).toBeGreaterThanOrEqual(3);
+  expect(screen.queryByText(PENDING_NOTICE)).not.toBeInTheDocument();
 });

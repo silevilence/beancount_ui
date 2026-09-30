@@ -1,8 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Journal, type Transaction } from "./api";
+import {
+  diffRows,
+  diffStat,
+  expenseGroups,
+  fundingGroups,
+  money,
+} from "./format";
+import { Notice } from "./ui";
 
 export const PENDING_KEY = "beancount-ui.pending-save.v1";
-interface Fields {
+
+export interface EntryFields {
   date: string;
   payee: string;
   narration: string;
@@ -12,6 +21,7 @@ interface Fields {
   payment: string;
   note: string;
 }
+
 interface Preview {
   request_id: string;
   target: string;
@@ -19,15 +29,17 @@ interface Preview {
   status: string;
   revision: string;
 }
+
 interface SaveRequest {
   request_id: string;
   revision: string;
   operation: string;
   transaction_id?: string;
   business: string;
-  entry?: Fields;
+  entry?: EntryFields;
   raw?: string;
 }
+
 interface Pending {
   request: SaveRequest;
   preview?: Preview;
@@ -41,6 +53,36 @@ export function readPending(): Pending | undefined {
   } catch {
     return undefined;
   }
+}
+
+const BUSINESSES = [
+  { value: "ordinary", label: "日常消费 / 转账" },
+  { value: "phone", label: "话费" },
+  { value: "salary", label: "工资 / 奖金" },
+  { value: "yuebao", label: "余额宝收益" },
+  { value: "balance", label: "余额核对断言" },
+];
+
+const RAW_ONLY = ["salary", "yuebao", "balance"];
+
+function Diff({ diff }: { diff: string }) {
+  const stat = diffStat(diff);
+  return (
+    <>
+      <div className="diff-stat">
+        <span className="add">+{stat.added}</span>
+        <span className="del">-{stat.removed}</span>
+      </div>
+      <pre className="diff">
+        {diffRows(diff).map((row, index) => (
+          <span className={`diff-line ${row.kind}`} key={index}>
+            {row.text}
+            {"\n"}
+          </span>
+        ))}
+      </pre>
+    </>
+  );
 }
 
 export default function Editor({
@@ -59,7 +101,7 @@ export default function Editor({
   const pending = useRef(readPending());
   const restored = useRef(!!pending.current);
   const baseRevision = useRef(journal.revision);
-  const defaults = (): Fields => ({
+  const defaults = (): EntryFields => ({
     date: row?.date || journal.date,
     payee: row?.payee || "",
     narration: row?.narration || "",
@@ -69,7 +111,7 @@ export default function Editor({
     payment: row?.simple ? row.postings[1].account : "",
     note: row?.note || "",
   });
-  const [fields, setFields] = useState<Fields>(
+  const [fields, setFields] = useState<EntryFields>(
     pending.current?.request.entry || defaults,
   );
   const [raw, setRaw] = useState(
@@ -87,6 +129,7 @@ export default function Editor({
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [keepOpen, setKeepOpen] = useState(true);
+  const [log, setLog] = useState<{ label: string; amount: string }[]>([]);
   const busyRef = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const [accounts, setAccounts] = useState(journal.accounts);
@@ -121,7 +164,7 @@ export default function Editor({
     setError("");
     setMessage("");
   }
-  function change(key: keyof Fields, value: string) {
+  function change(key: keyof EntryFields, value: string) {
     try {
       invalidate();
       setFields({ ...fields, [key]: value });
@@ -184,6 +227,13 @@ export default function Editor({
       restored.current = false;
       await onSaved();
       if (op === "create" && keepOpen) {
+        setLog([
+          ...log,
+          {
+            label: fields.payee || fields.narration || "一笔记录",
+            amount: money(fields.amount, fields.currency),
+          },
+        ]);
         setFields({
           ...fields,
           amount: "",
@@ -210,10 +260,15 @@ export default function Editor({
     }
   }
   const locked = busy || uncertain || restored.current;
-  const field = (key: keyof Fields, label: string, type = "text") => (
-    <label>
-      {label}
+  const names = accounts.map((account) => account.name);
+  const currencies = [
+    ...new Set(accounts.flatMap((account) => account.currencies)),
+  ].sort();
+  const field = (key: keyof EntryFields, label: string, type = "text") => (
+    <label className="field">
+      <span>{label}</span>
       <input
+        aria-label={label}
         required={["date", "amount", "currency"].includes(key)}
         type={type}
         inputMode={key === "amount" ? "decimal" : undefined}
@@ -222,6 +277,7 @@ export default function Editor({
       />
     </label>
   );
+  const step = preview ? (uncertain || busy ? 3 : 2) : 1;
   return (
     <dialog
       ref={dialog}
@@ -232,7 +288,7 @@ export default function Editor({
       className="editor-dialog"
       aria-labelledby="editor-title"
     >
-      <div className="section-heading">
+      <header className="editor-head">
         <div>
           <p className="eyebrow">LOCAL JOURNAL / 逐笔确认</p>
           <h2 id="editor-title">
@@ -243,38 +299,43 @@ export default function Editor({
                 : "纠正这笔记录"}
           </h2>
         </div>
-        <button
-          className="quiet"
-          onClick={onClose}
-          disabled={busy}
-          aria-label="关闭编辑"
-        >
-          关闭
-        </button>
-      </div>
-      {error && (
-        <p role="alert" className="notice error">
-          {error}
-        </p>
-      )}
-      {message && (
-        <p role="status" className="notice">
-          {message}
-        </p>
-      )}
+        <div className="editor-side">
+          <ol className="steps" aria-label="录入步骤">
+            {["填写", "预览校验", "写入"].map((name, index) => (
+              <li
+                key={name}
+                className={index + 1 <= step ? "done" : ""}
+                aria-current={index + 1 === step ? "step" : undefined}
+              >
+                {name}
+              </li>
+            ))}
+          </ol>
+          <button
+            className="ghost small"
+            onClick={onClose}
+            disabled={busy}
+            aria-label="关闭编辑"
+          >
+            关闭
+          </button>
+        </div>
+      </header>
+      {error && <Notice tone="error">{error}</Notice>}
+      {message && <Notice>{message}</Notice>}
       {uncertain && (
-        <p className="notice">
+        <Notice>
           正在核对原保存请求，内容已锁定。即使上次已经保存，重试也不会重复入账。
-        </p>
+        </Notice>
       )}
       {restored.current && !uncertain && (
-        <p className="notice">
+        <Notice>
           已恢复原预览请求。可继续核验，或取消此预览后重新录入。
-        </p>
+        </Notice>
       )}
       {restored.current && !uncertain && !preview && (
         <button
-          className="quiet"
+          className="ghost small"
           onClick={() => {
             invalidate();
             onClose();
@@ -285,8 +346,10 @@ export default function Editor({
       )}
       {op === "delete" ? (
         <>
-          <p>将从原文件移除此交易，其他记录保留。请核对原文和下面的差异。</p>
-          <pre>{row?.raw || "请核对已保存的删除预览。"}</pre>
+          <p className="muted">
+            将从原文件移除此交易，其他记录保留。请核对原文和下面的差异。
+          </p>
+          <pre className="raw-block">{row?.raw || "请核对已保存的删除预览。"}</pre>
         </>
       ) : (
         <form
@@ -297,24 +360,22 @@ export default function Editor({
         >
           <fieldset disabled={locked}>
             {operation === "create" && (
-              <label>
-                业务类型
+              <label className="field">
+                <span>业务类型</span>
                 <select
+                  aria-label="业务类型"
                   value={business}
                   onChange={(e) => {
                     invalidate();
                     setBusiness(e.target.value);
-                    if (
-                      ["salary", "yuebao", "balance"].includes(e.target.value)
-                    )
-                      setAdvanced(true);
+                    if (RAW_ONLY.includes(e.target.value)) setAdvanced(true);
                   }}
                 >
-                  <option value="ordinary">日常消费 / 转账</option>
-                  <option value="phone">话费</option>
-                  <option value="salary">工资 / 奖金</option>
-                  <option value="yuebao">余额宝收益</option>
-                  <option value="balance">余额核对断言</option>
+                  {BUSINESSES.map((item) => (
+                    <option value={item.value} key={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
                 </select>
               </label>
             )}
@@ -322,10 +383,7 @@ export default function Editor({
               <input
                 type="checkbox"
                 checked={advanced}
-                disabled={
-                  (!!row && !row.simple) ||
-                  ["salary", "yuebao", "balance"].includes(business)
-                }
+                disabled={(!!row && !row.simple) || RAW_ONLY.includes(business)}
                 onChange={(e) => {
                   invalidate();
                   setAdvanced(e.target.checked);
@@ -336,9 +394,10 @@ export default function Editor({
             </label>
             {advanced ? (
               <>
-                <label>
-                  Beancount 原文
+                <label className="field">
+                  <span>Beancount 原文</span>
                   <textarea
+                    aria-label="Beancount 原文"
                     className="raw-input"
                     required
                     value={raw}
@@ -360,42 +419,64 @@ export default function Editor({
                 {field("amount", "金额")}
                 {field("payee", "商户")}
                 {field("narration", "摘要")}
-                {field("currency", "币种")}
-                <label>
-                  支出分类
+                <label className="field">
+                  <span>币种</span>
+                  <input
+                    aria-label="币种"
+                    list="currency-options"
+                    required
+                    value={fields.currency}
+                    onChange={(e) => change("currency", e.target.value)}
+                  />
+                  <datalist id="currency-options">
+                    {currencies.map((currency) => (
+                      <option value={currency} key={currency} />
+                    ))}
+                  </datalist>
+                </label>
+                <label className="field">
+                  <span>支出分类</span>
                   <select
+                    aria-label="支出分类"
                     required
                     value={fields.category}
                     onChange={(e) => change("category", e.target.value)}
                   >
                     <option value="">请选择分类</option>
-                    {accounts
-                      .filter((a) => a.name.startsWith("Expenses:"))
-                      .map((a) => (
-                        <option key={a.name}>{a.name}</option>
-                      ))}
+                    {expenseGroups(names).map((group) => (
+                      <optgroup label={group.label} key={group.label}>
+                        {group.items.map((name) => (
+                          <option key={name}>{name}</option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
                 </label>
-                <label>
-                  付款账户
+                <label className="field">
+                  <span>付款账户</span>
                   <select
+                    aria-label="付款账户"
                     required
                     value={fields.payment}
                     onChange={(e) => change("payment", e.target.value)}
                   >
                     <option value="">请选择账户</option>
-                    {accounts
-                      .filter((a) => /^(Assets|Liabilities):/.test(a.name))
-                      .map((a) => (
-                        <option key={a.name}>{a.name}</option>
-                      ))}
+                    {fundingGroups(names).map((group) => (
+                      <optgroup label={group.label} key={group.label}>
+                        {group.items.map((name) => (
+                          <option key={name}>{name}</option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
                 </label>
                 {field("note", "备注")}
               </div>
             )}
           </fieldset>
-          {accountError && <p role="alert">账户加载失败：{accountError}</p>}
+          {accountError && (
+            <Notice tone="error">账户加载失败：{accountError}</Notice>
+          )}
           {!uncertain && (
             <button type="submit" disabled={busy || !!accountError}>
               {busy ? "正在校验…" : "预览并校验"}
@@ -404,18 +485,23 @@ export default function Editor({
         </form>
       )}
       {op === "delete" && !uncertain && (
-        <button disabled={busy} onClick={() => void makePreview()}>
-          预览删除影响
-        </button>
+        <div className="editor-actions">
+          <button disabled={busy} onClick={() => void makePreview()}>
+            预览删除影响
+          </button>
+        </div>
       )}
       {preview && (
         <section className="preview">
-          <h3>保存预览 · {preview.target}</h3>
+          <div className="preview-head">
+            <h3>保存预览</h3>
+            <span className="target">{preview.target}</span>
+          </div>
           <p className="muted">完整候选账本已通过校验。确认后写入本地文件。</p>
           {Object.entries(preview.diffs).map(([file, diff]) => (
-            <div key={file}>
+            <div className="file-card" key={file}>
               <h4>{file}</h4>
-              <pre>{diff}</pre>
+              <Diff diff={diff} />
             </div>
           ))}
           {Object.keys(preview.diffs).length === 0 && <p>原文没有变化。</p>}
@@ -429,29 +515,44 @@ export default function Editor({
               保存后继续录入（保留日期和账户）
             </label>
           )}
-          <button
-            disabled={busy || (journal.stale && !uncertain)}
-            onClick={() => void save()}
-          >
-            {busy
-              ? "正在保存…"
-              : uncertain
-                ? "使用原请求重试保存"
-                : op === "delete"
-                  ? "确认删除"
-                  : "确认保存"}
-          </button>
-          {!uncertain && (
+          <div className="editor-actions">
             <button
-              className="quiet"
-              onClick={() => {
-                invalidate();
-                if (restored.current) onClose();
-              }}
+              disabled={busy || (journal.stale && !uncertain)}
+              onClick={() => void save()}
             >
-              取消预览，继续修改
+              {busy
+                ? "正在保存…"
+                : uncertain
+                  ? "使用原请求重试保存"
+                  : op === "delete"
+                    ? "确认删除"
+                    : "确认保存"}
             </button>
-          )}
+            {!uncertain && (
+              <button
+                className="ghost"
+                onClick={() => {
+                  invalidate();
+                  if (restored.current) onClose();
+                }}
+              >
+                取消预览，继续修改
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+      {log.length > 0 && (
+        <section className="saved-log">
+          <h3>本次已录入</h3>
+          <ul>
+            {log.map((item, index) => (
+              <li key={index}>
+                <span>{item.label}</span>
+                <strong>{item.amount}</strong>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
     </dialog>
