@@ -10,6 +10,8 @@ import { expect, it, vi } from "vitest";
 import App from "./App";
 import { PENDING_KEY } from "./Editor";
 
+vi.mock("./SyncPanel", () => ({ default: () => null }));
+
 type Payload = Record<string, unknown>;
 type Reply = { ok: boolean; status?: number; json: () => Promise<unknown> };
 

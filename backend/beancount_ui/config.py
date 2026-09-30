@@ -8,6 +8,16 @@ class Settings:
     ledger_dir: Path
     state_dir: Path
     entry: str = "main.beancount"
+    remote: str = ""
+    branch: str = "master-1"
+
+    def __post_init__(self):
+        ledger, state = self.ledger_dir.resolve(), self.state_dir.resolve()
+        project = Path(__file__).resolve().parents[2]
+        if ledger == project or project.is_relative_to(ledger) or ledger.is_relative_to(project):
+            raise ValueError("账本目录必须位于应用代码目录之外")
+        if state == ledger or state.is_relative_to(ledger) or ledger.is_relative_to(state):
+            raise ValueError("状态目录与账本目录必须分离且不能互相嵌套")
 
     @classmethod
     def from_env(cls):
@@ -24,4 +34,9 @@ class Settings:
         state = state.resolve()
         if state == ledger or state.is_relative_to(ledger) or ledger.is_relative_to(state):
             raise ValueError("状态目录与账本目录必须分离且不能互相嵌套")
-        return cls(ledger, state)
+        return cls(
+            ledger,
+            state,
+            remote=os.environ.get("BEANCOUNT_GIT_REMOTE", ""),
+            branch=os.environ.get("BEANCOUNT_GIT_BRANCH", "master-1"),
+        )

@@ -1,0 +1,76 @@
+import { useCallback, useEffect, useState } from "react";
+import { api, type Diagnostic } from "./api";
+
+interface Status {
+  connected: boolean;
+  enabled: boolean;
+  remote?: string;
+  branch: string;
+  error?: string;
+  message?: string;
+  last_success?: string;
+  ahead?: number | null;
+  changes: { file: string; status: string }[];
+}
+interface Preview {
+  revision: string;
+  remote: string;
+  branch: string;
+  unreferenced: string[];
+  changes: Status["changes"];
+  errors: Diagnostic[];
+  diff: string;
+}
+export default function SyncPanel({ onChanged }: { onChanged: () => Promise<void> }) {
+  const [status, setStatus] = useState<Status>();
+  const [preview, setPreview] = useState<Preview>();
+  const [include, setInclude] = useState<string[]>([]);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const refresh = useCallback(async () => {
+    try { setStatus(await api<Status>("/sync")); } catch (e) { setError(String(e)); }
+  }, []);
+  useEffect(() => { void refresh(); const t = window.setInterval(() => void refresh(), 5000);
+    return () => window.clearInterval(t); }, [refresh]);
+  async function act(path: string, body = {}) {
+    setBusy(true); setError("");
+    try {
+      const result = await api<Preview>(`/sync/${path}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      if (path === "preview" || path === "clone") setPreview(result);
+      else { setPreview(undefined); setInclude([]); await onChanged(); }
+      await refresh();
+    } catch (e) { setError(String(e)); } finally { setBusy(false); }
+  }
+  return <section className="panel card sync-panel" aria-label="账本备份">
+    <h2>GitHub 备份</h2>
+    <p>本地保存与远端备份分别确认。</p>
+    {status && <>
+      <p>{status.connected ? "已接入" : "尚未接入"} · {status.branch}</p>
+      <p className="muted">{status.remote}</p>
+      <p role="status">{status.message || "自动备份关闭"}</p>
+      <p>未推送提交：{status.ahead ?? "尚未核验"}（本地远端引用）</p>
+      {status.error && <p>{status.error}</p>}
+      <p>最后成功：{status.last_success ? new Date(status.last_success).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }) : "尚无"}</p>
+    </>}
+    {error && <p role="alert">备份操作失败：{error}。已保存的记录仍在本地，请勿重复录入。</p>}
+    <div className="button-row">
+      <button disabled={busy} onClick={() => void act("preview", { revision: "", include })}>预览接入范围</button>
+      {!status?.connected && <button disabled={busy} onClick={() => void act("clone")}>克隆到空目录</button>}
+    </div>
+    {preview && <div>
+      <p>{preview.remote} · {preview.branch}</p>
+      <ul>{preview.changes.map(c => <li key={c.file}>{c.status} {c.file}</li>)}</ul>
+      {preview.unreferenced.map(name => <label key={name}>
+        <input type="checkbox" checked={include.includes(name)} onChange={e => {
+          setInclude(e.target.checked ? [...include, name] : include.filter(n => n !== name));
+          setPreview(undefined);
+        }} />纳入 include：{name}
+      </label>)}
+      <pre>{preview.diff}</pre>
+      {preview.errors.map((e, i) => <p key={i}>{e.file}:{e.line} {e.message}</p>)}
+      <button disabled={busy || preview.errors.length > 0} onClick={() => void act("connect", { revision: preview.revision, include })}>确认接入（保持自动备份关闭）</button>
+    </div>}
+  </section>;
+}

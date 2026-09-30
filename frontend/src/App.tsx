@@ -8,6 +8,7 @@ import {
 import BatchEditor, { draftKey } from "./BatchEditor";
 import Editor, { readPending } from "./Editor";
 import JournalPanel, { type Filters } from "./Journal";
+import SyncPanel from "./SyncPanel";
 import { Chip, Notice } from "./ui";
 import {
   byCurrency,
@@ -338,6 +339,7 @@ export default function App() {
           onDelete={(row) => setEditor({ row, operation: "delete" })}
         />
         <aside className="rail">
+          <SyncPanel onChanged={refresh} />
           <section className="panel card">
             <div className="panel-head">
               <h2>待记便笺</h2>

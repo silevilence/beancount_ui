@@ -12,6 +12,7 @@ from .ledger import Ledger, LedgerError
 from .models import BatchMutation, CommitInput, Mutation
 from .orders import orders
 from .query import daily_view
+from .sync import ConnectInput, Sync
 from .templates import recommendations
 from .writer import Writer
 
@@ -44,6 +45,25 @@ def create_app(settings: Settings | None = None):
         if app.state.writer is None:
             app.state.writer = Writer(get_ledger())
         return app.state.writer
+
+    def get_sync():
+        return Sync(get_writer())
+
+    @app.get("/api/sync")
+    def sync_status():
+        return get_sync().status()
+
+    @app.post("/api/sync/preview")
+    def sync_preview(request: ConnectInput):
+        return get_sync().preview(request.include)
+
+    @app.post("/api/sync/clone")
+    def sync_clone():
+        return get_sync().clone()
+
+    @app.post("/api/sync/connect")
+    def sync_connect(request: ConnectInput):
+        return get_sync().connect(request)
 
     @app.exception_handler(OSError)
     @app.exception_handler(Timeout)
