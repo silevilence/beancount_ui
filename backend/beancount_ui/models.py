@@ -6,6 +6,20 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+class SplitInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    category: str = Field(pattern=r"^Expenses:[^\s\";]+$")
+    amount: Decimal = Field(max_digits=24, decimal_places=8)
+    note: str = Field(default="", max_length=2000)
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def exact_amount(cls, value):
+        if not isinstance(value, str):
+            raise ValueError("金额必须以十进制字符串提交")
+        return value
+
+
 class EntryInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     date: date
@@ -16,6 +30,7 @@ class EntryInput(BaseModel):
     category: str = Field(pattern=r"^(Expenses|Income):[^\s\";]+$")
     payment: str = Field(pattern=r"^(Assets|Liabilities):[^\s\";]+$")
     note: str = Field(default="", max_length=2000)
+    splits: list[SplitInput] = Field(default_factory=list, max_length=100)
 
     @field_validator("amount", mode="before")
     @classmethod

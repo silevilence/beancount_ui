@@ -29,6 +29,16 @@ def basic_raw(entry, business="ordinary") -> str:
     result = f"{entry.date} * {quote(entry.payee)} {quote(entry.narration)}\n"
     if entry.note:
         result += f"  memo: {quote(entry.note)}\n"
+    if entry.splits:
+        if business not in ("ordinary", "phone"):
+            raise LedgerError("仅消费业务支持支出明细")
+        if sum(p.amount for p in entry.splits) != entry.amount:
+            raise LedgerError("商品与折扣合计必须等于实付金额")
+        for posting in entry.splits:
+            result += f"  {posting.category} {posting.amount:f} {entry.currency}\n"
+            if posting.note:
+                result += f"    memo: {quote(posting.note)}\n"
+        return result + f"  {entry.payment} {-entry.amount:f} {entry.currency}\n"
     if business in ("salary", "yuebao"):
         if not entry.category.startswith("Income:") or not entry.payment.startswith("Assets:"):
             raise LedgerError("收入模板需要收入账户和资产到账账户")

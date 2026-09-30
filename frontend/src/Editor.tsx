@@ -12,6 +12,7 @@ import { Notice } from "./ui";
 export const PENDING_KEY = "beancount-ui.pending-save.v1";
 
 export interface EntryFields {
+  splits?: { category: string; amount: string; note: string }[];
   date: string;
   payee: string;
   narration: string;
@@ -272,7 +273,7 @@ export default function Editor({
         required={["date", "amount", "currency"].includes(key)}
         type={type}
         inputMode={key === "amount" ? "decimal" : undefined}
-        value={fields[key]}
+        value={String(fields[key] ?? "")}
         onChange={(e) => change(key, e.target.value)}
       />
     </label>

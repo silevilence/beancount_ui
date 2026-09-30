@@ -13,7 +13,7 @@ HEADER = re.compile(rf"^(\d{{4}}-\d{{2}}-\d{{2}}\s+\S\s+){STRING}(?:\s+{STRING})
 
 
 def basic_edit(row: dict, entry: EntryInput, quote) -> str:
-    if not row["simple"]:
+    if entry.splits or not row["simple"]:
         raise LedgerError("复杂历史记录必须使用原文高级编辑，不能转换为基础表单")
     if (
         str(entry.date) == row["date"]

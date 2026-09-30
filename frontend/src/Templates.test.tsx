@@ -13,10 +13,10 @@ it("模板固定、调整、停用及账户有效性过滤，不持久化日期�
   fireEvent.click(screen.getByText("将当前组合固定为模板"));
   const saved = JSON.parse(localStorage.getItem("beancount-ui.templates.v1.test")!);
   expect(saved.at(-1)).not.toHaveProperty("amount"); expect(saved.at(-1)).not.toHaveProperty("date");
-  fireEvent.click(screen.getByRole("button", { name: "常用", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "常用" }));
   expect(onApply.mock.lastCall![0]).toMatchObject({ category: "", payment: "", business: "ordinary" });
   fireEvent.click(screen.getAllByText("停用").at(-1)!);
-  expect(screen.queryByRole("button", { name: "常用", exact: true })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "常用" })).not.toBeInTheDocument();
   unmount();
   render(<Templates journal={journal} fields={fields} business="ordinary" accounts={[]} onApply={onApply} />);
   expect(screen.getByText("启用")).toBeInTheDocument();
