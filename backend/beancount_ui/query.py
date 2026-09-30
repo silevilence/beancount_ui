@@ -94,7 +94,11 @@ def daily_view(ledger: Ledger, day: date | None = None, payee="", narration="", 
     day = day or datetime.now(ZoneInfo("Asia/Shanghai")).date()
     latest = ledger.refresh()
     snapshot = ledger.last_valid or latest
-    rows = [row for row in transactions(snapshot) if row["date"] == str(day)]
+    rows = (
+        []
+        if snapshot.errors
+        else [row for row in transactions(snapshot) if row["date"] == str(day)]
+    )
     totals: dict[str, Decimal] = defaultdict(Decimal)
     income: dict[str, Decimal] = defaultdict(Decimal)
     for row in rows:

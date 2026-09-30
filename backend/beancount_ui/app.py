@@ -2,20 +2,39 @@ from datetime import date
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from filelock import Timeout
 
 from .config import Settings
 from .ledger import Ledger, LedgerError
+from .models import CommitInput, Mutation
 from .query import daily_view
+from .writer import Writer
 
 
 def create_app(settings: Settings | None = None):
     app = FastAPI(title="日用账本", version="0.1.0")
     app.state.ledger = Ledger(settings) if settings else None
+    app.state.writer = None
 
     def get_ledger():
         if app.state.ledger is None:
             app.state.ledger = Ledger(Settings.from_env())
         return app.state.ledger
+
+    def get_writer():
+        if app.state.writer is None:
+            app.state.writer = Writer(get_ledger())
+        return app.state.writer
+
+    @app.exception_handler(OSError)
+    @app.exception_handler(Timeout)
+    def io_error(request: Request, exc: Exception):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "文件暂不可用或正被占用；保存结果未确认，请保留原请求重试，不要重复新增。"
+            },
+        )
 
     @app.exception_handler(ValueError)
     def value_error(request: Request, exc: ValueError):
@@ -27,11 +46,21 @@ def create_app(settings: Settings | None = None):
 
     @app.get("/api/ledger")
     def status():
-        return get_ledger().status()
+        with get_writer().guard():
+            return get_ledger().status()
 
     @app.get("/api/journal")
     def journal(day: date | None = None, payee: str = "", narration: str = "", account: str = ""):
-        return daily_view(get_ledger(), day, payee, narration, account)
+        with get_writer().guard():
+            return daily_view(get_ledger(), day, payee, narration, account)
+
+    @app.post("/api/preview")
+    def preview(mutation: Mutation):
+        return get_writer().preview(mutation)
+
+    @app.post("/api/commit")
+    def commit(request: CommitInput):
+        return get_writer().commit(str(request.request_id))
 
     @app.get("/api/health")
     def health():
