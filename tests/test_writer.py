@@ -64,7 +64,7 @@ def test_preview_commit_retry_and_new_month(ledger):
         ),
         (
             "yuebao",
-            '2026-09-30 * "收益"\n  Assets:Yuebao 1 CNY\n  Income:Interest\n',
+            '2026-10-01 * "收益"\n  Assets:Yuebao 1 CNY\n  Income:Interest\n',
             "txs/category/yuebao.bean",
         ),
         (

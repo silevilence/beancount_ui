@@ -19,6 +19,7 @@ from .layout import insert_new
 from .ledger import Ledger, LedgerError, digest, load_snapshot, read_files
 from .models import BatchMutation, Mutation
 from .orders import order_raw
+from .query import transactions
 
 
 def quote(text: str) -> str:
@@ -200,6 +201,12 @@ class Writer:
                             else item.raw
                         )
                         directive = parse_single(raw, item.business)
+                        if item.business == "yuebao" and any(
+                            r["file"] == "txs/category/yuebao.bean"
+                            and r["date"] == str(directive.date)
+                            for r in transactions(load_snapshot(files))
+                        ):
+                            raise LedgerError("该日期已有余额宝收益，请选择已有记录更正")
                         target = insert_new(files, item.business, directive.date, raw)
                     else:
                         row = locate(snapshot, item.transaction_id)

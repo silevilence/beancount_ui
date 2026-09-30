@@ -6,6 +6,7 @@ from filelock import Timeout
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import Settings
+from .income import income_days
 from .ledger import Ledger, LedgerError
 from .models import BatchMutation, CommitInput, Mutation
 from .orders import orders
@@ -70,6 +71,11 @@ def create_app(settings: Settings | None = None):
     def journal(day: date | None = None, payee: str = "", narration: str = "", account: str = ""):
         with get_writer().guard():
             return daily_view(get_ledger(), day, payee, narration, account)
+
+    @app.get("/api/income/days")
+    def yields(start: date, end: date):
+        with get_writer().guard():
+            return income_days(get_ledger().refresh(), start, end)
 
     @app.get("/api/orders")
     def order_list():

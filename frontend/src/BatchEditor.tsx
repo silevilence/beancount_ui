@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, type Journal } from "./api";
+import { api, ApiError, type Journal, type Transaction } from "./api";
 import type { EntryFields } from "./Editor";
+import IncomeDays from "./IncomeDays";
 import Orders from "./Orders";
 import SplitFields from "./SplitFields";
 import Templates from "./Templates";
@@ -18,7 +19,7 @@ interface Draft {
 export const draftKey = (journal: Journal) => `beancount-ui.batch.v1.${journal.identity || "default"}`;
 const blank = (date: string): EntryFields => ({ date, payee: "", narration: "", amount: "", currency: "CNY", category: "", payment: "", note: "" });
 
-export default function BatchEditor({ journal, onClose, onSaved }: { journal: Journal; onClose: () => void; onSaved: () => Promise<void> }) {
+export default function BatchEditor({ journal, onClose, onSaved, onEdit }: { journal: Journal; onClose: () => void; onSaved: () => Promise<void>; onEdit?: (row: Transaction) => void }) {
   const key = draftKey(journal);
   const original = useRef(localStorage.getItem(key));
   const [draft, setDraft] = useState<Draft>(() => {
@@ -83,7 +84,7 @@ export default function BatchEditor({ journal, onClose, onSaved }: { journal: Jo
     <header className="editor-head"><div><p className="eyebrow">BATCH JOURNAL</p><h2>集中补记</h2></div><button className="ghost" onClick={onClose} disabled={busy}>关闭补记</button></header>
     <p className="muted">日期保持选定值。草稿自动保存在本机浏览器，不计入余额、不参与 Git 备份。Tab 切换字段，Ctrl+Enter 加入草稿。</p>
     {error && <Notice tone="error">{error}</Notice>}{message && <Notice>{message}</Notice>}
-    <fieldset disabled={locked}><Orders date={draft.form.date} accounts={accounts} onAdd={item => update({ ...draft, items: [...draft.items, item] })} /></fieldset>
+    <fieldset disabled={locked}><IncomeDays date={draft.form.date} accounts={accounts} onAdd={items => update({ ...draft, items: [...draft.items, ...items] })} onEdit={onEdit} /><Orders date={draft.form.date} accounts={accounts} onAdd={item => update({ ...draft, items: [...draft.items, item] })} /></fieldset>
     <form onSubmit={e => { e.preventDefault(); add(); }} onKeyDown={e => { if (e.ctrlKey && e.key === "Enter" && !locked) { e.preventDefault(); e.currentTarget.requestSubmit(); } }}>
       <fieldset disabled={locked}>
         <Templates journal={journal} fields={draft.form} business={draft.business || "ordinary"} accounts={accounts} onApply={t => update({ ...draft, business: t.business, form: { ...draft.form, payee: t.payee, narration: t.narration, category: t.category, payment: t.payment, currency: t.currency, amount: "", note: "", splits: [] } })} />

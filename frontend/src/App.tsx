@@ -413,7 +413,7 @@ export default function App() {
       <footer className="page-footer">
         日用账本 / 本地记账，日常有据。<span>Asia/Shanghai</span>
       </footer>
-      {batch && journal && <BatchEditor journal={journal} onClose={() => setBatch(false)} onSaved={refresh} />}
+      {batch && journal && <BatchEditor journal={journal} onClose={() => setBatch(false)} onSaved={refresh} onEdit={row => { setBatch(false); setEditor({ row, operation: "edit" }); }} />}
       {editor && journal && (
         <Editor
           journal={journal}
