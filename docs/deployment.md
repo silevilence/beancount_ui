@@ -1,6 +1,8 @@
 # V0.1.0 容器部署与发布
 
 镜像：`ghcr.io/silevilence/beancount_ui:V0.1.0`，平台 `linux/amd64`。
+首版已通过 [发布验收](https://github.com/silevilence/beancount_ui/actions/runs/36725085567)，
+摘要为 `sha256:4df3df7a8a4a574f6dd53652e5c336914bfc3b203686d7df46f71d6386fe7351`。
 每次 Release 的 `image.txt` 附件记录完整拉取地址、不可变摘要和源码提交；生产可将
 `BEANCOUNT_IMAGE` 设置为该文件中的 `ghcr.io/...@sha256:...` 固定产物。
 GHCR 版本标签由流水线拒绝覆盖；摘要是仓库端的内容寻址保证。首版没有旧版本可供实际降级。

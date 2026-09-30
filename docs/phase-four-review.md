@@ -31,7 +31,22 @@
   `scripts/rehearse_ledger.py` 在临时副本与临时裸远端中接入 90 个文件、12,761 条指令，演练
   2026-10-01 至 10-05 连续五个业务日期、每天两笔，共新增 10 笔；每日重建服务对象、重试原请求、
   核对金额并同步。零加载错误、零重复，源账本及无关文件字节全部不变，隔离远端与工作副本 HEAD 相同。
-- Actions 最终结果在实际验证后补入；未通过前不勾选发布任务。
+- 新增容器验收 API 集成测试在本地通过，复用同一脚本完成接入、保存、同步、服务重启和幂等恢复。
+- [最终镜像预演](https://github.com/silevilence/beancount_ui/actions/runs/36724168742) 成功：
+  Windows/Linux 均通过 118 项后端测试及 108 项前端测试、覆盖率门槛、Ruff、类型检查和构建。
+  容器健康、认证、生产页面、同步、删除重建、草稿恢复、幂等与无关文件字节检查均通过；
+  `container-evidence` 附件包含结果与重建后仍显示草稿的生产页面截图。
+- 前两次镜像预演阻止了验收脚本错误的发布：分别修正了请求地址拼接和接入预览缺失的 revision；
+  将整段 API 流程纳入普通集成测试后通过最终预演。运行时应用未因此修改。
+- [V0.1.0 正式发布 Actions](https://github.com/silevilence/beancount_ui/actions/runs/36725085567)
+  全部成功；Tag 指向 `6008ce42c6c56c0de07540c22bcb99b5e8409952`。正式流程再次通过两平台检查及
+  容器验收，完成 GHCR 推送和拉取确认，再创建非草稿、非预发布的
+  [GitHub Release](https://github.com/silevilence/beancount_ui/releases/tag/V0.1.0)。
+- 已逐段比较 Release 正文与 changelog 的 V0.1.0 章节，内容一致；已核对远端 Tag、镜像附件中的
+  commit 和 Actions 提交一致。镜像为 `ghcr.io/silevilence/beancount_ui:V0.1.0`（linux/amd64），摘要：
+  `sha256:4df3df7a8a4a574f6dd53652e5c336914bfc3b203686d7df46f71d6386fe7351`。
+- 原有 changelog 草稿补充镜像部署功能，共 13 项首版新功能；`pyproject.toml`、
+  `frontend/package.json` 与 FastAPI 版本声明均已为 `0.1.0`，保持不变，未替换依赖版本。
 
 ## 边界
 
