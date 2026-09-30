@@ -1,0 +1,16 @@
+# Allowlist: personal ledgers, credentials, examples and Git history never enter build context.
+**
+!Dockerfile
+!pyproject.toml
+!uv.lock
+!backend/
+!backend/beancount_ui/
+!backend/beancount_ui/*.py
+!frontend/
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/index.html
+!frontend/tsconfig.json
+!frontend/vite.config.ts
+!frontend/src/
+!frontend/src/**

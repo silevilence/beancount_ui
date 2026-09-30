@@ -1,0 +1,103 @@
+name: Release
+on:
+  push:
+    tags: ['V*', 'v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Validate this changelog version (no publishing)'
+        default: V0.1.0
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.notes.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - id: notes
+        env:
+          VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+        run: |
+          uv run --frozen python scripts/release_notes.py "$VERSION" --output release-notes.md
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+  checks:
+    needs: validate
+    uses: ./.github/workflows/check.yml
+  image:
+    needs: [validate, checks]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: docker/setup-buildx-action@v3
+      - name: Build candidate from checked-out commit
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: beancount-ui:candidate
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Install browser for production UI verification
+        run: uv run --frozen --with playwright playwright install --with-deps chromium
+      - name: Verify container, sync, UI drafts and recreation
+        run: uv run --frozen --with playwright python scripts/container_smoke.py beancount-ui:candidate
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: container-evidence
+          path: container-evidence/
+          if-no-files-found: ignore
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish verified image and release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${REPOSITORY,,}:$VERSION"
+          # Never overwrite an existing version, including a differently cased Git tag.
+          for version in "$VERSION" "${VERSION,,}" "V${VERSION:1}"; do
+            if docker manifest inspect "ghcr.io/${REPOSITORY,,}:$version" >/dev/null 2>&1; then
+              echo "::error::Version image already exists: $version; use a new release version."
+              exit 1
+            fi
+          done
+          docker tag beancount-ui:candidate "$image"
+          docker push "$image"
+          docker pull "$image"
+          digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')
+          printf '%s\n%s\ncommit=%s\nplatform=linux/amd64\n' "$image" "$digest" "$GITHUB_SHA" > image.txt
+          printf '### Published image\n\n`%s`\n\n`%s`\n' "$image" "$digest" >> "$GITHUB_STEP_SUMMARY"
+          gh release create "$VERSION" --verify-tag --title "$VERSION" --notes-file release-notes.md image.txt

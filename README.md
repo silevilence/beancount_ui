@@ -2,6 +2,9 @@
 
 Python / FastAPI + React / TypeScript 的本地 Beancount 记账界面。账本文本是唯一正式数据源。
 
+V0.1.0 镜像：`ghcr.io/silevilence/beancount_ui:V0.1.0`。
+[容器部署、升级与恢复](docs/deployment.md) · [版本说明](changelog.md)。
+
 ## Windows 开发（不需要 Docker）
 
 安装 Git、[uv](https://docs.astral.sh/uv/getting-started/installation/) 和 Node.js 24 LTS。
