@@ -19,7 +19,7 @@ from .editing import basic_edit, locate, replace_record
 from .layout import insert_new
 from .ledger import Ledger, LedgerError, digest, load_snapshot, read_files
 from .models import BatchMutation, Mutation
-from .orders import order_raw
+from .orders import guard_order_edit, order_raw, validate_order_totals
 from .query import transactions
 
 
@@ -185,6 +185,8 @@ class Writer:
             for index, item in enumerate(items, 1):
                 try:
                     operation = getattr(item, "operation", "create")
+                    if item.order and operation != "create":
+                        raise LedgerError("订单业务只能创建，请删除误录后重新关联")
                     if (
                         operation != "delete"
                         and sum(v is not None for v in (item.entry, item.raw, item.order)) != 1
@@ -203,6 +205,8 @@ class Writer:
                             else item.raw
                         )
                         directive = parse_single(raw, item.business)
+                        if not item.order and any(k.startswith("order-") for k in directive.meta):
+                            raise LedgerError("order- 元数据由订单入口管理，请使用订单业务录入")
                         if item.business == "yuebao" and any(
                             r["file"] == "txs/category/yuebao.bean"
                             and r["date"] == str(directive.date)
@@ -219,6 +223,23 @@ class Writer:
                         else:
                             raw = basic_edit(row, item.entry, quote) if item.entry else item.raw
                             parse_single(raw, "ordinary")
+                        guard_order_edit(snapshot, row, raw)
+                        if raw:
+                            edited = parse_single(raw, "ordinary")
+                            metadata = {
+                                k: str(v) for k, v in edited.meta.items() if k.startswith("order-")
+                            }
+                            if metadata != row["metadata"]:
+                                raise LedgerError("不能修改订单关联元数据")
+                        if target == "txs/category/yuebao.bean" and raw:
+                            edited = parse_single(raw, "ordinary")
+                            if any(
+                                r["id"] != row["id"]
+                                and r["file"] == target
+                                and r["date"] == str(edited.date)
+                                for r in transactions(snapshot)
+                            ):
+                                raise LedgerError("更正日期已有余额宝收益，不能形成重复日期")
                         replace_record(files, row, raw)
                     if raw and item.business != "balance":
                         parsed = parse_single(raw, "ordinary")
@@ -231,11 +252,20 @@ class Writer:
                                 f"第 {index} 笔含零金额分录，请确认；不会根据备注推算或补值。"
                             )
                     candidate = load_snapshot(files)
-                    if candidate.errors:
+                    # A later item may restore an existing dated balance assertion.
+                    # Structural/transaction errors remain attributable to this item;
+                    # balance assertions are authoritative on the final whole batch.
+                    errors = [
+                        e
+                        for e in candidate.errors
+                        if index == len(items) or e.get("type") != "BalanceError"
+                    ]
+                    if errors:
                         message = "\n".join(
-                            f"{e['file']}:{e['line']} {e['message']}" for e in candidate.errors
+                            f"{e['file']}:{e['line']} {e['message']}" for e in errors
                         )
                         raise LedgerError(f"候选账本校验失败：\n{message}")
+                    validate_order_totals(candidate)
                     targets.append({"item": index, "target": target, "raw": raw})
                 except LedgerError as exc:
                     if isinstance(mutation, BatchMutation):

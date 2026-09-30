@@ -61,3 +61,14 @@ def test_batch_api_and_crash(ledger, monkeypatch):
     assert (
         len([r for r in transactions(ledger.refresh()) if r["narration"].startswith("batch-")]) == 2
     )
+
+
+def test_batch_checks_balance_assertions_on_final_snapshot(ledger):
+    path = ledger.settings.ledger_dir / "txs/category/balance.bean"
+    path.write_bytes(b"2020-01-03 balance Assets:Bank 1000 CNY\n")
+    request = batch(ledger, 2)
+    request.items[0].raw = '2020-01-02 * "transfer"\n  Assets:Cash 1 CNY\n  Assets:Bank -1 CNY\n'
+    request.items[1].raw = '2020-01-02 * "return"\n  Assets:Cash -1 CNY\n  Assets:Bank 1 CNY\n'
+    writer = Writer(ledger)
+    writer.commit(writer.preview(request)["request_id"])
+    assert not ledger.refresh().errors

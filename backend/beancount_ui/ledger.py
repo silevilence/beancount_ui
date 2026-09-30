@@ -138,6 +138,7 @@ def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Sna
                     {
                         "file": Path(filename).relative_to(root).as_posix(),
                         "line": source.get("lineno", 0),
+                        "type": type(error).__name__,
                         "message": error.message.replace(str(root), "."),
                     }
                 )

@@ -1,7 +1,7 @@
 """Explicitly confirmed order links and bounded settlement/refund amounts."""
 
 import json
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from .ledger import LedgerError
 from .query import transactions
@@ -34,7 +34,12 @@ def orders(snapshot):
         refunded = {}
         for event in events:
             kind = event["metadata"].get("order-action")
-            amount = Decimal(str(event["metadata"].get("order-amount", "0")))
+            try:
+                amount = Decimal(str(event["metadata"].get("order-amount", "0")))
+            except InvalidOperation as exc:
+                raise LedgerError("订单关联金额元数据无效，请核对原文") from exc
+            if not amount.is_finite() or amount <= 0:
+                raise LedgerError("订单关联金额元数据必须为有限正数")
             if kind == "settle":
                 settled += amount
             elif kind == "refund_paid":
@@ -51,6 +56,9 @@ def orders(snapshot):
             categories[p["account"]] = categories.get(p["account"], Decimal(0)) + Decimal(
                 p["amount"]
             )
+        mode = row["metadata"].get("order-action", "historical")
+        if mode == "historical" and events:
+            mode = "deferred" if settled or refund_unpaid else "paid"
         result.append(
             {
                 "id": row["id"],
@@ -60,7 +68,7 @@ def orders(snapshot):
                 "narration": row["narration"],
                 "currency": funding[0]["currency"],
                 "account": funding[0]["account"],
-                "mode": row["metadata"].get("order-action", "historical"),
+                "mode": mode,
                 "total": str(total),
                 "settled": str(settled),
                 "refunded": str(refund_paid + refund_unpaid),
@@ -74,6 +82,24 @@ def orders(snapshot):
             }
         )
     return result
+
+
+def guard_order_edit(snapshot, row, raw):
+    if raw == row["raw"]:
+        return
+    key = row["metadata"].get("order-id", row["id"])
+    if any(r["metadata"].get("order-ref") == key for r in transactions(snapshot)):
+        raise LedgerError("订单已有结算或退款，请先撤销相关处理记录再更正订单")
+    if row["metadata"].get("order-ref") and raw:
+        raise LedgerError("关联处理记录请删除后重新选择订单录入，避免金额与关联状态不一致")
+
+
+def validate_order_totals(snapshot):
+    for row in orders(snapshot):
+        if Decimal(row["unpaid"]) < 0 or Decimal(row["refunded"]) > Decimal(row["total"]):
+            raise LedgerError("订单结算退款超过原金额，请先撤销后续处理")
+        if row["mode"] == "deferred" and Decimal(row["paid_available"]) < 0:
+            raise LedgerError("撤销结算将导致已退款金额超过付款，请先撤销退款")
 
 
 def order_raw(action, snapshot, identity, basic_raw):

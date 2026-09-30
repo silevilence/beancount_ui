@@ -331,9 +331,7 @@ export default function Editor({
         </Notice>
       )}
       {restored.current && !uncertain && (
-        <Notice>
-          已恢复原预览请求。可继续核验，或取消此预览后重新录入。
-        </Notice>
+        <Notice>已恢复原预览请求。可继续核验，或取消此预览后重新录入。</Notice>
       )}
       {restored.current && !uncertain && !preview && (
         <button
@@ -351,7 +349,9 @@ export default function Editor({
           <p className="muted">
             将从原文件移除此交易，其他记录保留。请核对原文和下面的差异。
           </p>
-          <pre className="raw-block">{row?.raw || "请核对已保存的删除预览。"}</pre>
+          <pre className="raw-block">
+            {row?.raw || "请核对已保存的删除预览。"}
+          </pre>
         </>
       ) : (
         <form
@@ -495,7 +495,9 @@ export default function Editor({
       )}
       {preview && (
         <section className="preview">
-          {preview.warnings?.map(w => <Notice key={w}>{w}</Notice>)}
+          {preview.warnings?.map((w) => (
+            <Notice key={w}>{w}</Notice>
+          ))}
           <div className="preview-head">
             <h3>保存预览</h3>
             <span className="target">{preview.target}</span>

@@ -230,7 +230,13 @@ export default function App() {
           <button className="ghost" onClick={() => void refresh()}>
             刷新
           </button>
-          <button className="ghost" disabled={!canEditRow} onClick={() => setBatch(true)}>集中补记 / 业务模板</button>
+          <button
+            className="ghost"
+            disabled={!canEditRow}
+            onClick={() => setBatch(true)}
+          >
+            集中补记 / 业务模板
+          </button>
           <button className="cta" disabled={!canCreate} onClick={openCreate}>
             ＋ 记一笔
           </button>
@@ -367,9 +373,7 @@ export default function App() {
                   </div>
                 </dl>
                 {!!ledger.git.changes?.length && (
-                  <pre className="changes">
-                    {ledger.git.changes.join("\n")}
-                  </pre>
+                  <pre className="changes">{ledger.git.changes.join("\n")}</pre>
                 )}
                 <details className="tree">
                   <summary>包含关系</summary>
@@ -413,7 +417,17 @@ export default function App() {
       <footer className="page-footer">
         日用账本 / 本地记账，日常有据。<span>Asia/Shanghai</span>
       </footer>
-      {batch && journal && <BatchEditor journal={journal} onClose={() => setBatch(false)} onSaved={refresh} onEdit={row => { setBatch(false); setEditor({ row, operation: "edit" }); }} />}
+      {batch && journal && (
+        <BatchEditor
+          journal={journal}
+          onClose={() => setBatch(false)}
+          onSaved={refresh}
+          onEdit={(row) => {
+            setBatch(false);
+            setEditor({ row, operation: "edit" });
+          }}
+        />
+      )}
       {editor && journal && (
         <Editor
           journal={journal}
