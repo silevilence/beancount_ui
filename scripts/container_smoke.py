@@ -105,8 +105,8 @@ def main():
                 timeout=30,
                 headers={"Authorization": f"Bearer {TOKEN}"},
             ) as client:
-                assert httpx.get(str(client.base_url) + "api/ledger").status_code == 401
-                assert httpx.post(str(client.base_url) + "api/commit", json={}).status_code == 401
+                assert httpx.get(client.base_url.join("/api/ledger")).status_code == 401
+                assert httpx.post(client.base_url.join("/api/commit"), json={}).status_code == 401
                 assert client.get("/").status_code == 200
                 status = api(client, "/api/ledger")
                 assert not status["errors"]
