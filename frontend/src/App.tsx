@@ -196,7 +196,7 @@ export default function App() {
           <span className={`status-chip ${ready ? "ok" : "warn"}`}>
             <span className="dot" />
             {status}
-            <small>{ledger?.git.sync || "仅本地访问"}</small>
+            <small>{ledger?.git.sync || "等待连接"}</small>
           </span>
           <span className="clock">
             {updated ? `更新于 ${clockOf(updated)}` : "正在读取…"}

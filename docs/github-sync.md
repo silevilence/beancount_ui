@@ -21,3 +21,24 @@ Git 提交身份使用账本仓库已有的 `user.name` / `user.email`，缺失�
 定时备份默认每 300 秒检查、最后观察到变更后等待 60 秒，可在页面调整、关闭或立即手动执行。检查间隔为 5—86400 秒、等待为 0—3600 秒。以账本目录身份建立跨进程执行锁，同一时刻只有一个 worker 执行，检查时间和重试状态保存在独立状态目录。
 
 无有效账本变更且无待推送提交时只检查本地，不进行 fetch/commit/push。连续保存延后备份；正在写入时跳过。账本错误不上传，冲突暂停至人工处理后手动同步成功。网络/服务失败指数退避，最多 1 小时；重启后从实际 Git 历史和持久状态恢复未推送提交。保留状态目录可以保留配置和最后成功时间。
+
+## 访问地址与私网部署
+
+默认 `local` 模式仍用 `uv run uvicorn beancount_ui.app:create_app --factory --host 127.0.0.1 --port 8000`，开发页面为 `http://127.0.0.1:5173`。服务端同时检查连接来源、Host 和 Origin；把监听地址误改为 `0.0.0.0` 不会自动开放账本。
+
+私有网络使用单用户口令，先执行 `npm --prefix frontend run build`，服务端会在同一 8000 端口提供生产页面和 API。配置示例（仅在受控私网或加密 VPN 中使用）：
+
+```powershell
+$env:BEANCOUNT_ACCESS_MODE = 'private'
+$env:BEANCOUNT_ALLOWED_ORIGINS = 'http://ledger.internal:8000'
+$env:BEANCOUNT_ACCESS_TOKEN_FILE = 'C:/private/beancount-access-token'
+uv run uvicorn beancount_ui.app:create_app --factory --host 0.0.0.0 --port 8000
+```
+
+口令文件只包含至少 32 字符的随机口令，限制为运行服务的账户可读；也可通过服务端 `BEANCOUNT_ACCESS_TOKEN` 注入。可用 `uv run python -c "import secrets; print(secrets.token_urlsafe(32))"` 在私人终端生成并保存，禁止提交口令文件。页面输入的是应用访问口令，不是 GitHub 令牌。口令仅保存在当前页内存，刷新需重新登录，退出即移除；所有账本读取、写入和备份控制接口都要求认证。健康检查与不含账务数据的登录配置可匿名访问。
+
+默认前端目录为 `frontend/dist`，可通过 `BEANCOUNT_FRONTEND_DIR` 指定部署的纯前端资源目录，不能指向账本或状态目录。服务器时区不影响记账日期，业务日期和界面时间统一按 `Asia/Shanghai` 展示。
+
+这是个人私网部署边界。公网访问需要另行补充 HTTPS、入口防护、限流及部署验收；HTTP 口令不能通过不可信网络传输。生产访问使用构建后的页面，不公开 Vite 开发服务。草稿只保存在当前浏览器，正式账本和服务端状态应持久化备份。
+
+保存错误、账本校验错误与备份错误分别显示；备份失败时已保存的交易仍能查询，不应重新录入。窄屏可完成单笔录入、预览确认和备份状态查看。

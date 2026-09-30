@@ -1712,3 +1712,13 @@ kbd {
     justify-items: start;
   }
 }
+
+.sync-panel { overflow-wrap: anywhere; }
+.sync-panel pre { max-height: 18rem; overflow: auto; white-space: pre-wrap; font-size: .75rem; }
+.sync-panel fieldset { min-width: 0; margin: 1rem 0; padding: .75rem; border: 1px solid var(--line, #374151); }
+.sync-panel label, .access-screen label { display: grid; gap: .4rem; margin-bottom: .75rem; }
+.sync-panel button { margin: .25rem .25rem .25rem 0; white-space: normal; }
+.sync-panel input[type=number] { width: 100%; min-width: 0; }
+.access-screen { max-width: 30rem; margin: 10vh auto; padding: 1rem; }
+.access-screen input { width: 100%; }
+.access-bar { display: flex; justify-content: flex-end; align-items: center; gap: 1rem; padding: .5rem 1rem; }

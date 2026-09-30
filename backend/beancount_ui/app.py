@@ -1,12 +1,15 @@
 import os
 from contextlib import asynccontextmanager
 from datetime import date
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from filelock import Timeout
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from .access import Access
 from .config import Settings
 from .finance import FinanceInput, compose_finance
 from .income import income_days
@@ -20,7 +23,9 @@ from .templates import recommendations
 from .writer import Writer
 
 
-def create_app(settings: Settings | None = None):
+def create_app(settings: Settings | None = None, access: Access | None = None):
+    access = access or Access.from_env()
+
     @asynccontextmanager
     async def lifespan(app):
         if settings or os.environ.get("BEANCOUNT_LEDGER_DIR"):
@@ -34,19 +39,15 @@ def create_app(settings: Settings | None = None):
 
     app = FastAPI(title="日用账本", version="0.1.0", lifespan=lifespan)
     app.state.scheduler = None
-    app.add_middleware(
-        TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"]
-    )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=access.hosts)
+    app.middleware("http")(access.protect)
 
-    @app.middleware("http")
-    async def local_origin(request: Request, call_next):
-        origin = request.headers.get("origin")
-        allowed = {
-            f"http://{host}:{port}" for host in ("127.0.0.1", "localhost") for port in (5173, 8000)
+    @app.get("/api/access")
+    def access_status(request: Request):
+        return {
+            "required": access.mode == "private",
+            "authenticated": access.mode == "local" or access.authenticated(request),
         }
-        if origin is not None and origin not in allowed:
-            return JSONResponse(status_code=403, content={"detail": "仅允许本机应用访问"})
-        return await call_next(request)
 
     app.state.ledger = Ledger(settings) if settings else None
     app.state.writer = None
@@ -165,5 +166,13 @@ def create_app(settings: Settings | None = None):
     @app.get("/api/health")
     def health():
         return {"status": "ok"}
+
+    frontend = Path(
+        os.environ.get(
+            "BEANCOUNT_FRONTEND_DIR", str(Path(__file__).resolve().parents[2] / "frontend" / "dist")
+        )
+    )
+    if frontend.is_dir():
+        app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")
 
     return app
