@@ -79,3 +79,113 @@ def test_onboarding_offline_and_invalid(sync):
     with pytest.raises(LedgerError, match="认证"):
         connect(sync)
     assert not sync.state()["connected"]
+
+
+def backup(sync):
+    from beancount_ui.sync import BackupInput
+
+    p = sync.backup_preview()
+    return sync.backup(BackupInput(revision=p["revision"], head=p["head"]))
+
+
+def test_backup_exact_snapshot_excludes_staged_secrets_and_no_empty_commit(sync):
+    connect(sync)
+    (sync.root / "index.bean").write_bytes((sync.root / "index.bean").read_bytes() + b"; saved\n")
+    (sync.root / "secret.log").write_text("private", encoding="utf-8")
+    git(sync.root, "add", "secret.log")
+    p = sync.backup_preview()
+    assert p["files"] == ["index.bean"] and p["excluded"] == ["secret.log"]
+    assert backup(sync)["sync"] == "已同步"
+    head = git(sync.root, "rev-parse", "HEAD")
+    assert git(sync.root, "show", "--format=", "--name-only", head) == "index.bean"
+    assert "secret.log" in git(sync.root, "diff", "--cached", "--name-only")
+    assert backup(sync)["last_success"]
+    assert head == git(sync.root, "rev-parse", "HEAD")
+    remote = git(sync.root, "remote", "get-url", "origin")
+    assert git(remote, "rev-parse", "master-1") == head
+
+
+def test_push_failure_retains_commit_and_retry_no_duplicate(sync, monkeypatch):
+    from beancount_ui.sync import GitFailure
+
+    connect(sync)
+    (sync.root / "index.bean").write_bytes((sync.root / "index.bean").read_bytes() + b"; saved\n")
+    original = sync.git
+
+    def fail(*args, **kwargs):
+        if args[0] == "push":
+            raise GitFailure("network unavailable")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sync, "git", fail)
+    with pytest.raises(LedgerError, match="network"):
+        backup(sync)
+    head = original("rev-parse", "HEAD")
+    assert "已提交待推送" in sync.status()["sync"]
+    monkeypatch.setattr(sync, "git", original)
+    assert backup(sync)["sync"] == "已同步"
+    assert head == git(sync.root, "rev-parse", "HEAD")
+
+
+def test_backup_invalid_stale_and_unapproved_history(sync):
+    from beancount_ui.sync import BackupInput
+
+    connect(sync)
+    p = sync.backup_preview()
+    (sync.root / "index.bean").write_bytes((sync.root / "index.bean").read_bytes() + b"; edited\n")
+    with pytest.raises(LedgerError, match="过期"):
+        sync.backup(BackupInput(revision=p["revision"], head=p["head"]))
+    (sync.root / "index.bean").write_bytes((sync.root / "index.bean").read_bytes() + b"INVALID\n")
+    with pytest.raises(LedgerError, match="校验失败"):
+        backup(sync)
+    git(sync.root, "checkout", "--", "index.bean")
+    (sync.root / "secret.log").write_text("private", encoding="utf-8")
+    git(sync.root, "add", "secret.log")
+    git(sync.root, "commit", "-m", "unapproved")
+    with pytest.raises(LedgerError, match="范围外"):
+        backup(sync)
+
+
+def test_backup_external_change_during_commit_keeps_head(sync, monkeypatch):
+    connect(sync)
+    head = git(sync.root, "rev-parse", "HEAD")
+    original = sync.git
+    (sync.root / "index.bean").write_bytes((sync.root / "index.bean").read_bytes() + b"; saved\n")
+
+    def edit(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if args[0] == "write-tree":
+            (sync.root / "index.bean").write_bytes(
+                (sync.root / "index.bean").read_bytes() + b"; race\n"
+            )
+        return result
+
+    monkeypatch.setattr(sync, "git", edit)
+    with pytest.raises(LedgerError, match="文件发生变化"):
+        backup(sync)
+    assert git(sync.root, "rev-parse", "HEAD") == head
+
+
+def test_save_through_api_then_push(sync):
+    from uuid import uuid4
+
+    from beancount_ui.app import create_app
+    from fastapi.testclient import TestClient
+
+    connect(sync)
+    client = TestClient(create_app(sync.settings))
+    revision = client.get("/api/ledger").json()["revision"]
+    p = client.post(
+        "/api/preview",
+        json={
+            "request_id": str(uuid4()),
+            "revision": revision,
+            "raw": '2026-09-30 * "saved"\n  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n',
+        },
+    ).json()
+    assert client.post("/api/commit", json={"request_id": p["request_id"]}).status_code == 200
+    assert "待提交" in client.get("/api/journal?day=2026-09-30").json()["sync"]
+    p = client.post("/api/sync/backup-preview").json()
+    response = client.post("/api/sync/backup", json={"revision": p["revision"], "head": p["head"]})
+    assert response.status_code == 200, response.text
+    assert client.get("/api/journal?day=2026-09-30").json()["sync"] == "已同步"

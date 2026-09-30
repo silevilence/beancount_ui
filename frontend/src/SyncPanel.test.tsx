@@ -23,3 +23,17 @@ it('备份失败提醒本地记录保留', async () => {
   fireEvent.click(screen.getByText('克隆到空目录'));
   expect(await screen.findByRole('alert')).toHaveTextContent('已保存的记录仍在本地');
 });
+
+it('展示提交范围并确认同步，失败不提示重新保存', async () => {
+  const fetcher = vi.fn(async (url: string) => ({ok: true, json: async () => url.endsWith('/backup-preview') ? {
+    revision: 'r', head: 'h', files: ['09.bean'], excluded: ['secret.log'], message: '账本备份', diff: '+saved',
+  } : {connected: true, enabled: false, branch: 'master-1', changes: [], sync: '已同步'}}));
+  vi.stubGlobal('fetch', fetcher);
+  const changed = vi.fn(async () => {});
+  render(<SyncPanel onChanged={changed} />);
+  fireEvent.click(await screen.findByText('立即同步'));
+  expect(await screen.findByText('排除：secret.log')).toBeInTheDocument();
+  fireEvent.click(screen.getByText('确认校验并推送'));
+  await waitFor(() => expect(changed).toHaveBeenCalled());
+  expect(fetcher.mock.calls.some(c => c[0] === '/api/sync/backup')).toBe(true);
+});

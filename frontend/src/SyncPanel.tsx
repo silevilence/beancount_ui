@@ -8,6 +8,7 @@ interface Status {
   branch: string;
   error?: string;
   message?: string;
+  sync?: string;
   last_success?: string;
   ahead?: number | null;
   changes: { file: string; status: string }[];
@@ -21,9 +22,11 @@ interface Preview {
   errors: Diagnostic[];
   diff: string;
 }
+interface BackupPreview { revision: string; head: string; files: string[]; excluded: string[]; message: string; diff: string }
 export default function SyncPanel({ onChanged }: { onChanged: () => Promise<void> }) {
   const [status, setStatus] = useState<Status>();
   const [preview, setPreview] = useState<Preview>();
+  const [backup, setBackup] = useState<BackupPreview>();
   const [include, setInclude] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -35,11 +38,12 @@ export default function SyncPanel({ onChanged }: { onChanged: () => Promise<void
   async function act(path: string, body = {}) {
     setBusy(true); setError("");
     try {
-      const result = await api<Preview>(`/sync/${path}`, {
+      const result = await api<Preview & BackupPreview>(`/sync/${path}`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
       if (path === "preview" || path === "clone") setPreview(result);
-      else { setPreview(undefined); setInclude([]); await onChanged(); }
+      else if (path === "backup-preview") setBackup(result);
+      else { setPreview(undefined); setBackup(undefined); setInclude([]); await onChanged(); }
       await refresh();
     } catch (e) { setError(String(e)); } finally { setBusy(false); }
   }
@@ -50,6 +54,7 @@ export default function SyncPanel({ onChanged }: { onChanged: () => Promise<void
       <p>{status.connected ? "已接入" : "尚未接入"} · {status.branch}</p>
       <p className="muted">{status.remote}</p>
       <p role="status">{status.message || "自动备份关闭"}</p>
+      <p>{status.sync}</p>
       <p>未推送提交：{status.ahead ?? "尚未核验"}（本地远端引用）</p>
       {status.error && <p>{status.error}</p>}
       <p>最后成功：{status.last_success ? new Date(status.last_success).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }) : "尚无"}</p>
@@ -58,7 +63,15 @@ export default function SyncPanel({ onChanged }: { onChanged: () => Promise<void
     <div className="button-row">
       <button disabled={busy} onClick={() => void act("preview", { revision: "", include })}>预览接入范围</button>
       {!status?.connected && <button disabled={busy} onClick={() => void act("clone")}>克隆到空目录</button>}
+      {status?.connected && <button disabled={busy} onClick={() => void act("backup-preview")}>立即同步</button>}
     </div>
+    {backup && <div>
+      <p>{backup.message}</p>
+      <p>纳入：{backup.files.join("、") || "无新变更（检查未推送提交）"}</p>
+      <p>排除：{backup.excluded.join("、") || "无"}</p>
+      <pre>{backup.diff}</pre>
+      <button disabled={busy} onClick={() => void act("backup", { revision: backup.revision, head: backup.head })}>确认校验并推送</button>
+    </div>}
     {preview && <div>
       <p>{preview.remote} · {preview.branch}</p>
       <ul>{preview.changes.map(c => <li key={c.file}>{c.status} {c.file}</li>)}</ul>

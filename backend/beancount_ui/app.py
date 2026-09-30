@@ -12,7 +12,7 @@ from .ledger import Ledger, LedgerError
 from .models import BatchMutation, CommitInput, Mutation
 from .orders import orders
 from .query import daily_view
-from .sync import ConnectInput, Sync
+from .sync import BackupInput, ConnectInput, Sync
 from .templates import recommendations
 from .writer import Writer
 
@@ -65,6 +65,14 @@ def create_app(settings: Settings | None = None):
     def sync_connect(request: ConnectInput):
         return get_sync().connect(request)
 
+    @app.post("/api/sync/backup-preview")
+    def backup_preview():
+        return get_sync().backup_preview()
+
+    @app.post("/api/sync/backup")
+    def backup(request: BackupInput):
+        return get_sync().backup(request)
+
     @app.exception_handler(OSError)
     @app.exception_handler(Timeout)
     def io_error(request: Request, exc: Exception):
@@ -86,12 +94,16 @@ def create_app(settings: Settings | None = None):
     @app.get("/api/ledger")
     def status():
         with get_writer().guard():
-            return get_ledger().status()
+            result = get_ledger().status()
+            result["git"]["sync"] = get_sync().status().get("sync", "已保存 · 尚未接入")
+            return result
 
     @app.get("/api/journal")
     def journal(day: date | None = None, payee: str = "", narration: str = "", account: str = ""):
         with get_writer().guard():
-            return daily_view(get_ledger(), day, payee, narration, account)
+            result = daily_view(get_ledger(), day, payee, narration, account)
+            result["sync"] = get_sync().status().get("sync", "已保存 · 尚未接入")
+            return result
 
     @app.post("/api/finance/compose")
     def finance(request: FinanceInput):
