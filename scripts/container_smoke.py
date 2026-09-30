@@ -68,6 +68,8 @@ def main():
     assert docker("run", "--rm", "--entrypoint", "find", IMAGE, "/data", "-type", "f") == ""
     with tempfile.TemporaryDirectory(prefix="bean-container-") as temporary:
         data = Path(temporary)
+        # The host verifier still needs read access after ownership moves to the container UID.
+        data.chmod(0o755)
         root = data / "ledger"
         shutil.copytree("examples/ledger", root)
         (data / "state").mkdir()
