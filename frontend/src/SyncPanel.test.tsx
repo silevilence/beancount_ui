@@ -37,3 +37,19 @@ it('展示提交范围并确认同步，失败不提示重新保存', async () =
   await waitFor(() => expect(changed).toHaveBeenCalled());
   expect(fetcher.mock.calls.some(c => c[0] === '/api/sync/backup')).toBe(true);
 });
+
+it('调整间隔并启停定时备份', async () => {
+  let enabled = false;
+  const fetcher = vi.fn(async (_url: string, options?: RequestInit) => {
+    if (options?.body) enabled = JSON.parse(String(options.body)).enabled;
+    return {ok: true, json: async () => ({connected: true, enabled, branch: 'master-1', changes: [], interval: 25, quiet: 10})};
+  });
+  vi.stubGlobal('fetch', fetcher);
+  render(<SyncPanel onChanged={async () => {}} />);
+  fireEvent.change(await screen.findByLabelText('检查间隔（秒）'), {target: {value: '25'}});
+  fireEvent.change(screen.getByLabelText('保存后等待（秒）'), {target: {value: '10'}});
+  fireEvent.click(screen.getByText('启用 / 更新定时备份'));
+  expect(await screen.findByText('定时备份 · 已开启')).toBeInTheDocument();
+  fireEvent.click(screen.getByText('关闭定时备份'));
+  expect(await screen.findByText('定时备份 · 已关闭')).toBeInTheDocument();
+});

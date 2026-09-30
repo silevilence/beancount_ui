@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Diagnostic } from "./api";
 
 interface Status {
@@ -11,6 +11,9 @@ interface Status {
   sync?: string;
   last_success?: string;
   ahead?: number | null;
+  interval?: number;
+  quiet?: number;
+  schedule_reason?: string;
   changes: { file: string; status: string }[];
 }
 interface Preview {
@@ -30,8 +33,15 @@ export default function SyncPanel({ onChanged }: { onChanged: () => Promise<void
   const [include, setInclude] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [interval, setIntervalSeconds] = useState(300);
+  const [quiet, setQuiet] = useState(60);
+  const editedSchedule = useRef(false);
   const refresh = useCallback(async () => {
-    try { setStatus(await api<Status>("/sync")); } catch (e) { setError(String(e)); }
+    try { const result = await api<Status>("/sync"); setStatus(result);
+      if (!editedSchedule.current) {
+        setIntervalSeconds(result.interval ?? 300); setQuiet(result.quiet ?? 60);
+      }
+    } catch (e) { setError(String(e)); }
   }, []);
   useEffect(() => { void refresh(); const t = window.setInterval(() => void refresh(), 5000);
     return () => window.clearInterval(t); }, [refresh]);
@@ -44,6 +54,7 @@ export default function SyncPanel({ onChanged }: { onChanged: () => Promise<void
       if (path === "preview" || path === "clone") setPreview(result);
       else if (path === "backup-preview") setBackup(result);
       else { setPreview(undefined); setBackup(undefined); setInclude([]); await onChanged(); }
+      if (path === "schedule") editedSchedule.current = false;
       await refresh();
     } catch (e) { setError(String(e)); } finally { setBusy(false); }
   }
@@ -65,6 +76,14 @@ export default function SyncPanel({ onChanged }: { onChanged: () => Promise<void
       {!status?.connected && <button disabled={busy} onClick={() => void act("clone")}>克隆到空目录</button>}
       {status?.connected && <button disabled={busy} onClick={() => void act("backup-preview")}>立即同步</button>}
     </div>
+    {status?.connected && <fieldset disabled={busy}>
+      <legend>定时备份 · {status.enabled ? "已开启" : "已关闭"}</legend>
+      <label>检查间隔（秒）<input type="number" min="5" max="86400" value={interval} onChange={e => { editedSchedule.current = true; setIntervalSeconds(Number(e.target.value)); }} /></label>
+      <label>保存后等待（秒）<input type="number" min="0" max="3600" value={quiet} onChange={e => { editedSchedule.current = true; setQuiet(Number(e.target.value)); }} /></label>
+      <button onClick={() => void act("schedule", { enabled: true, interval, quiet })}>启用 / 更新定时备份</button>
+      <button disabled={!status.enabled} onClick={() => void act("schedule", { enabled: false, interval, quiet })}>关闭定时备份</button>
+      <p>{status.schedule_reason}</p>
+    </fieldset>}
     {backup && <div>
       <p>{backup.message}</p>
       <p>纳入：{backup.files.join("、") || "无新变更（检查未推送提交）"}</p>

@@ -1,3 +1,5 @@
+import os
+from contextlib import asynccontextmanager
 from datetime import date
 
 from fastapi import FastAPI, Request
@@ -12,13 +14,26 @@ from .ledger import Ledger, LedgerError
 from .models import BatchMutation, CommitInput, Mutation
 from .orders import orders
 from .query import daily_view
+from .scheduler import ScheduleInput, Scheduler, configure
 from .sync import BackupInput, ConnectInput, Sync
 from .templates import recommendations
 from .writer import Writer
 
 
 def create_app(settings: Settings | None = None):
-    app = FastAPI(title="日用账本", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(app):
+        if settings or os.environ.get("BEANCOUNT_LEDGER_DIR"):
+            app.state.scheduler = Scheduler(get_sync())
+            app.state.scheduler.start()
+        try:
+            yield
+        finally:
+            if app.state.scheduler:
+                app.state.scheduler.stop()
+
+    app = FastAPI(title="日用账本", version="0.1.0", lifespan=lifespan)
+    app.state.scheduler = None
     app.add_middleware(
         TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"]
     )
@@ -51,7 +66,14 @@ def create_app(settings: Settings | None = None):
 
     @app.get("/api/sync")
     def sync_status():
-        return get_sync().status()
+        result = get_sync().status()
+        if app.state.scheduler:
+            result["schedule_reason"] = app.state.scheduler.reason
+        return result
+
+    @app.post("/api/sync/schedule")
+    def sync_schedule(request: ScheduleInput):
+        return configure(get_sync(), request)
 
     @app.post("/api/sync/preview")
     def sync_preview(request: ConnectInput):
