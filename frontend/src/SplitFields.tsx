@@ -1,20 +1,17 @@
-import type { EntryFields } from "./Editor";
 import type { Journal } from "./api";
+import type { EntryFields } from "./Editor";
+import { decimalSum, money, signedTone } from "./format";
+import { Chip, Empty } from "./ui";
 
+/** 明细金额的精确十进制合计；任一项无法解析时返回提示文本。 */
 export function decimalTotal(values: string[]): string {
   if (values.some((v) => !/^-?\d+(\.\d{1,8})?$/.test(v)))
     return "待填写有效金额";
-  const total = values.reduce((n, v) => {
-    const [whole, fraction = ""] = v.replace("-", "").split(".");
-    return (
-      n +
-      BigInt(whole + fraction.padEnd(8, "0")) * (v.startsWith("-") ? -1n : 1n)
-    );
-  }, 0n);
-  const digits = (total < 0n ? -total : total).toString().padStart(9, "0");
-  return `${total < 0n ? "-" : ""}${digits.slice(0, -8)}.${digits.slice(-8)}`
-    .replace(/0+$/, "")
-    .replace(/\.$/, "");
+  return decimalSum(values);
+}
+
+function flip(value: string): string {
+  return value.startsWith("-") ? value.slice(1) : `-${value}`;
 }
 
 export default function SplitFields({
@@ -27,6 +24,18 @@ export default function SplitFields({
   onChange: (fields: EntryFields) => void;
 }) {
   const splits = fields.splits || [];
+  const categories = accounts
+    .map((account) => account.name)
+    .filter((name) => name.startsWith("Expenses:"));
+  const total = splits.length ? decimalTotal(splits.map((s) => s.amount)) : "";
+  const paid = /^-?\d+(\.\d{1,8})?$/.test(fields.amount) ? fields.amount : "";
+  /** 差额 = 实付 − 明细合计；按十进制精确比较，避免 68.5 与 68.50 被判不等。 */
+  const difference =
+    /^-?\d/.test(total) && paid ? decimalSum([paid, flip(total)]) : "";
+  const balanced = difference !== "" && signedTone(difference) === "zero";
+  /** 合法十进制才格式化金额，提示文本原样显示。 */
+  const asMoney = (value: string) =>
+    /^-?\d/.test(value) ? money(value, fields.currency) : value;
   function update(
     index: number,
     key: "category" | "amount" | "note",
@@ -39,13 +48,15 @@ export default function SplitFields({
   }
   return (
     <section className="split-fields">
-      <p className="muted">
-        88VIP
-        默认只记实付金额；展开明细时优惠填负项，合计必须等于实付，系统不会额外扣减优惠。
-      </p>
+      <div className="work-head">
+        <h3>商品明细与折扣</h3>
+        <p>
+          88VIP 只填实付金额；展开明细时优惠填负项，合计必须等于实付，系统不会额外扣减。
+        </p>
+      </div>
       <button
         type="button"
-        className="ghost small"
+        className="chip-btn"
         onClick={() =>
           onChange({
             ...fields,
@@ -59,7 +70,7 @@ export default function SplitFields({
         {splits.length ? "增加商品 / 折扣项" : "展开商品与折扣明细"}
       </button>
       {splits.map((s, i) => (
-        <div key={i} className="file-card form-grid">
+        <div className="split-row" key={i}>
           <label className="field">
             <span>分类 {i + 1}</span>
             <select
@@ -69,17 +80,16 @@ export default function SplitFields({
               onChange={(e) => update(i, "category", e.target.value)}
             >
               <option value="">请选择</option>
-              {accounts
-                .filter((a) => a.name.startsWith("Expenses:"))
-                .map((a) => (
-                  <option key={a.name}>{a.name}</option>
-                ))}
+              {categories.map((name) => (
+                <option key={name}>{name}</option>
+              ))}
             </select>
           </label>
           <label className="field">
             <span>明细金额 {i + 1}</span>
             <input
               aria-label={`明细金额 ${i + 1}`}
+              inputMode="decimal"
               required
               value={s.amount}
               onChange={(e) => update(i, "amount", e.target.value)}
@@ -107,11 +117,24 @@ export default function SplitFields({
           </button>
         </div>
       ))}
-      {!!splits.length && (
-        <p>
-          明细合计：{decimalTotal(splits.map((s) => s.amount))}{" "}
-          {fields.currency} · 实付：{fields.amount || "待填写"}
-        </p>
+      {splits.length === 0 ? (
+        <Empty>尚未展开明细：整笔金额按上面选择的分类记账。</Empty>
+      ) : (
+        <div className="split-sum">
+          <span className="label">明细合计</span>
+          <span>{asMoney(total)}</span>
+          <span className="label">实付</span>
+          <span>{paid ? asMoney(paid) : "待填写"}</span>
+          {balanced && <Chip tone="ok">合计与实付一致</Chip>}
+          {difference && !balanced && (
+            <Chip
+              tone="warn"
+              title="实付金额减去明细合计；负数表示明细超出实付"
+            >
+              差额 {money(difference, fields.currency)}
+            </Chip>
+          )}
+        </div>
       )}
     </section>
   );

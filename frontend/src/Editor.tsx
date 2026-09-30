@@ -1,12 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Journal, type Transaction } from "./api";
-import {
-  diffRows,
-  diffStat,
-  expenseGroups,
-  fundingGroups,
-  money,
-} from "./format";
+import Diff from "./Diff";
+import { expenseGroups, fundingGroups, money } from "./format";
 import { Notice } from "./ui";
 
 export const PENDING_KEY = "beancount-ui.pending-save.v1";
@@ -66,26 +61,6 @@ const BUSINESSES = [
 ];
 
 const RAW_ONLY = ["salary", "yuebao", "balance"];
-
-function Diff({ diff }: { diff: string }) {
-  const stat = diffStat(diff);
-  return (
-    <>
-      <div className="diff-stat">
-        <span className="add">+{stat.added}</span>
-        <span className="del">-{stat.removed}</span>
-      </div>
-      <pre className="diff">
-        {diffRows(diff).map((row, index) => (
-          <span className={`diff-line ${row.kind}`} key={index}>
-            {row.text}
-            {"\n"}
-          </span>
-        ))}
-      </pre>
-    </>
-  );
-}
 
 export default function Editor({
   journal,

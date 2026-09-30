@@ -1,12 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Journal, type Transaction } from "./api";
+import Diff from "./Diff";
 import type { EntryFields } from "./Editor";
 import Finance from "./Finance";
 import IncomeDays from "./IncomeDays";
 import Orders from "./Orders";
 import SplitFields from "./SplitFields";
-import Templates from "./Templates";
-import { Notice } from "./ui";
+import Templates, { type Template } from "./Templates";
+import {
+  businessLabel,
+  money,
+  orderKindLabel,
+  shortDay,
+  sumByCurrency,
+  type AmountLine,
+} from "./format";
+import { Chip, Empty, Notice, Segmented, Toolbar } from "./ui";
 
 export interface DraftItem {
   business: string;
@@ -23,6 +32,7 @@ export interface DraftItem {
     note?: string;
   };
 }
+
 interface Preview {
   warnings?: string[];
   request_id: string;
@@ -30,7 +40,9 @@ interface Preview {
   diffs: Record<string, string>;
   items: { item: number; target: string; raw: string }[];
 }
+
 interface Draft {
+  task?: TaskId;
   business?: string;
   orderMode?: string;
   advanced?: boolean;
@@ -45,8 +57,36 @@ interface Draft {
     uncertain?: boolean;
   };
 }
+
+type TaskId =
+  | "daily"
+  | "transfer"
+  | "income"
+  | "orders"
+  | "advanced"
+  | "templates";
+
+/** 作业分区：一笔补记只能属于一个作业，草稿托盘按作业计数。 */
+const TASKS: { id: TaskId; label: string; hint: string }[] = [
+  { id: "daily", label: "日常消费", hint: "支出、工资话费与购物明细" },
+  { id: "transfer", label: "转账 / 还款 / 余额", hint: "资产负债移动与余额断言" },
+  { id: "income", label: "余额宝收益", hint: "逐日补录实际收益" },
+  { id: "orders", label: "淘宝订单", hint: "确认收货、部分结算与退款" },
+  { id: "advanced", label: "高级分录", hint: "多分录、外币与元数据原文" },
+  { id: "templates", label: "模板与推荐", hint: "快捷入口、固定与停用" },
+];
+
+/** 表单可以直接录入的业务类型；标签与模板名刻意区分，避免同一屏出现同名按钮。 */
+const BUSINESS_CHOICES = [
+  { value: "ordinary", label: "日常消费" },
+  { value: "salary", label: "工资·奖金" },
+  { value: "phone", label: "话费充值" },
+  { value: "yuebao", label: "余额宝收益" },
+];
+
 export const draftKey = (journal: Journal) =>
   `beancount-ui.batch.v1.${journal.identity || "default"}`;
+
 const blank = (date: string): EntryFields => ({
   date,
   payee: "",
@@ -57,6 +97,45 @@ const blank = (date: string): EntryFields => ({
   payment: "",
   note: "",
 });
+
+const ORDERS: Record<string, string> = {
+  paid: "淘宝直接付款",
+  deferred: "淘宝先挂待付款负债",
+};
+
+/** 草稿条目归属的作业分区，用于托盘与轨道计数。 */
+function taskOf(item: DraftItem): TaskId {
+  if (item.order) return "orders";
+  if (item.business === "yuebao") return "income";
+  if (item.business === "balance") return "transfer";
+  return item.raw ? "advanced" : "daily";
+}
+
+function titleOf(item: DraftItem): string {
+  if (item.entry) return item.entry.payee || item.entry.narration || "一笔记录";
+  if (item.order)
+    return item.order.purchase
+      ? item.order.purchase.payee || item.order.purchase.narration || "一笔购物"
+      : `订单${orderKindLabel(item.order.kind)}`;
+  return (item.raw || "").split("\n")[0].slice(0, 32) || "高级分录";
+}
+
+function amountOf(item: DraftItem): string {
+  if (item.entry) return item.entry.amount;
+  if (item.order) return item.order.purchase?.amount || item.order.amount;
+  return "";
+}
+
+function currencyOf(item: DraftItem): string {
+  return item.entry?.currency || item.order?.purchase?.currency || "";
+}
+
+function labelOf(item: DraftItem): string {
+  if (item.order) return orderKindLabel(item.order.kind);
+  return item.raw
+    ? `${businessLabel(item.business)} · 原文`
+    : businessLabel(item.business);
+}
 
 export default function BatchEditor({
   journal,
@@ -93,11 +172,13 @@ export default function BatchEditor({
   });
   const original = useRef(initial.text);
   const [draft, setDraft] = useState<Draft>(initial.value);
+  const [task, setTask] = useState<TaskId>(initial.value.task || "daily");
   const [error, setError] = useState(initial.error);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const preview = useRef<HTMLElement>(null);
   const [accounts, setAccounts] = useState(journal.accounts);
   useEffect(() => {
     dialog.current?.showModal();
@@ -116,6 +197,9 @@ export default function BatchEditor({
       active = false;
     };
   }, [draft.form.date]);
+  useEffect(() => {
+    if (draft.pending?.preview) preview.current?.scrollIntoView?.();
+  }, [draft.pending?.preview]);
   function persist(next: Draft) {
     if (localStorage.getItem(key) !== original.current)
       throw new Error("另一页面已修改草稿，请关闭并重新打开，避免覆盖。");
@@ -146,34 +230,35 @@ export default function BatchEditor({
       },
     });
   }
-  function add() {
+  function add(extra: Partial<Draft> = {}) {
+    const next = { ...draft, ...extra };
     update({
-      ...draft,
+      ...next,
       items: [
-        ...draft.items,
+        ...next.items,
         {
-          business: draft.business || "ordinary",
-          ...(draft.advanced
-            ? { raw: draft.advancedRaw || "" }
-            : draft.orderMode &&
-                (!draft.business || draft.business === "ordinary")
+          business: next.business || "ordinary",
+          ...(next.advanced
+            ? { raw: next.advancedRaw || "" }
+            : next.orderMode &&
+                (!next.business || next.business === "ordinary")
               ? {
                   order: {
-                    kind: draft.orderMode,
-                    purchase: draft.form,
-                    date: draft.form.date,
-                    amount: draft.form.amount,
-                    account: draft.form.payment,
+                    kind: next.orderMode,
+                    purchase: next.form,
+                    date: next.form.date,
+                    amount: next.form.amount,
+                    account: next.form.payment,
                   },
                 }
-              : { entry: draft.form }),
+              : { entry: next.form }),
         },
       ],
       advancedRaw: "",
-      form: { ...draft.form, amount: "", note: "", splits: [] },
+      form: { ...next.form, amount: "", note: "", splits: [] },
     });
   }
-  async function preview() {
+  async function submitPreview() {
     if (running.current) return;
     running.current = true;
     setBusy(true);
@@ -232,19 +317,57 @@ export default function BatchEditor({
       setBusy(false);
     }
   }
+  function applyTemplate(template: Template) {
+    update({
+      ...draft,
+      task: "daily",
+      business: template.business,
+      form: {
+        ...draft.form,
+        payee: template.payee,
+        narration: template.narration,
+        category: template.category,
+        payment: template.payment,
+        currency: template.currency,
+        amount: "",
+        note: "",
+        splits: [],
+      },
+    });
+  }
+  function recall(index: number) {
+    const item = draft.items[index];
+    update({
+      ...draft,
+      task: taskOf(item),
+      business: item.business,
+      advanced: !!item.raw,
+      advancedRaw: item.raw,
+      orderMode: item.order?.kind || "",
+      form: item.entry || item.order?.purchase || draft.form,
+      items: draft.items.filter((_, position) => position !== index),
+    });
+  }
   const locked = busy || !!draft.pending || !!initial.error;
-  const field = (name: keyof EntryFields, label: string, type = "text") => (
-    <label className="field">
-      <span>{label}</span>
-      <input
-        aria-label={label}
-        type={type}
-        value={String(draft.form[name] ?? "")}
-        onChange={(e) => change(name, e.target.value)}
-        required={["date", "amount", "currency"].includes(name)}
-      />
-    </label>
+  const last = draft.items.at(-1);
+  const business = draft.business || "ordinary";
+  const salaryLike = ["salary", "yuebao"].includes(business);
+  const counts = draft.items.reduce<Partial<Record<TaskId, number>>>(
+    (sum, item) => {
+      const id = taskOf(item);
+      sum[id] = (sum[id] ?? 0) + 1;
+      return sum;
+    },
+    {},
   );
+  const totals: AmountLine[] = sumByCurrency(
+    draft.items.flatMap((item) =>
+      item.entry
+        ? [{ amount: item.entry.amount, currency: item.entry.currency }]
+        : [],
+    ),
+  );
+  const vague = draft.items.filter((item) => !item.entry).length;
   const account = (
     name: "category" | "payment",
     label: string,
@@ -267,11 +390,117 @@ export default function BatchEditor({
       </select>
     </label>
   );
+  const field = (name: keyof EntryFields, label: string, type = "text") => (
+    <label className="field">
+      <span>{label}</span>
+      <input
+        aria-label={label}
+        type={type}
+        inputMode={name === "amount" ? "decimal" : undefined}
+        value={String(draft.form[name] ?? "")}
+        onChange={(e) => change(name, e.target.value)}
+        required={["date", "amount", "currency"].includes(name)}
+      />
+    </label>
+  );
+  const entryForm = (
+    <>
+      <div className="work-head">
+        <h3>填写一笔</h3>
+        <p>Tab 切换字段，Ctrl+Enter 加入草稿；日期保持选定值。</p>
+      </div>
+      <Segmented
+        label="业务类型"
+        value={business}
+        options={BUSINESS_CHOICES}
+        onChange={(value) => update({ ...draft, business: value })}
+        disabled={locked}
+      />
+      {business === "ordinary" && (
+        <label className="field">
+          <span>购物付款方式</span>
+          <select
+            aria-label="购物付款方式"
+            value={draft.orderMode || ""}
+            onChange={(e) => update({ ...draft, orderMode: e.target.value })}
+          >
+            <option value="">普通消费</option>
+            {Object.entries(ORDERS).map(([value, text]) => (
+              <option key={value} value={value}>
+                {text}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <div className="form-grid">
+        {field("date", "补记日期", "date")}
+        {field("amount", salaryLike ? "到账金额" : "实付金额")}
+        {field("payee", "商户")}
+        {field("narration", "摘要")}
+        {field("currency", "币种")}
+        {account("category", salaryLike ? "收入账户" : "支出分类", [
+          salaryLike ? "Income:" : "Expenses:",
+        ])}
+        {account("payment", salaryLike ? "到账账户" : "付款账户", [
+          "Assets:",
+          ...(salaryLike ? [] : ["Liabilities:"]),
+        ])}
+        {field("note", business === "salary" ? "工资 / 奖金备注" : "备注")}
+      </div>
+      {!salaryLike && (
+        <SplitFields
+          fields={draft.form}
+          accounts={accounts}
+          onChange={(form) => update({ ...draft, form })}
+        />
+      )}
+    </>
+  );
+  const advancedForm = (
+    <>
+      <div className="work-head">
+        <h3>高级分录原文</h3>
+        <p>一条完整交易，原文日期决定路由；余额业务只接受一条 balance。</p>
+      </div>
+      <label className="field">
+        <span>高级业务路由</span>
+        <select
+          aria-label="高级业务路由"
+          value={business}
+          onChange={(e) => update({ ...draft, business: e.target.value })}
+        >
+          {["ordinary", "salary", "phone", "yuebao", "balance"].map((value) => (
+            <option key={value} value={value}>
+              {businessLabel(value)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        <span>高级 Beancount 原文</span>
+        <textarea
+          className="raw-input"
+          aria-label="高级 Beancount 原文"
+          required
+          spellCheck={false}
+          value={draft.advancedRaw || ""}
+          onChange={(e) =>
+            update({ ...draft, advancedRaw: e.target.value })
+          }
+        />
+      </label>
+      <p className="muted small">
+        支持多分录、外币、负折扣、标签 #tag、链接 ^link、交易与 posting 元数据、成本{" "}
+        {"{}"}、价格 @ / @@、省略金额和预算权益分录；未经整批完整校验不可入账。
+      </p>
+    </>
+  );
   return (
     <dialog
       ref={dialog}
       className="editor-dialog batch-dialog"
-      aria-label="集中补记"
+      aria-label="补记工作台"
       onCancel={(e) => {
         e.preventDefault();
         if (!busy) onClose();
@@ -279,328 +508,307 @@ export default function BatchEditor({
     >
       <header className="editor-head">
         <div>
-          <p className="eyebrow">BATCH JOURNAL</p>
-          <h2>集中补记</h2>
+          <p className="eyebrow">BATCH JOURNAL / 集中补记</p>
+          <h2>补记工作台</h2>
         </div>
-        <button className="ghost" onClick={onClose} disabled={busy}>
-          关闭补记
-        </button>
+        <div className="editor-side">
+          <div className="item-meta">
+            <Chip tone="transfer">{draft.form.date}</Chip>
+            <Chip tone={draft.items.length ? "warn" : "muted"}>
+              待入账 {draft.items.length} 笔
+            </Chip>
+            {draft.pending && <Chip tone="warn">已预览待确认</Chip>}
+          </div>
+          <button className="ghost small" onClick={onClose} disabled={busy}>
+            关闭补记
+          </button>
+        </div>
       </header>
-      <p className="muted">
-        日期保持选定值。草稿自动保存在本机浏览器，不计入余额、不参与 Git
-        备份。Tab 切换字段，Ctrl+Enter 加入草稿。
+      <p className="muted small">
+        草稿自动保存在本机浏览器，按账本隔离，不计入余额也不参与 Git
+        备份；全部条目通过校验后才整批写入。
       </p>
       {error && <Notice tone="error">{error}</Notice>}
       {message && <Notice>{message}</Notice>}
-      <fieldset disabled={locked}>
-        <Finance
-          date={draft.form.date}
-          accounts={accounts}
-          onAdd={(item) => update({ ...draft, items: [...draft.items, item] })}
-        />
-        <IncomeDays
-          date={draft.form.date}
-          accounts={accounts}
-          onAdd={(items) =>
-            update({ ...draft, items: [...draft.items, ...items] })
-          }
-          onEdit={onEdit}
-        />
-        <Orders
-          date={draft.form.date}
-          accounts={accounts}
-          onAdd={(item) => update({ ...draft, items: [...draft.items, item] })}
-        />
-      </fieldset>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          add();
-        }}
-        onKeyDown={(e) => {
-          if (e.ctrlKey && e.key === "Enter" && !locked) {
-            e.preventDefault();
-            e.currentTarget.requestSubmit();
-          }
-        }}
-      >
-        <fieldset disabled={locked}>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={!!draft.advanced}
-              onChange={(e) => update({ ...draft, advanced: e.target.checked })}
-            />
-            高级分录录入
-          </label>
-          {draft.advanced ? (
-            <>
-              <label className="field">
-                <span>高级业务路由</span>
-                <select
-                  value={draft.business || "ordinary"}
-                  onChange={(e) =>
-                    update({ ...draft, business: e.target.value })
-                  }
-                >
-                  {[
-                    ["ordinary", "日常 / 转账"],
-                    ["salary", "工资"],
-                    ["phone", "话费"],
-                    ["yuebao", "余额宝"],
-                    ["balance", "余额断言"],
-                  ].map(([value, text]) => (
-                    <option key={value} value={value}>
-                      {text}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>高级 Beancount 原文</span>
-                <textarea
-                  className="raw-input"
-                  aria-label="高级 Beancount 原文"
-                  required
-                  value={draft.advancedRaw || ""}
-                  onChange={(e) =>
-                    update({ ...draft, advancedRaw: e.target.value })
-                  }
+      <div className="batch-grid">
+        <nav className="task-rail" aria-label="作业类型">
+          {TASKS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="task"
+              aria-current={item.id === task}
+              onClick={() => setTask(item.id)}
+            >
+              {item.label}
+              {counts[item.id] ? (
+                <span className="task-count" title={`${counts[item.id]} 笔草稿`}>
+                  {counts[item.id]}
+                </span>
+              ) : null}
+              <small>{item.hint}</small>
+            </button>
+          ))}
+        </nav>
+        <section
+          className="work-area"
+          aria-label={TASKS.find((item) => item.id === task)?.label ?? "补记"}
+        >
+          {task === "daily" && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                add({ advanced: false });
+              }}
+              onKeyDown={(e) => {
+                if (e.ctrlKey && e.key === "Enter" && !locked) {
+                  e.preventDefault();
+                  e.currentTarget.requestSubmit();
+                }
+              }}
+            >
+              <fieldset disabled={locked}>
+                <Templates
+                  journal={journal}
+                  fields={draft.form}
+                  business={business}
+                  accounts={accounts}
+                  mode="quick"
+                  onApply={applyTemplate}
                 />
-              </label>
-              <p className="muted">
-                一条完整交易，支持多分录、外币、负折扣、标签 #tag、链接
-                ^link、交易与 posting 元数据、成本 {"{}"}、价格 @ /
-                @@、省略金额和预算权益分录。原文日期决定路由；余额断言仅允许
-                balance。整批完整校验通过后才可入账。
-              </p>
-            </>
-          ) : (
-            <>
+                {entryForm}
+                <Toolbar>
+                  <button type="submit">加入草稿</button>
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={!last?.entry}
+                    onClick={() =>
+                      update({
+                        ...draft,
+                        business: last!.business,
+                        orderMode: "",
+                        advanced: false,
+                        form: { ...last!.entry!, date: draft.form.date },
+                      })
+                    }
+                  >
+                    复制上一条
+                  </button>
+                </Toolbar>
+              </fieldset>
+            </form>
+          )}
+          {task === "transfer" && (
+            <fieldset disabled={locked}>
+              <Finance
+                date={draft.form.date}
+                accounts={accounts}
+                onAdd={(item) =>
+                  update({ ...draft, items: [...draft.items, item] })
+                }
+              />
+            </fieldset>
+          )}
+          {task === "income" && (
+            <fieldset disabled={locked}>
+              <IncomeDays
+                date={draft.form.date}
+                accounts={accounts}
+                onAdd={(items) =>
+                  update({ ...draft, items: [...draft.items, ...items] })
+                }
+                onEdit={onEdit}
+              />
+            </fieldset>
+          )}
+          {task === "orders" && (
+            <fieldset disabled={locked}>
+              <Orders
+                date={draft.form.date}
+                accounts={accounts}
+                onAdd={(item) =>
+                  update({ ...draft, items: [...draft.items, item] })
+                }
+              />
+            </fieldset>
+          )}
+          {task === "advanced" && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                add({ advanced: true });
+              }}
+              onKeyDown={(e) => {
+                if (e.ctrlKey && e.key === "Enter" && !locked) {
+                  e.preventDefault();
+                  e.currentTarget.requestSubmit();
+                }
+              }}
+            >
+              <fieldset disabled={locked}>{advancedForm}</fieldset>
+              <Toolbar>
+                <button type="submit">加入草稿</button>
+              </Toolbar>
+            </form>
+          )}
+          {task === "templates" && (
+            <fieldset disabled={locked}>
               <Templates
                 journal={journal}
                 fields={draft.form}
-                business={draft.business || "ordinary"}
+                business={business}
                 accounts={accounts}
-                onApply={(t) =>
-                  update({
-                    ...draft,
-                    business: t.business,
-                    form: {
-                      ...draft.form,
-                      payee: t.payee,
-                      narration: t.narration,
-                      category: t.category,
-                      payment: t.payment,
-                      currency: t.currency,
-                      amount: "",
-                      note: "",
-                      splits: [],
-                    },
-                  })
-                }
+                mode="full"
+                onApply={applyTemplate}
               />
-              {(!draft.business || draft.business === "ordinary") && (
-                <label className="field">
-                  <span>购物付款方式</span>
-                  <select
-                    aria-label="购物付款方式"
-                    value={draft.orderMode || ""}
-                    onChange={(e) =>
-                      update({ ...draft, orderMode: e.target.value })
-                    }
-                  >
-                    <option value="">普通消费</option>
-                    <option value="paid">淘宝直接付款</option>
-                    <option value="deferred">淘宝先挂待付款负债</option>
-                  </select>
-                </label>
-              )}
-              <p>
-                当前业务：
-                {
-                  {
-                    ordinary: "日常消费",
-                    salary: "工资 / 奖金",
-                    phone: "话费",
-                    yuebao: "余额宝收益",
-                  }[draft.business || "ordinary"]
-                }
-              </p>
-              <div className="form-grid">
-                {field("date", "补记日期", "date")}
-                {field(
-                  "amount",
-                  ["salary", "yuebao"].includes(draft.business || "")
-                    ? "到账金额"
-                    : "实付金额",
-                )}
-                {field("payee", "商户")}
-                {field("narration", "摘要")}
-                {field("currency", "币种")}
-                {account(
-                  "category",
-                  ["salary", "yuebao"].includes(draft.business || "")
-                    ? "收入账户"
-                    : "支出分类",
-                  [
-                    ["salary", "yuebao"].includes(draft.business || "")
-                      ? "Income:"
-                      : "Expenses:",
-                  ],
-                )}
-                {account(
-                  "payment",
-                  ["salary", "yuebao"].includes(draft.business || "")
-                    ? "到账账户"
-                    : "付款账户",
-                  [
-                    "Assets:",
-                    ...(["salary", "yuebao"].includes(draft.business || "")
-                      ? []
-                      : ["Liabilities:"]),
-                  ],
-                )}
-                {field(
-                  "note",
-                  draft.business === "salary" ? "工资 / 奖金备注" : "备注",
-                )}
-              </div>
-              {!["salary", "yuebao"].includes(draft.business || "") && (
-                <SplitFields
-                  fields={draft.form}
-                  accounts={accounts}
-                  onChange={(form) => update({ ...draft, form })}
-                />
-              )}
-            </>
+            </fieldset>
           )}
-          <div className="editor-actions">
-            <button type="submit">加入草稿</button>
+        </section>
+        <aside className="tray" aria-label="待入账草稿">
+          <div className="tray-head">
+            <h3>待入账草稿</h3>
+            <strong>{draft.items.length} 笔</strong>
+          </div>
+          {totals.length > 0 && (
+            <div className="tray-total">
+              {totals.map((line) => (
+                <span key={line.currency}>
+                  {money(line.amount, line.currency)}
+                </span>
+              ))}
+            </div>
+          )}
+          {vague > 0 && (
+            <p className="muted small">
+              另有 {vague} 笔订单 / 原文草稿，金额以预览为准。
+            </p>
+          )}
+          {draft.items.length === 0 ? (
+            <Empty>还没有草稿：填好后点「加入草稿」，或按 Ctrl+Enter。</Empty>
+          ) : (
+            <div className="tray-items">
+              {draft.items.map((item, index) => (
+                <article className="item-card" key={index}>
+                  <div className="item-head">
+                    <strong>
+                      {index + 1}. {titleOf(item)}
+                    </strong>
+                    {amountOf(item) && (
+                      <span className="item-figure">
+                        {money(amountOf(item), currencyOf(item))}
+                      </span>
+                    )}
+                  </div>
+                  <div className="item-meta">
+                    <Chip tone="transfer">{labelOf(item)}</Chip>
+                    <Chip>{(item.entry || item.order?.purchase)?.date}</Chip>
+                  </div>
+                  {item.raw && (
+                    <details>
+                      <summary>查看原文</summary>
+                      <pre className="result-raw">{item.raw}</pre>
+                    </details>
+                  )}
+                  <div className="item-actions">
+                    <button
+                      type="button"
+                      className="ghost small"
+                      disabled={locked || (!!item.order && !item.order.purchase)}
+                      onClick={() => recall(index)}
+                    >
+                      取回修改
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost small"
+                      disabled={locked}
+                      onClick={() =>
+                        update({
+                          ...draft,
+                          items: draft.items.filter((_, i) => i !== index),
+                        })
+                      }
+                    >
+                      移除
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+          <div className="tray-actions">
             <button
               type="button"
-              className="ghost"
-              disabled={!draft.items.at(-1)?.entry}
-              onClick={() =>
-                update({
-                  ...draft,
-                  business: draft.items.at(-1)!.business,
-                  orderMode: "",
-                  advanced: false,
-                  form: {
-                    ...draft.items.at(-1)!.entry!,
-                    date: draft.form.date,
-                  },
-                })
-              }
+              disabled={busy || !draft.items.length || !!draft.pending?.uncertain}
+              onClick={() => void submitPreview()}
             >
-              复制上一条
+              整批预览并校验
             </button>
-          </div>
-        </fieldset>
-      </form>
-      <section className="preview">
-        <h3>待入账草稿 · {draft.items.length} 笔</h3>
-        {draft.items.map((item, index) => (
-          <article className="file-card" key={index}>
-            <strong>
-              第 {index + 1} 笔 · {(item.entry || item.order?.purchase)?.date}{" "}
-              {(item.entry || item.order?.purchase)?.payee}{" "}
-              {(item.entry || item.order?.purchase)?.amount}{" "}
-              {(item.entry || item.order?.purchase)?.currency}
-            </strong>
-            {item.order && (
-              <p>
-                订单业务：
-                {{
-                  paid: "直接付款下单",
-                  deferred: "待付款下单",
-                  settle: "收货结算",
-                  refund_paid: "已付款退款",
-                  refund_unpaid: "未结算冲回",
-                }[item.order.kind] || "订单处理"}{" "}
-                · {item.order.date} · {item.order.amount}
-              </p>
+            {draft.pending && !draft.pending.uncertain && (
+              <button
+                type="button"
+                className="ghost"
+                disabled={busy}
+                onClick={() => update({ ...draft, pending: undefined })}
+              >
+                取消预览并修改
+              </button>
             )}
-            {item.raw && <pre>{item.raw}</pre>}
-            <p>
-              {item.entry?.narration} {item.entry?.note}
-            </p>
-            <button
-              className="ghost small"
-              disabled={locked || (!!item.order && !item.order.purchase)}
-              onClick={() =>
-                update({
-                  ...draft,
-                  business: item.business,
-                  advanced: !!item.raw,
-                  advancedRaw: item.raw,
-                  orderMode: item.order?.kind || "",
-                  form: item.entry || item.order?.purchase || draft.form,
-                  items: draft.items.filter((_, i) => i !== index),
-                })
-              }
-            >
-              取回修改
-            </button>
-            <button
-              className="ghost small"
-              disabled={locked}
-              onClick={() =>
-                update({
-                  ...draft,
-                  items: draft.items.filter((_, i) => i !== index),
-                })
-              }
-            >
-              移除
-            </button>
-          </article>
-        ))}
-      </section>
+            {draft.pending?.preview && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void save()}
+              >
+                {draft.pending.uncertain ? "重试原批次保存" : "确认整批入账"}
+              </button>
+            )}
+          </div>
+          <p className="muted small">
+            草稿与已入账、备份状态分开：确认后写入本地账本，本阶段不自动上传。
+          </p>
+        </aside>
+      </div>
       {draft.pending?.preview && (
-        <section className="preview">
-          <h3>整批预览 · 已校验</h3>
-          {draft.pending.preview.warnings?.map((w) => (
-            <Notice key={w}>{w}</Notice>
+        <section className="preview" ref={preview}>
+          <div className="preview-head">
+            <h3>整批预览 · 已校验</h3>
+            <span className="target">
+              {draft.pending.preview.items.length} 笔 ·{" "}
+              {Object.keys(draft.pending.preview.diffs).length} 个文件
+            </span>
+          </div>
+          {draft.pending.preview.warnings?.map((warning) => (
+            <Notice key={warning}>{warning}</Notice>
           ))}
-          {draft.pending.preview.items.map((item) => (
-            <div key={item.item} className="file-card">
-              <strong>
-                第 {item.item} 笔 → {item.target}
-              </strong>
-              <pre>{item.raw}</pre>
+          <p className="muted small">
+            任一错误都会阻止整批写入；确认后共用同一个保存请求，重复点击不会重复入账。
+          </p>
+          <div className="preview-items">
+            {draft.pending.preview.items.map((item) => (
+              <article className="preview-item" key={item.item}>
+                <div className="item-head">
+                  <strong>第 {item.item} 笔</strong>
+                  <span className="file">{item.target}</span>
+                </div>
+                <pre className="result-raw">{item.raw}</pre>
+              </article>
+            ))}
+          </div>
+          {Object.entries(draft.pending.preview.diffs).map(([file, diff]) => (
+            <div className="file-card" key={file}>
+              <h4>{file}</h4>
+              <Diff diff={diff} />
             </div>
           ))}
-          {Object.entries(draft.pending.preview.diffs).map(([file, diff]) => (
-            <details key={file}>
-              <summary>{file} 差异</summary>
-              <pre className="diff">{diff}</pre>
-            </details>
-          ))}
+          {Object.keys(draft.pending.preview.diffs).length === 0 && (
+            <p className="muted">原文没有变化。</p>
+          )}
         </section>
       )}
-      <footer className="preview-actions">
-        <button
-          disabled={busy || !draft.items.length || !!draft.pending?.uncertain}
-          onClick={() => void preview()}
-        >
-          整批预览并校验
-        </button>
-        {draft.pending && !draft.pending.uncertain && (
-          <button
-            className="ghost"
-            disabled={busy}
-            onClick={() => update({ ...draft, pending: undefined })}
-          >
-            取消预览并修改
-          </button>
-        )}
-        {draft.pending?.preview && (
-          <button disabled={busy} onClick={() => void save()}>
-            {draft.pending.uncertain ? "重试原批次保存" : "确认整批入账"}
-          </button>
-        )}
+      <footer className="muted small">
+        最近一次核对日期 {shortDay(draft.form.date)}；清除浏览器数据会同时清除草稿。
       </footer>
     </dialog>
   );

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  businessLabel,
   byCurrency,
   clockOf,
   dayFull,
@@ -14,7 +15,12 @@ import {
   magnitudes,
   money,
   netTotals,
+  orderKindLabel,
   shiftDay,
+  shortDay,
+  signedTone,
+  sumByCurrency,
+  weekdayShort,
 } from "./format";
 
 describe("money", () => {
@@ -153,5 +159,38 @@ describe("account groups", () => {
       { label: "资产", items: ["Assets:Cash"] },
       { label: "负债", items: ["Liabilities:Card"] },
     ]);
+  });
+});
+
+describe("workbench labels", () => {
+  it("shortens dates and names weekdays", () => {
+    expect(shortDay("2026-09-30")).toBe("09-30");
+    expect(weekdayShort("2026-09-30")).toBe("周三");
+    expect(weekdayShort("2026-10-04")).toBe("周日");
+  });
+
+  it("sums amounts per currency without floats", () => {
+    expect(
+      sumByCurrency([
+        { amount: "0.1", currency: "CNY" },
+        { amount: "0.2", currency: "CNY" },
+        { amount: "3", currency: "USD" },
+      ]),
+    ).toEqual([
+      { currency: "CNY", amount: "0.3" },
+      { currency: "USD", amount: "3" },
+    ]);
+    expect(sumByCurrency([])).toEqual([]);
+  });
+
+  it("labels businesses, order kinds and amount signs", () => {
+    expect(businessLabel("salary")).toBe("工资 / 奖金");
+    expect(businessLabel("unknown")).toBe("日常消费");
+    expect(orderKindLabel("refund_unpaid")).toBe("未结算负债冲回");
+    expect(orderKindLabel("unknown")).toBe("订单处理");
+    expect(signedTone("-0.00")).toBe("zero");
+    expect(signedTone("0")).toBe("zero");
+    expect(signedTone("-1.20")).toBe("neg");
+    expect(signedTone("10")).toBe("pos");
   });
 });

@@ -211,3 +211,74 @@ export function expenseGroups(names: string[]): AccountGroup[] {
 export function fundingGroups(names: string[]): AccountGroup[] {
   return groupBy(names, ["Assets", "Liabilities"], (segments) => segments[0]);
 }
+
+/** 短日期，用于网格与列表：09-30。 */
+export function shortDay(day: string): string {
+  return day.slice(5);
+}
+
+/** 星期几，用于逐日列表与网格。 */
+export function weekdayShort(day: string): string {
+  return WEEKDAYS[new Date(`${day}T00:00:00Z`).getUTCDay()];
+}
+
+/** 一组带币种的金额按币种精确求和。 */
+export function sumByCurrency(
+  items: { amount: string; currency: string }[],
+): AmountLine[] {
+  const groups: Record<string, string[]> = {};
+  for (const item of items) (groups[item.currency] ??= []).push(item.amount);
+  return Object.entries(groups)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([currency, amounts]) => ({
+      currency,
+      amount: decimalSum(amounts),
+    }));
+}
+
+/** 业务类型标签，与后端 business 取值一一对应。 */
+export const BUSINESS_LABEL: Record<string, string> = {
+  ordinary: "日常消费",
+  yuebao: "余额宝收益",
+  salary: "工资 / 奖金",
+  phone: "话费",
+  balance: "余额断言",
+};
+
+export function businessLabel(business: string): string {
+  return BUSINESS_LABEL[business] ?? BUSINESS_LABEL.ordinary;
+}
+
+/** 淘宝订单处理方式的标签与语义提示。 */
+export const ORDER_KIND: Record<string, { label: string; hint: string }> = {
+  paid: {
+    label: "直接付款下单",
+    hint: "生成消费，由付款账户承担本金",
+  },
+  deferred: {
+    label: "挂待付款负债",
+    hint: "生成消费，由待付款负债账户承担本金",
+  },
+  settle: {
+    label: "确认收货 / 部分结算",
+    hint: "只把负债结转到实际付款账户，不再生成消费",
+  },
+  refund_paid: {
+    label: "已付款退款",
+    hint: "冲回原费用，退款进入实际收款账户",
+  },
+  refund_unpaid: {
+    label: "未结算负债冲回",
+    hint: "冲回原费用，减少原待付款负债",
+  },
+};
+
+export function orderKindLabel(kind: string): string {
+  return ORDER_KIND[kind]?.label ?? "订单处理";
+}
+
+/** 金额正负对应的展示色，用于净额与差额。 */
+export function signedTone(amount: string): "pos" | "neg" | "zero" {
+  if (/^-?0*(\.0*)?$/.test(amount)) return "zero";
+  return amount.startsWith("-") ? "neg" : "pos";
+}

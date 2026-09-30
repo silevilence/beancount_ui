@@ -5,10 +5,10 @@ import {
   type LedgerStatus,
   type Transaction,
 } from "./api";
-import BatchEditor from "./BatchEditor";
+import BatchEditor, { draftKey } from "./BatchEditor";
 import Editor, { readPending } from "./Editor";
 import JournalPanel, { type Filters } from "./Journal";
-import { Notice } from "./ui";
+import { Chip, Notice } from "./ui";
 import {
   byCurrency,
   clockOf,
@@ -80,6 +80,17 @@ function IncludeTree({
   );
 }
 
+/** 读取本账本当前草稿笔数，仅用于入口提示；损坏草稿按 0 处理。 */
+function countDraft(journal: JournalView): number {
+  try {
+    const text = localStorage.getItem(draftKey(journal));
+    const value = text ? JSON.parse(text) : undefined;
+    return Array.isArray(value?.items) ? value.items.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export default function App() {
   const [batch, setBatch] = useState(false);
   const [ledger, setLedger] = useState<LedgerStatus>();
@@ -98,6 +109,7 @@ export default function App() {
     operation: "create" | "edit" | "delete";
   }>();
   const [hasPending, setHasPending] = useState(() => !!readPending());
+  const [drafts, setDrafts] = useState(0);
   const [updated, setUpdated] = useState<Date>();
   const sequence = useRef(0);
   const search = useRef<HTMLInputElement>(null);
@@ -127,6 +139,9 @@ export default function App() {
     };
   }, [refresh]);
   useEffect(() => {
+    if (journal) setDrafts(countDraft(journal));
+  }, [journal, batch]);
+  useEffect(() => {
     const timer = window.setTimeout(() => setFilters(draftFilters), 250);
     return () => window.clearTimeout(timer);
   }, [draftFilters]);
@@ -146,6 +161,9 @@ export default function App() {
       if (event.key === "n") {
         event.preventDefault();
         openCreate();
+      } else if (event.key === "b") {
+        event.preventDefault();
+        if (canEditRow) setBatch(true);
       } else if (event.key === "/") {
         event.preventDefault();
         search.current?.focus();
@@ -156,7 +174,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openCreate, refresh]);
+  }, [canEditRow, openCreate, refresh]);
   const relative = dayRelative(day);
   const status = error
     ? "连接异常"
@@ -233,9 +251,11 @@ export default function App() {
           <button
             className="ghost"
             disabled={!canEditRow}
+            title="集中补记、业务面板与模板"
             onClick={() => setBatch(true)}
           >
-            集中补记 / 业务模板
+            补记工作台
+            {drafts > 0 && <Chip tone="warn">{drafts} 笔草稿</Chip>}
           </button>
           <button className="cta" disabled={!canCreate} onClick={openCreate}>
             ＋ 记一笔
@@ -400,6 +420,9 @@ export default function App() {
             <ul className="shortcuts">
               <li>
                 <kbd>n</kbd> 记一笔
+              </li>
+              <li>
+                <kbd>b</kbd> 补记工作台
               </li>
               <li>
                 <kbd>/</kbd> 聚焦搜索
