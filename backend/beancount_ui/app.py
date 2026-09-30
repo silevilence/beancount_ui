@@ -9,6 +9,7 @@ from .config import Settings
 from .ledger import Ledger, LedgerError
 from .models import BatchMutation, CommitInput, Mutation
 from .query import daily_view
+from .templates import recommendations
 from .writer import Writer
 
 
@@ -68,6 +69,11 @@ def create_app(settings: Settings | None = None):
     def journal(day: date | None = None, payee: str = "", narration: str = "", account: str = ""):
         with get_writer().guard():
             return daily_view(get_ledger(), day, payee, narration, account)
+
+    @app.get("/api/templates")
+    def templates(day: date):
+        with get_writer().guard():
+            return recommendations(get_ledger().refresh(), day)
 
     @app.post("/api/preview")
     def preview(mutation: Mutation):

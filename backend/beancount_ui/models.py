@@ -13,7 +13,7 @@ class EntryInput(BaseModel):
     narration: str = Field(default="", max_length=500)
     amount: Decimal = Field(gt=0, max_digits=24, decimal_places=8)
     currency: str = Field(default="CNY", pattern=r"^[A-Z][A-Z0-9._-]{0,23}$")
-    category: str = Field(pattern=r"^Expenses:[^\s\";]+$")
+    category: str = Field(pattern=r"^(Expenses|Income):[^\s\";]+$")
     payment: str = Field(pattern=r"^(Assets|Liabilities):[^\s\";]+$")
     note: str = Field(default="", max_length=2000)
 

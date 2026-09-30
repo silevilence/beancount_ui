@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Journal } from "./api";
 import type { EntryFields } from "./Editor";
+import Templates from "./Templates";
 import { Notice } from "./ui";
 
 export interface DraftItem { business: string; entry?: EntryFields; raw?: string }
 interface Preview { request_id: string; revision: string; diffs: Record<string, string>; items: { item: number; target: string; raw: string }[] }
 interface Draft {
+  business?: string;
   form: EntryFields;
   items: DraftItem[];
   pending?: { request_id: string; revision: string; items: DraftItem[]; preview?: Preview; uncertain?: boolean };
@@ -42,7 +44,7 @@ export default function BatchEditor({ journal, onClose, onSaved }: { journal: Jo
   function update(next: Draft) { try { persist(next); setError(""); setMessage(""); } catch (e) { setError(`草稿未保存：${String(e)}`); } }
   function change(name: keyof EntryFields, value: string) { update({ ...draft, form: { ...draft.form, [name]: value } }); }
   function add() {
-    update({ ...draft, items: [...draft.items, { business: "ordinary", entry: draft.form }], form: { ...draft.form, amount: "", note: "" } });
+    update({ ...draft, items: [...draft.items, { business: draft.business || "ordinary", entry: draft.form }], form: { ...draft.form, amount: "", note: "" } });
   }
   async function preview() {
     if (running.current) return;
@@ -63,7 +65,7 @@ export default function BatchEditor({ journal, onClose, onSaved }: { journal: Jo
     try {
       persist({ ...draft, pending });
       await api("/commit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request_id: pending.request_id }) });
-      persist({ form: draft.form, items: [] });
+      persist({ business: draft.business, form: draft.form, items: [] });
       setMessage("整批已入账，等待备份；草稿已清空。可继续补记。");
       await onSaved();
     } catch (e) {
@@ -79,12 +81,14 @@ export default function BatchEditor({ journal, onClose, onSaved }: { journal: Jo
     <p className="muted">日期保持选定值。草稿自动保存在本机浏览器，不计入余额、不参与 Git 备份。Tab 切换字段，Ctrl+Enter 加入草稿。</p>
     {error && <Notice tone="error">{error}</Notice>}{message && <Notice>{message}</Notice>}
     <form onSubmit={e => { e.preventDefault(); add(); }} onKeyDown={e => { if (e.ctrlKey && e.key === "Enter" && !locked) { e.preventDefault(); e.currentTarget.requestSubmit(); } }}>
-      <fieldset disabled={locked}><div className="form-grid">
+      <fieldset disabled={locked}>
+        <Templates journal={journal} fields={draft.form} business={draft.business || "ordinary"} accounts={accounts} onApply={t => update({ ...draft, business: t.business, form: { ...draft.form, payee: t.payee, narration: t.narration, category: t.category, payment: t.payment, currency: t.currency, amount: "", note: "" } })} />
+        <p>当前业务：{{ ordinary: "日常消费", salary: "工资 / 奖金", phone: "话费", yuebao: "余额宝收益" }[draft.business || "ordinary"]}</p><div className="form-grid">
         {field("date", "补记日期", "date")}{field("amount", "实付金额")}{field("payee", "商户")}{field("narration", "摘要")}{field("currency", "币种")}
-        {account("category", "支出分类", ["Expenses:"])}{account("payment", "付款账户", ["Assets:", "Liabilities:"])}{field("note", "备注")}
+        {account("category", ["salary", "yuebao"].includes(draft.business || "") ? "收入账户" : "支出分类", [["salary", "yuebao"].includes(draft.business || "") ? "Income:" : "Expenses:"])}{account("payment", ["salary", "yuebao"].includes(draft.business || "") ? "到账账户" : "付款账户", ["Assets:", ...(["salary", "yuebao"].includes(draft.business || "") ? [] : ["Liabilities:"])])}{field("note", "备注")}
       </div><div className="editor-actions"><button type="submit">加入草稿</button><button type="button" className="ghost" disabled={!draft.items.at(-1)?.entry} onClick={() => update({ ...draft, form: { ...draft.items.at(-1)!.entry!, date: draft.form.date } })}>复制上一条</button></div></fieldset>
     </form>
-    <section className="preview"><h3>待入账草稿 · {draft.items.length} 笔</h3>{draft.items.map((item, index) => <article className="file-card" key={index}><strong>第 {index + 1} 笔 · {item.entry?.date} {item.entry?.payee} {item.entry?.amount} {item.entry?.currency}</strong>{item.raw && <pre>{item.raw}</pre>}<p>{item.entry?.narration} {item.entry?.note}</p><button className="ghost small" disabled={locked} onClick={() => update({ ...draft, form: item.entry || draft.form, items: draft.items.filter((_, i) => i !== index) })}>取回修改</button><button className="ghost small" disabled={locked} onClick={() => update({ ...draft, items: draft.items.filter((_, i) => i !== index) })}>移除</button></article>)}</section>
+    <section className="preview"><h3>待入账草稿 · {draft.items.length} 笔</h3>{draft.items.map((item, index) => <article className="file-card" key={index}><strong>第 {index + 1} 笔 · {item.entry?.date} {item.entry?.payee} {item.entry?.amount} {item.entry?.currency}</strong>{item.raw && <pre>{item.raw}</pre>}<p>{item.entry?.narration} {item.entry?.note}</p><button className="ghost small" disabled={locked} onClick={() => update({ ...draft, business: item.business, form: item.entry || draft.form, items: draft.items.filter((_, i) => i !== index) })}>取回修改</button><button className="ghost small" disabled={locked} onClick={() => update({ ...draft, items: draft.items.filter((_, i) => i !== index) })}>移除</button></article>)}</section>
     {draft.pending?.preview && <section className="preview"><h3>整批预览 · 已校验</h3>{draft.pending.preview.items.map(item => <div key={item.item} className="file-card"><strong>第 {item.item} 笔 → {item.target}</strong><pre>{item.raw}</pre></div>)}{Object.entries(draft.pending.preview.diffs).map(([file, diff]) => <details key={file}><summary>{file} 差异</summary><pre className="diff">{diff}</pre></details>)}</section>}
     <footer className="preview-actions"><button disabled={busy || !draft.items.length || !!draft.pending?.uncertain} onClick={() => void preview()}>整批预览并校验</button>{draft.pending && !draft.pending.uncertain && <button className="ghost" disabled={busy} onClick={() => update({ ...draft, pending: undefined })}>取消预览并修改</button>}{draft.pending?.preview && <button disabled={busy} onClick={() => void save()}>{draft.pending.uncertain ? "重试原批次保存" : "确认整批入账"}</button>}</footer>
   </dialog>;

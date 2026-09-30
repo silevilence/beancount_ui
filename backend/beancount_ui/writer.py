@@ -25,10 +25,16 @@ def quote(text: str) -> str:
     return json.dumps(text, ensure_ascii=False)
 
 
-def basic_raw(entry) -> str:
+def basic_raw(entry, business="ordinary") -> str:
     result = f"{entry.date} * {quote(entry.payee)} {quote(entry.narration)}\n"
     if entry.note:
         result += f"  memo: {quote(entry.note)}\n"
+    if business in ("salary", "yuebao"):
+        if not entry.category.startswith("Income:") or not entry.payment.startswith("Assets:"):
+            raise LedgerError("收入模板需要收入账户和资产到账账户")
+        return result + f"  {entry.payment} {entry.amount:f} {entry.currency}\n  {entry.category}\n"
+    if not entry.category.startswith("Expenses:"):
+        raise LedgerError("消费模板需要费用分类")
     result += f"  {entry.category} {entry.amount:f} {entry.currency}\n"
     result += f"  {entry.payment} {-entry.amount:f} {entry.currency}\n"
     return result
@@ -168,7 +174,7 @@ class Writer:
                     if operation != "delete" and (item.entry is None) == (item.raw is None):
                         raise LedgerError("必须选择基础表单或原文中的一种输入")
                     if operation == "create":
-                        raw = basic_raw(item.entry) if item.entry else item.raw
+                        raw = basic_raw(item.entry, item.business) if item.entry else item.raw
                         directive = parse_single(raw, item.business)
                         target = insert_new(files, item.business, directive.date, raw)
                     else:
