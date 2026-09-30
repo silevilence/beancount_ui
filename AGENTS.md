@@ -1,5 +1,9 @@
 # Agent instructions
 
+## Python tooling
+
+所有 Python 操作统一通过 `uv` 进行，包括解释器管理、虚拟环境创建、依赖管理、脚本运行、测试及其他 Python 工具执行。
+
 ## Agent skills
 
 ### Issue tracker
