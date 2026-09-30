@@ -42,6 +42,7 @@ def transactions(snapshot: Snapshot) -> list[dict]:
         ]
         simple = (
             len(entry.postings) == 2
+            and entry.postings[0].units.number > 0
             and all(p.cost is None and p.price is None for p in entry.postings)
             and entry.postings[0].units.currency == entry.postings[1].units.currency
             and entry.postings[0].units.number == -entry.postings[1].units.number

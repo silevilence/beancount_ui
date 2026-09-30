@@ -14,6 +14,7 @@ from beancount.core import data
 from beancount.parser import parser
 from filelock import FileLock
 
+from .editing import basic_edit, locate, replace_record
 from .layout import insert_new
 from .ledger import Ledger, LedgerError, digest, load_snapshot, read_files
 from .models import Mutation
@@ -158,14 +159,25 @@ class Writer:
                 raise LedgerError("账本存在错误，禁止写入")
             if mutation.revision != snapshot.revision:
                 raise LedgerError("账本已变化，请重新加载并预览")
-            if mutation.operation != "create":
-                raise LedgerError("修改与删除尚未接入")
-            if (mutation.entry is None) == (mutation.raw is None):
+            if mutation.operation != "delete" and (mutation.entry is None) == (
+                mutation.raw is None
+            ):
                 raise LedgerError("必须选择基础表单或原文中的一种输入")
-            raw = basic_raw(mutation.entry) if mutation.entry else mutation.raw
-            directive = parse_single(raw, mutation.business)
             files = dict(snapshot.files)
-            target = insert_new(files, mutation.business, directive.date, raw)
+            if mutation.operation == "create":
+                raw = basic_raw(mutation.entry) if mutation.entry else mutation.raw
+                directive = parse_single(raw, mutation.business)
+                target = insert_new(files, mutation.business, directive.date, raw)
+            else:
+                row = locate(snapshot, mutation.transaction_id)
+                parse_single(row["raw"], "ordinary")
+                target = row["file"]
+                if mutation.operation == "delete":
+                    raw = ""
+                else:
+                    raw = basic_edit(row, mutation.entry, quote) if mutation.entry else mutation.raw
+                    parse_single(raw, "ordinary")
+                replace_record(files, row, raw)
             candidate = load_snapshot(files)
             if candidate.errors:
                 message = "\n".join(
