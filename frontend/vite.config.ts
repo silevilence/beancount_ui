@@ -9,5 +9,9 @@ export default defineConfig({
     setupFiles: ["./src/test-setup.ts"],
     maxWorkers: 2,
     pool: "threads",
+    coverage: {
+      thresholds: { statements: 90, branches: 90, lines: 90 },
+      exclude: ["src/main.tsx", "src/test-setup.ts"],
+    },
   },
 });

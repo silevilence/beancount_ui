@@ -81,6 +81,7 @@ class Snapshot:
     errors: list[dict]
     included: list[str]
     edges: dict[str, list[str]]
+    records: list[dict] | None = None
 
 
 def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Snapshot:
@@ -137,7 +138,7 @@ def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Sna
                     {
                         "file": Path(filename).relative_to(root).as_posix(),
                         "line": source.get("lineno", 0),
-                        "message": error.message,
+                        "message": error.message.replace(str(root), "."),
                     }
                 )
             for directive in entries:

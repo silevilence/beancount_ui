@@ -11,9 +11,8 @@ from beancount.core import data
 from .ledger import Ledger, Snapshot, git_info
 
 
-def source_span(snapshot: Snapshot, entry) -> tuple[str, int, int, str]:
+def source_span(snapshot: Snapshot, entry, lines: list[str]) -> tuple[str, int, int, str]:
     name = entry.meta["filename"]
-    lines = snapshot.files[name].decode("utf-8-sig").splitlines(keepends=True)
     start = entry.meta["lineno"] - 1
     end = start + 1
     # Stop at a top-level directive/comment; trailing separators are not part of the record.
@@ -26,12 +25,18 @@ def source_span(snapshot: Snapshot, entry) -> tuple[str, int, int, str]:
 
 
 def transactions(snapshot: Snapshot) -> list[dict]:
+    if snapshot.records is not None:
+        return snapshot.records
     result = []
+    lines_by_file = {}
     occurrences: dict[str, int] = defaultdict(int)
     for entry in snapshot.entries:
         if not isinstance(entry, data.Transaction):
             continue
-        name, start, end, raw = source_span(snapshot, entry)
+        name = entry.meta["filename"]
+        if name not in lines_by_file:
+            lines_by_file[name] = snapshot.files[name].decode("utf-8-sig").splitlines(keepends=True)
+        name, start, end, raw = source_span(snapshot, entry, lines_by_file[name])
         fingerprint = hashlib.sha256((name + "\0" + raw).encode()).hexdigest()
         ordinal = occurrences[fingerprint]
         occurrences[fingerprint] += 1
@@ -76,6 +81,7 @@ def transactions(snapshot: Snapshot) -> list[dict]:
                 "note": str(entry.meta.get("memo", "")),
             }
         )
+    snapshot.records = result
     return result
 
 

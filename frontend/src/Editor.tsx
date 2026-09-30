@@ -181,6 +181,7 @@ export default function Editor({
       pending.current = undefined;
       setPreview(undefined);
       setUncertain(false);
+      restored.current = false;
       await onSaved();
       if (op === "create" && keepOpen) {
         setFields({
@@ -265,6 +266,22 @@ export default function Editor({
         <p className="notice">
           正在核对原保存请求，内容已锁定。即使上次已经保存，重试也不会重复入账。
         </p>
+      )}
+      {restored.current && !uncertain && (
+        <p className="notice">
+          已恢复原预览请求。可继续核验，或取消此预览后重新录入。
+        </p>
+      )}
+      {restored.current && !uncertain && !preview && (
+        <button
+          className="quiet"
+          onClick={() => {
+            invalidate();
+            onClose();
+          }}
+        >
+          取消未保存请求
+        </button>
       )}
       {op === "delete" ? (
         <>

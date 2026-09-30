@@ -244,13 +244,11 @@ it("lets a known stale preview be cancelled without treating it as a successful 
   await screen.findByText("确认保存");
   vi.stubGlobal(
     "fetch",
-    vi
-      .fn()
-      .mockResolvedValue({
-        ok: false,
-        status: 409,
-        json: async () => ({ detail: "预览后账本已被修改" }),
-      }),
+    vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ detail: "预览后账本已被修改" }),
+    }),
   );
   fireEvent.click(screen.getByText("确认保存"));
   expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -259,4 +257,36 @@ it("lets a known stale preview be cancelled without treating it as a successful 
   fireEvent.click(screen.getByText("取消预览，继续修改"));
   expect(localStorage.getItem(PENDING_KEY)).toBeNull();
   expect(onSaved).not.toHaveBeenCalled();
+});
+
+it("can abandon a restored request whose preview never completed", async () => {
+  localStorage.setItem(
+    PENDING_KEY,
+    JSON.stringify({
+      request: {
+        request_id: "old",
+        revision: journal.revision,
+        operation: "create",
+        business: "ordinary",
+        raw: "invalid",
+      },
+    }),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({ ok: true, json: async () => journal }),
+  );
+  const close = vi.fn();
+  render(
+    <Editor
+      journal={journal}
+      operation="create"
+      onClose={close}
+      onSaved={vi.fn()}
+    />,
+  );
+  expect(screen.getByLabelText("Beancount 原文")).toBeDisabled();
+  fireEvent.click(screen.getByText("取消未保存请求"));
+  expect(localStorage.getItem(PENDING_KEY)).toBeNull();
+  expect(close).toHaveBeenCalledOnce();
 });

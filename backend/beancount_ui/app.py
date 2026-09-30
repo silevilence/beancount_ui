@@ -3,6 +3,7 @@ from datetime import date
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from filelock import Timeout
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import Settings
 from .ledger import Ledger, LedgerError
@@ -13,6 +14,20 @@ from .writer import Writer
 
 def create_app(settings: Settings | None = None):
     app = FastAPI(title="日用账本", version="0.1.0")
+    app.add_middleware(
+        TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"]
+    )
+
+    @app.middleware("http")
+    async def local_origin(request: Request, call_next):
+        origin = request.headers.get("origin")
+        allowed = {
+            f"http://{host}:{port}" for host in ("127.0.0.1", "localhost") for port in (5173, 8000)
+        }
+        if origin is not None and origin not in allowed:
+            return JSONResponse(status_code=403, content={"detail": "仅允许本机应用访问"})
+        return await call_next(request)
+
     app.state.ledger = Ledger(settings) if settings else None
     app.state.writer = None
 
