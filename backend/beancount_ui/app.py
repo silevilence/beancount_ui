@@ -7,7 +7,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import Settings
 from .ledger import Ledger, LedgerError
-from .models import CommitInput, Mutation
+from .models import BatchMutation, CommitInput, Mutation
 from .query import daily_view
 from .writer import Writer
 
@@ -71,6 +71,10 @@ def create_app(settings: Settings | None = None):
 
     @app.post("/api/preview")
     def preview(mutation: Mutation):
+        return get_writer().preview(mutation)
+
+    @app.post("/api/batch/preview")
+    def batch_preview(mutation: BatchMutation):
         return get_writer().preview(mutation)
 
     @app.post("/api/commit")

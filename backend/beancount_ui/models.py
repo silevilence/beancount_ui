@@ -38,3 +38,17 @@ class Mutation(BaseModel):
 
 class CommitInput(BaseModel):
     request_id: UUID
+
+
+class BatchItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    business: Literal["ordinary", "yuebao", "salary", "phone", "balance"] = "ordinary"
+    entry: EntryInput | None = None
+    raw: str | None = Field(default=None, max_length=100000)
+
+
+class BatchMutation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: UUID
+    revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    items: list[BatchItem] = Field(min_length=1, max_length=100)

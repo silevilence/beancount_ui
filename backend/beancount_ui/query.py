@@ -122,6 +122,7 @@ def daily_view(ledger: Ledger, day: date | None = None, payee="", narration="", 
         and any(account.casefold() in p["account"].casefold() for p in row["postings"])
     ]
     return {
+        "identity": hashlib.sha256(str(ledger.settings.ledger_dir.resolve()).encode()).hexdigest(),
         "date": str(day),
         "revision": latest.revision,
         "view_revision": snapshot.revision,

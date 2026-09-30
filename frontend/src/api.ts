@@ -19,6 +19,7 @@ export interface Transaction {
   note: string;
 }
 export interface Journal {
+  identity?: string;
   date: string;
   revision: string;
   view_revision: string;

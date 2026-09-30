@@ -17,7 +17,7 @@ from filelock import FileLock
 from .editing import basic_edit, locate, replace_record
 from .layout import insert_new
 from .ledger import Ledger, LedgerError, digest, load_snapshot, read_files
-from .models import Mutation
+from .models import BatchMutation, Mutation
 
 
 def quote(text: str) -> str:
@@ -144,7 +144,7 @@ class Writer:
             raise LedgerError(f"文件已被外部修改：{name}，请重新加载")
         atomic_write(path, after)
 
-    def preview(self, mutation: Mutation) -> dict:
+    def preview(self, mutation: Mutation | BatchMutation) -> dict:
         fingerprint = hashlib.sha256(mutation.model_dump_json().encode()).hexdigest()
         request_id = str(mutation.request_id)
         with self.guard():
@@ -159,31 +159,39 @@ class Writer:
                 raise LedgerError("账本存在错误，禁止写入")
             if mutation.revision != snapshot.revision:
                 raise LedgerError("账本已变化，请重新加载并预览")
-            if mutation.operation != "delete" and (mutation.entry is None) == (
-                mutation.raw is None
-            ):
-                raise LedgerError("必须选择基础表单或原文中的一种输入")
             files = dict(snapshot.files)
-            if mutation.operation == "create":
-                raw = basic_raw(mutation.entry) if mutation.entry else mutation.raw
-                directive = parse_single(raw, mutation.business)
-                target = insert_new(files, mutation.business, directive.date, raw)
-            else:
-                row = locate(snapshot, mutation.transaction_id)
-                parse_single(row["raw"], "ordinary")
-                target = row["file"]
-                if mutation.operation == "delete":
-                    raw = ""
-                else:
-                    raw = basic_edit(row, mutation.entry, quote) if mutation.entry else mutation.raw
-                    parse_single(raw, "ordinary")
-                replace_record(files, row, raw)
-            candidate = load_snapshot(files)
-            if candidate.errors:
-                message = "\n".join(
-                    f"{e['file']}:{e['line']} {e['message']}" for e in candidate.errors
-                )
-                raise LedgerError(f"候选账本校验失败：\n{message}")
+            targets = []
+            items = mutation.items if isinstance(mutation, BatchMutation) else [mutation]
+            for index, item in enumerate(items, 1):
+                try:
+                    operation = getattr(item, "operation", "create")
+                    if operation != "delete" and (item.entry is None) == (item.raw is None):
+                        raise LedgerError("必须选择基础表单或原文中的一种输入")
+                    if operation == "create":
+                        raw = basic_raw(item.entry) if item.entry else item.raw
+                        directive = parse_single(raw, item.business)
+                        target = insert_new(files, item.business, directive.date, raw)
+                    else:
+                        row = locate(snapshot, item.transaction_id)
+                        parse_single(row["raw"], "ordinary")
+                        target = row["file"]
+                        if operation == "delete":
+                            raw = ""
+                        else:
+                            raw = basic_edit(row, item.entry, quote) if item.entry else item.raw
+                            parse_single(raw, "ordinary")
+                        replace_record(files, row, raw)
+                    candidate = load_snapshot(files)
+                    if candidate.errors:
+                        message = "\n".join(
+                            f"{e['file']}:{e['line']} {e['message']}" for e in candidate.errors
+                        )
+                        raise LedgerError(f"候选账本校验失败：\n{message}")
+                    targets.append({"item": index, "target": target, "raw": raw})
+                except LedgerError as exc:
+                    if isinstance(mutation, BatchMutation):
+                        raise LedgerError(f"第 {index} 笔：{exc}") from exc
+                    raise
             changes = {
                 name: {"before": encode(snapshot.files.get(name)), "after": encode(content)}
                 for name, content in files.items()
@@ -205,6 +213,7 @@ class Writer:
             result = {
                 "request_id": request_id,
                 "target": target,
+                "items": targets,
                 "diffs": diffs,
                 "revision": candidate.revision,
                 "status": "preview",

@@ -5,6 +5,7 @@ import {
   type LedgerStatus,
   type Transaction,
 } from "./api";
+import BatchEditor from "./BatchEditor";
 import Editor, { readPending } from "./Editor";
 import JournalPanel, { type Filters } from "./Journal";
 import { Notice } from "./ui";
@@ -80,6 +81,7 @@ function IncludeTree({
 }
 
 export default function App() {
+  const [batch, setBatch] = useState(false);
   const [ledger, setLedger] = useState<LedgerStatus>();
   const [journal, setJournal] = useState<JournalView>();
   const [day, setDay] = useState(shanghaiToday);
@@ -228,6 +230,7 @@ export default function App() {
           <button className="ghost" onClick={() => void refresh()}>
             刷新
           </button>
+          <button className="ghost" disabled={!canEditRow} onClick={() => setBatch(true)}>集中补记 / 业务模板</button>
           <button className="cta" disabled={!canCreate} onClick={openCreate}>
             ＋ 记一笔
           </button>
@@ -410,6 +413,7 @@ export default function App() {
       <footer className="page-footer">
         日用账本 / 本地记账，日常有据。<span>Asia/Shanghai</span>
       </footer>
+      {batch && journal && <BatchEditor journal={journal} onClose={() => setBatch(false)} onSaved={refresh} />}
       {editor && journal && (
         <Editor
           journal={journal}
