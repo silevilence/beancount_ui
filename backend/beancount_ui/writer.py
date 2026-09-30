@@ -132,6 +132,9 @@ class Writer:
             yield
 
     def recover(self):
+        from .git_recovery import recover
+
+        recover(self)
         with self.database() as db:
             pending = db.execute("SELECT * FROM requests WHERE status='applying'").fetchall()
         for request in pending:

@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field
 
@@ -131,7 +132,17 @@ class Sync:
         allowed = {n for n in allowed if not any(p.startswith(".") for p in Path(n).parts)}
         changed = {c["file"] for c in self.changes()}
         # Git may normalize CRLF on Windows; do not rewrite unchanged files solely for EOL.
-        names = sorted(n for n in allowed & changed if before.get(n) != snap.files.get(n))
+        names = sorted(
+            n
+            for n in allowed
+            if before.get(n) != snap.files.get(n)
+            and (
+                n in changed
+                or before.get(n, b"").replace(b"\r\n", b"\n")
+                != snap.files.get(n, b"").replace(b"\r\n", b"\n")
+                or (n in before) != (n in snap.files)
+            )
+        )
         # Commit exactly the validated bytes, excluding drafts, caches and unrelated files.
         candidate = before | {n: snap.files[n] for n in names if n in snap.files}
         for name in names:
@@ -139,12 +150,19 @@ class Sync:
                 candidate.pop(name, None)
         if load_snapshot(candidate, self.settings.entry).errors:
             raise LedgerError("允许提交的文件不能组成有效账本，请检查 include 范围")
+        today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
         return {
             "head": head,
             "revision": snap.revision,
             "files": names,
-            "excluded": sorted(c["file"] for c in self.changes() if c["file"] not in names),
-            "message": f"账本备份：{len(names)} 个文件（{datetime.now(UTC).date()}）",
+            "excluded": sorted(
+                (
+                    changed
+                    | {n for n in snap.files if n not in allowed and snap.files[n] != before.get(n)}
+                )
+                - set(names)
+            ),
+            "message": f"账本备份：{len(names)} 个文件（{today}）",
             "diff": "".join(
                 "".join(
                     difflib.unified_diff(
@@ -161,6 +179,19 @@ class Sync:
     def backup_preview(self):
         with self.writer.guard():
             plan, _ = self.plan()
+            base = self.state().get("remote_head")
+            try:
+                commits = self.git("rev-list", "--reverse", f"{base}..{plan['head']}").splitlines()
+                paths = set()
+                for commit in commits:
+                    paths.update(
+                        self.git("diff", "--name-only", "-z", f"{commit}^1", commit).split("\0")
+                    )
+                plan["outgoing_files"] = sorted(paths - {""})
+                plan["outgoing_count"] = len(commits)
+            except GitFailure:
+                plan["outgoing_files"] = []
+                plan["outgoing_count"] = None
             return plan
 
     def fetch(self, remote):
@@ -179,7 +210,9 @@ class Sync:
             return False
         if base != head:
             raise SyncBlocked("历史分叉；请备份两侧内容并人工合并，解决后重新校验与立即同步")
-        if self.changes():
+        local_files = {n: b.replace(b"\r\n", b"\n") for n, b in read_files(self.root).items()}
+        committed = {n: b.replace(b"\r\n", b"\n") for n, b in self.tree_files(head).items()}
+        if self.changes() or local_files != committed:
             raise SyncBlocked("远端有新记录且本地有未处理变更；请先保留并人工处理，再立即同步")
         remote = load_snapshot(self.tree_files(remote_head), self.settings.entry)
         if remote.errors:
@@ -187,7 +220,12 @@ class Sync:
         for item in self.git("ls-tree", "-rz", remote_head).split("\0"):
             if item and not item.startswith(("100644 blob ", "100755 blob ")):
                 raise SyncBlocked("远端含符号链接或子模块，请人工核对")
-        self.git("merge", "--ff-only", "--no-edit", remote_head)
+        from .git_recovery import prepare
+
+        try:
+            prepare(self, head, remote_head)
+        except LedgerError as exc:
+            raise SyncBlocked(str(exc)) from exc
         if self.ledger.refresh().errors:
             raise SyncBlocked("更新后账本校验失败，请检查外部修改；暂停同步")
         return True
@@ -358,6 +396,14 @@ class Sync:
                 remote_head=head,
                 message="接入完成；自动备份关闭",
                 last_success=None,
+                synced_head=None,
+                synced_revision=None,
+                pending=False,
+                blocked=False,
+                error=None,
+                observed=None,
+                next_check=0,
+                failures=0,
             )
         return self.status()
 
@@ -382,6 +428,8 @@ class Sync:
                     label = "已提交待推送"
                 if state.get("synced_head") == head and state.get("synced_revision") == revision:
                     label = "已同步"
+                if not connected:
+                    label = "已保存 · 尚未接入"
                 if state.get("error"):
                     label += " · 备份失败"
                 return state | {

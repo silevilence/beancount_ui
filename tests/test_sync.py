@@ -274,3 +274,173 @@ def test_offline_valid_local_ledger_still_writable(sync, monkeypatch):
     )
     assert sync.writer.commit(p["request_id"])["status"] == "done"
     assert not sync.ledger.refresh().errors
+
+
+def test_hidden_local_change_is_backed_up_and_not_falsely_synced(sync):
+    connect(sync)
+    git(sync.root, "update-index", "--assume-unchanged", "index.bean")
+    path = sync.root / "index.bean"
+    path.write_bytes(path.read_bytes() + b"; hidden manual save\n")
+    assert sync.changes() == []
+    assert sync.backup_preview()["files"] == ["index.bean"]
+    backup(sync)
+    remote = git(sync.root, "remote", "get-url", "origin")
+    assert "; hidden manual save" in git(remote, "show", "master-1:index.bean")
+
+
+def test_fast_forward_preserves_ignored_local_september(sync, peer):
+    connect(sync)
+    local = sync.root / "txs/2026/09.bean"
+    local.write_text("; local extra September\n", encoding="utf-8")
+    (sync.root / ".git/info/exclude").write_text("txs/2026/09.bean\n", encoding="utf-8")
+    assert sync.changes() == []
+    (peer / "txs/2026/09.bean").write_text("; remote September\n", encoding="utf-8")
+    (peer / "txs/2026/index.bean").write_bytes(
+        (peer / "txs/2026/index.bean").read_bytes() + b'include "09.bean"\n'
+    )
+    git(peer, "add", ".")
+    git(peer, "commit", "-m", "remote September")
+    git(peer, "push")
+    with pytest.raises(LedgerError, match="未处理变更"):
+        backup(sync)
+    assert local.read_text(encoding="utf-8") == "; local extra September\n"
+
+
+@pytest.mark.parametrize("external", [False, True])
+def test_fast_forward_process_crash_recovery(sync, peer, external):
+    connect(sync)
+    (peer / "txs/2026/09.bean").write_text("; remote September\n", encoding="utf-8")
+    (peer / "txs/2026/index.bean").write_bytes(
+        (peer / "txs/2026/index.bean").read_bytes() + b'include "09.bean"\n'
+    )
+    git(peer, "add", ".")
+    git(peer, "commit", "-m", "remote September")
+    git(peer, "push")
+    expected = git(peer, "rev-parse", "HEAD")
+    script = """
+import os, sys
+from pathlib import Path
+from beancount_ui.config import Settings
+from beancount_ui.ledger import Ledger
+from beancount_ui.writer import Writer
+from beancount_ui.sync import Sync, BackupInput
+from beancount_ui import git_recovery
+sync=Sync(Writer(Ledger(Settings(Path(sys.argv[1]),Path(sys.argv[2])))))
+p=sync.backup_preview()
+original=git_recovery.atomic_write
+def die(path, content):
+    original(path, content)
+    if path.suffix == '.bean':
+        os._exit(19)
+git_recovery.atomic_write=die
+sync.backup(BackupInput(revision=p['revision'],head=p['head']))
+"""
+    result = subprocess.run(
+        ["uv", "run", "--frozen", "python", "-c", script, str(sync.root), str(sync.writer.state)],
+        capture_output=True,
+        timeout=45,
+    )
+    assert result.returncode == 19, result.stderr
+    assert (sync.writer.state / "fast-forward.json").exists()
+    restarted = Writer(Ledger(sync.settings))
+    if external:
+        path = sync.root / "txs/2026/09.bean"
+        path.write_bytes(path.read_bytes() + b"; editor change after crash\n")
+        with pytest.raises(LedgerError, match="外部文件修改"):
+            with restarted.guard():
+                pass
+        assert b"editor change after crash" in path.read_bytes()
+    else:
+        with restarted.guard():
+            assert not restarted.ledger.refresh().errors
+            assert "txs/2026/09.bean" in restarted.ledger.refresh().included
+        assert git(sync.root, "rev-parse", "HEAD") == expected
+        assert not (sync.writer.state / "fast-forward.json").exists()
+        assert backup(sync)["sync"] == "已同步"
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        ".git/hooks/new",
+        ".GiT/config",
+        "git~1/config",
+        "../outside",
+        "txs/../index.bean",
+        "/absolute",
+        "txs\\x.bean",
+        "x:stream",
+        "txs//x.bean",
+        ".git. /config",
+    ],
+)
+def test_checkout_rejects_git_admin_and_unsafe_paths(tmp_path, name):
+    from beancount_ui.git_recovery import checkout_path
+
+    with pytest.raises(LedgerError, match="不安全"):
+        checkout_path(tmp_path, name)
+
+
+def test_fast_forward_rechecks_each_file_before_replace(sync, peer, monkeypatch):
+    from beancount_ui import git_recovery
+
+    connect(sync)
+    (peer / "index.bean").write_bytes((peer / "index.bean").read_bytes() + b"; remote root\n")
+    (peer / "txs/2026/index.bean").write_bytes(
+        (peer / "txs/2026/index.bean").read_bytes() + b"; remote year\n"
+    )
+    git(peer, "add", ".")
+    git(peer, "commit", "-m", "remote indexes")
+    git(peer, "push")
+    original = git_recovery.atomic_write
+    year = sync.root / "txs/2026/index.bean"
+
+    def race(path, content):
+        original(path, content)
+        if path == sync.root / "index.bean":
+            year.write_bytes(year.read_bytes() + b"; concurrent editor\n")
+
+    monkeypatch.setattr(git_recovery, "atomic_write", race)
+    with pytest.raises(LedgerError, match="替换前"):
+        backup(sync)
+    assert b"concurrent editor" in year.read_bytes()
+    assert (sync.writer.state / "fast-forward.json").exists()
+
+
+def test_fast_forward_deletion_and_resume_after_branch_update(sync, peer, monkeypatch):
+    from beancount_ui.sync import GitFailure
+
+    connect(sync)
+    (peer / "txs/2026/08.bean").unlink()
+    (peer / "txs/2026/index.bean").write_text("; no monthly transactions\n", encoding="utf-8")
+    git(peer, "add", ".")
+    git(peer, "commit", "-m", "remove month")
+    git(peer, "push")
+    expected = git(peer, "rev-parse", "HEAD")
+    original = Sync.git
+
+    def fail(self, *args, **kwargs):
+        if args[0] == "read-tree":
+            raise GitFailure("simulated index lock")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Sync, "git", fail)
+    with pytest.raises(LedgerError, match="index lock"):
+        backup(sync)
+    assert git(sync.root, "rev-parse", "HEAD") == expected
+    assert (sync.writer.state / "fast-forward.json").exists()
+    monkeypatch.setattr(Sync, "git", original)
+    with sync.writer.guard():
+        assert not sync.ledger.refresh().errors
+    assert not (sync.root / "txs/2026/08.bean").exists()
+    assert backup(sync)["sync"] == "已同步"
+
+
+def test_reconnect_does_not_reuse_previous_backup_receipt(sync):
+    connect(sync)
+    backup(sync)
+    assert sync.status()["sync"] == "已同步"
+    assert connect(sync)["last_success"] is None
+    assert sync.status()["sync"] != "已同步"
+    assert sync.state()["synced_head"] is None
+    assert not sync.state()["enabled"]

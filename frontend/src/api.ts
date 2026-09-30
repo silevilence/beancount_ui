@@ -68,7 +68,10 @@ export function setAccessToken(token: string) {
 export async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
-  const response = await fetch(`/api${path}`, accessToken ? { ...options, headers } : options);
+  const response = await fetch(
+    `/api${path}`,
+    accessToken ? { ...options, headers } : options,
+  );
   const data = await response.json();
   if (!response.ok)
     throw new ApiError(

@@ -70,3 +70,41 @@ def test_static_entry_available_before_login_but_ledger_protected(ledger, tmp_pa
     client = TestClient(app)
     assert client.get("/").text == "<h1>Login</h1>"
     assert client.get("/api/ledger").status_code == 401
+
+
+@pytest.mark.parametrize("which", ["ledger", "state", "parent", "child"])
+def test_reject_static_private_overlap(ledger, monkeypatch, which):
+    paths = {
+        "ledger": ledger.settings.ledger_dir,
+        "state": ledger.settings.state_dir,
+        "parent": ledger.settings.ledger_dir.parent,
+        "child": ledger.settings.ledger_dir / "web",
+    }
+    paths[which].mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("BEANCOUNT_FRONTEND_DIR", str(paths[which]))
+    with pytest.raises(ValueError, match="重叠"):
+        create_app(ledger.settings, Access("private", TOKEN, ("http://ledger.test:8000",)))
+
+
+def test_busy_read_and_backup_do_not_claim_save_failed(ledger, monkeypatch):
+    from contextlib import contextmanager
+
+    from beancount_ui.writer import Writer
+    from filelock import Timeout
+
+    writer = Writer(ledger)
+
+    @contextmanager
+    def busy():
+        raise Timeout("test lock")
+        yield
+
+    monkeypatch.setattr(writer, "guard", busy)
+    app = create_app(ledger.settings)
+    app.state.writer = writer
+    client = TestClient(app)
+    for path in ("/api/ledger", "/api/journal", "/api/sync"):
+        response = client.get(path)
+        assert response.status_code == 503
+        assert "已保存" in response.json()["detail"]
+        assert "保存结果未确认" not in response.json()["detail"]

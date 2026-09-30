@@ -7,7 +7,7 @@
 - 规划日期：2026-09-30。
 - 账本：[silevilence/MyBill，master-1](https://github.com/silevilence/MyBill/tree/master-1)。分析固定在提交 [`6c09193`](https://github.com/silevilence/MyBill/tree/6c09193b0858a37055e9fb530a547f8ccc4f73c9)，提交日期为 2026-09-01，提交说明为 `2026.08 bak`。
 - 重点观察 2026 年 6—8 月，按交易实际日期统计，同时读取专项分类文件；此历史分析未覆盖 9 月；9 月账单现已于 2026-09-30 同步 GitHub，阶段三按最新 master-1 接入。证据与详细模式见 [账本分析](ledger-analysis.md)。
-- 本轮交付为需求规划，所有实现任务仍处于「计划中」。分析采用源码文本和 include 结构核对，不代表已通过 Beancount 完整校验。
+- 本文保留原需求规划与历史分析依据，当前实现进度以 ROADMAP 为准。原分析采用源码文本和 include 结构核对；后续完整 Beancount 校验结果见兼容基线。
 
 ### 已确定的约束
 

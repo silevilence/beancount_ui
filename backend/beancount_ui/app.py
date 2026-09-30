@@ -99,6 +99,16 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     @app.exception_handler(OSError)
     @app.exception_handler(Timeout)
     def io_error(request: Request, exc: Exception):
+        if request.url.path.startswith("/api/sync"):
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "备份暂不可用；本地已保存的记录保留，请稍后重新同步。"},
+            )
+        if request.method == "GET":
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "账本正在写入、备份或暂不可用；已保存记录保留，请稍后刷新。"},
+            )
         return JSONResponse(
             status_code=503,
             content={
@@ -173,6 +183,17 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
         )
     )
     if frontend.is_dir():
+        current_settings = settings or (
+            Settings.from_env() if os.environ.get("BEANCOUNT_LEDGER_DIR") else None
+        )
+        if current_settings:
+            public = frontend.resolve()
+            for private in (
+                current_settings.ledger_dir.resolve(),
+                current_settings.state_dir.resolve(),
+            ):
+                if public.is_relative_to(private) or private.is_relative_to(public):
+                    raise ValueError("静态资源目录不得与账本或状态目录重叠")
         app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")
 
     return app

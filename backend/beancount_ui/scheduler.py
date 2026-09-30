@@ -55,6 +55,9 @@ class Scheduler:
 
     def tick(self, now=None):
         now = time.time() if now is None else now
+        if not self.sync.state().get("enabled"):
+            self.reason = "自动备份关闭"
+            return
         try:
             with self.sync.writer.lock.acquire(timeout=0):
                 self._tick(now)

@@ -32,6 +32,8 @@ interface BackupPreview {
   excluded: string[];
   message: string;
   diff: string;
+  outgoing_files?: string[];
+  outgoing_count?: number | null;
 }
 export default function SyncPanel({
   onChanged,
@@ -51,6 +53,7 @@ export default function SyncPanel({
     try {
       const result = await api<Status>("/sync");
       setStatus(result);
+      setError("");
       if (!editedSchedule.current) {
         setIntervalSeconds(result.interval ?? 300);
         setQuiet(result.quiet ?? 60);
@@ -136,6 +139,20 @@ export default function SyncPanel({
           </button>
         )}
       </div>
+      {include.length > 0 && (
+        <p>
+          待纳入 include：{include.join("、")}；请再次预览确认。
+          <button
+            disabled={busy}
+            onClick={() => {
+              setInclude([]);
+              setPreview(undefined);
+            }}
+          >
+            清除选择
+          </button>
+        </p>
+      )}
       {status?.connected && (
         <fieldset disabled={busy}>
           <legend>定时备份 · {status.enabled ? "已开启" : "已关闭"}</legend>
@@ -188,6 +205,10 @@ export default function SyncPanel({
           <p>{backup.message}</p>
           <p>纳入：{backup.files.join("、") || "无新变更（检查未推送提交）"}</p>
           <p>排除：{backup.excluded.join("、") || "无"}</p>
+          <p>
+            已有待推送提交：{backup.outgoing_count ?? "需联网核验"}；涉及文件：
+            {backup.outgoing_files?.join("、") || "无"}
+          </p>
           <pre>{backup.diff}</pre>
           <button
             disabled={busy}
