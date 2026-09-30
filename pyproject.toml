@@ -12,7 +12,13 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8,<10", "pytest-cov>=6,<8", "httpx>=0.28,<1", "ruff>=0.11,<1"]
+dev = [
+  "pytest>=8,<10",
+  "pytest-cov>=6,<8",
+  "httpx>=0.28,<1",
+  "ruff>=0.11,<1",
+  "debugpy>=1.8,<2",
+]
 
 [build-system]
 requires = ["hatchling"]

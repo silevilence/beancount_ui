@@ -1,0 +1,44 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "准备本地调试配置 (uv)",
+      "type": "process",
+      "command": "uv",
+      "args": ["run", "--locked", "python", "scripts/prepare_debug.py"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "启动后端 (uv)",
+      "dependsOn": "准备本地调试配置 (uv)",
+      "type": "process",
+      "command": "uv",
+      "args": [
+        "run", "--locked", "--env-file", "${workspaceFolder}/.env",
+        "python", "-Xfrozen_modules=off", "-m", "debugpy", "--listen", "127.0.0.1:5678",
+        "-m", "uvicorn", "beancount_ui.app:create_app", "--factory",
+        "--host", "127.0.0.1", "--port", "8000", "--reload",
+        "--reload-dir", "${workspaceFolder}/backend"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "beancount-backend",
+        "pattern": {
+          "regexp": "^(.+\\.py):(\\d+): (.+)$",
+          "file": 1,
+          "line": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Started reloader process",
+          "endsPattern": "Application startup complete\\."
+        }
+      },
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "runOptions": { "instanceLimit": 1 }
+    }
+  ]
+}

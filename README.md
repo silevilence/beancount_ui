@@ -38,6 +38,32 @@ npm --prefix frontend run build
 运行时账本与状态目录必须独立于源代码。状态目录不得提交，保存后本地账本是否同步由 Git 状态单独表示。
 开发服务的 `--reload` 用于后端调试；React 自动热更新。测试始终复制脱敏夹具到临时目录。
 
+## VS Code：F5 前后端联调
+
+用 VS Code 打开仓库根目录，安装工作区推荐的 Python 和 Python Debugger 扩展，并准备好 Microsoft Edge。
+首次调试在根目录 PowerShell 终端执行：
+
+```powershell
+uv sync --locked
+npm --prefix frontend ci
+```
+
+F5 会先准备本地配置：缺少 `.env` 时从 `.env.example` 创建，并在仓库旁的 `../beancount-demo` 不存在时复制演示账本；已有配置和账本不会覆盖。
+`.env` 已被 Git 忽略，默认指向仓库外的演示账本和状态目录；需要其他测试副本时修改其中的路径（也可在首次启动前自行创建 `.env`）。
+路径相对于仓库根目录，也可填写绝对路径（Windows 推荐使用 `/`）。已存在的同名环境变量优先于 `.env`。
+工作区默认使用 uv 创建的 `.venv`。若 VS Code 已记住失效的解释器，运行「Python: 选择解释器」，选择 `.venv/Scripts/python.exe`（Windows）。
+
+在「运行和调试」下拉框选择 **全栈：前后端联调**，按 **F5**：
+
+- 后端任务通过 `uv run --locked` 启动 Uvicorn，监听 `127.0.0.1:8000`；Python 调试器连接本机 `5678` 端口，支持后端断点及代码热重载。
+- Vite 固定监听 `127.0.0.1:5173`，就绪后自动打开 Edge 调试页面；可以在 `frontend/src` 的 TypeScript / TSX 文件中打断点，React 保持热更新。
+- 两端也可以分别选择「后端：FastAPI (uv)」或「前端：Vite + Edge」启动。仅启动前端时需已有后端服务。
+
+按 **Shift+F5** 停止联调会停止 Vite 和浏览器调试，并断开 Python 调试器。
+后端作为后台任务继续运行；完全结束时，在「启动后端 (uv)」任务终端按 **Ctrl+C**，或运行命令「任务: 终止任务」。
+再次 F5 可复用仍运行的后端任务。端口被其他服务占用时先停止该服务，Vite 不会自动换端口。
+后端健康检查为 http://127.0.0.1:8000/api/health，API 文档为 http://127.0.0.1:8000/docs。
+
 ## 已实现：阶段一
 
 - 工作台按 Asia/Shanghai 的今天打开，可切换日期并按商户、摘要和账户筛选；月文件与专项文件合并展示。

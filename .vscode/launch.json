@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "后端：FastAPI (uv)",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": { "host": "127.0.0.1", "port": 5678 },
+      "justMyCode": true,
+      "subProcess": true,
+      "preLaunchTask": "启动后端 (uv)"
+    },
+    {
+      "name": "前端：Vite + Edge",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/frontend/node_modules/vite/bin/vite.js",
+      "args": ["--host", "127.0.0.1", "--port", "5173", "--strictPort"],
+      "cwd": "${workspaceFolder}/frontend",
+      "console": "internalConsole",
+      "outputCapture": "std",
+      "skipFiles": ["<node_internals>/**"],
+      "serverReadyAction": {
+        "pattern": "Local:.*(http://127\\.0\\.0\\.1:5173/)",
+        "uriFormat": "%s",
+        "action": "debugWithEdge",
+        "webRoot": "${workspaceFolder}/frontend",
+        "killOnServerStop": true
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "全栈：前后端联调",
+      "configurations": ["后端：FastAPI (uv)", "前端：Vite + Edge"],
+      "stopAll": true,
+      "presentation": { "order": 1 }
+    }
+  ]
+}
