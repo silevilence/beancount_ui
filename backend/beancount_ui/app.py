@@ -8,6 +8,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .config import Settings
 from .ledger import Ledger, LedgerError
 from .models import BatchMutation, CommitInput, Mutation
+from .orders import orders
 from .query import daily_view
 from .templates import recommendations
 from .writer import Writer
@@ -69,6 +70,14 @@ def create_app(settings: Settings | None = None):
     def journal(day: date | None = None, payee: str = "", narration: str = "", account: str = ""):
         with get_writer().guard():
             return daily_view(get_ledger(), day, payee, narration, account)
+
+    @app.get("/api/orders")
+    def order_list():
+        with get_writer().guard():
+            snapshot = get_ledger().refresh()
+            if snapshot.errors:
+                raise LedgerError("账本有错误，不能关联订单")
+            return orders(snapshot)
 
     @app.get("/api/templates")
     def templates(day: date):

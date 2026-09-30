@@ -18,6 +18,7 @@ from .editing import basic_edit, locate, replace_record
 from .layout import insert_new
 from .ledger import Ledger, LedgerError, digest, load_snapshot, read_files
 from .models import BatchMutation, Mutation
+from .orders import order_raw
 
 
 def quote(text: str) -> str:
@@ -181,10 +182,23 @@ class Writer:
             for index, item in enumerate(items, 1):
                 try:
                     operation = getattr(item, "operation", "create")
-                    if operation != "delete" and (item.entry is None) == (item.raw is None):
+                    if (
+                        operation != "delete"
+                        and sum(v is not None for v in (item.entry, item.raw, item.order)) != 1
+                    ):
                         raise LedgerError("必须选择基础表单或原文中的一种输入")
                     if operation == "create":
-                        raw = basic_raw(item.entry, item.business) if item.entry else item.raw
+                        if item.order and item.business != "ordinary":
+                            raise LedgerError("订单业务必须使用普通月份路由")
+                        raw = (
+                            order_raw(
+                                item.order, load_snapshot(files), f"{request_id}-{index}", basic_raw
+                            )
+                            if item.order
+                            else basic_raw(item.entry, item.business)
+                            if item.entry
+                            else item.raw
+                        )
                         directive = parse_single(raw, item.business)
                         target = insert_new(files, item.business, directive.date, raw)
                     else:

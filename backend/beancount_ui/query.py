@@ -66,6 +66,7 @@ def transactions(snapshot: Snapshot) -> list[dict]:
         result.append(
             {
                 "id": identity,
+                "metadata": {k: str(v) for k, v in entry.meta.items() if k.startswith("order-")},
                 "date": str(entry.date),
                 "payee": entry.payee or "",
                 "narration": entry.narration,

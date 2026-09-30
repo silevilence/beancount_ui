@@ -40,6 +40,23 @@ class EntryInput(BaseModel):
         return value
 
 
+class OrderInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["paid", "deferred", "settle", "refund_paid", "refund_unpaid"]
+    purchase: EntryInput | None = None
+    source_id: str = ""
+    date: date
+    amount: Decimal = Field(gt=0, max_digits=24, decimal_places=8)
+    account: str = Field(pattern=r"^(Assets|Liabilities):[^\s\";]+$")
+    category: str = ""
+    note: str = Field(default="", max_length=2000)
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def exact_amount(cls, value):
+        return EntryInput.exact_amount(value)
+
+
 class Mutation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: UUID
@@ -49,6 +66,7 @@ class Mutation(BaseModel):
     transaction_id: str | None = None
     entry: EntryInput | None = None
     raw: str | None = Field(default=None, max_length=100000)
+    order: OrderInput | None = None
 
 
 class CommitInput(BaseModel):
@@ -60,6 +78,7 @@ class BatchItem(BaseModel):
     business: Literal["ordinary", "yuebao", "salary", "phone", "balance"] = "ordinary"
     entry: EntryInput | None = None
     raw: str | None = Field(default=None, max_length=100000)
+    order: OrderInput | None = None
 
 
 class BatchMutation(BaseModel):
