@@ -1,0 +1,7 @@
+pushtag #salary
+
+2026-09-30 * "工资"
+  Assets:Bank 100 CNY
+  Income:Salary
+
+poptag #salary

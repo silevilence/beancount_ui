@@ -1,0 +1,3 @@
+option "title" "日用账本 · 脱敏示例"
+option "operating_currency" "CNY"
+include "index.bean"

@@ -1,0 +1,4 @@
+include "yuebao.bean"
+include "salary.bean"
+include "phone.bean"
+include "balance.bean"

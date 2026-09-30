@@ -1,0 +1,17 @@
+; 日期与文件月份可以不同，查询不能按文件名过滤。
+2026-09-30 * "街角食堂" "午饭"
+  Expenses:Food 25.50 CNY
+    memo: "工作日套餐"
+  Assets:Cash -25.50 CNY
+
+2026-09-30 * "还款"
+  Liabilities:Card 100 CNY
+  Assets:Bank -100 CNY
+
+2026-08-20 * "外币服务"
+  Expenses:Online 100 JPY @@ 5 CNY
+  Assets:Bank -5 CNY
+
+2026-08-21 * "证券成本"
+  Assets:Shares 1 HOOL {10 USD}
+  Assets:Bank -10 USD

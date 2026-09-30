@@ -1,0 +1,3 @@
+include "gnucash/gnucash.beancount"
+include "gnucash/import.beancount"
+include "txs/index.bean"

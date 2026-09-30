@@ -1,0 +1,5 @@
+:root { font-family: "Microsoft YaHei", sans-serif; color: #243a32; background: #f5f3eb; }
+body { margin: 0; }
+main { max-width: 1240px; margin: auto; padding: 48px; }
+h1 { font-family: "STSong", "SimSun", serif; font-weight: 500; font-size: 48px; }
+.eyebrow { font-size: 12px; letter-spacing: .16em; color: #597267; }
