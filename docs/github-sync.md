@@ -39,7 +39,7 @@ uv run uvicorn beancount_ui.app:create_app --factory --host 0.0.0.0 --port 8000
 
 不想维护访问地址时，可将 `BEANCOUNT_ALLOWED_ORIGINS` 显式设为 `*`；这会取消 Host/Origin
 白名单，仍然要求口令认证。留空不等于全部允许。NAS Compose 示例已采用带引号的 `"*"`；
-该选项需要包含本次修复的镜像，已发布的 V0.1.0 不支持。
+该配置需要包含此修复的镜像；V0.1.0 不支持，V0.1.1 起可用。
 
 口令文件只包含至少 32 字符的随机口令，限制为运行服务的账户可读；也可通过服务端 `BEANCOUNT_ACCESS_TOKEN` 注入。可用 `uv run python -c "import secrets; print(secrets.token_urlsafe(32))"` 在私人终端生成并保存，禁止提交口令文件。页面输入的是应用访问口令，不是 GitHub 令牌。口令仅保存在当前页内存，刷新需重新登录，退出即移除，认证后页面右上角保留「个人访问已认证 / 退出」提示；所有账本读取、写入和备份控制接口都要求认证。健康检查与不含账务数据的登录配置可匿名访问。
 

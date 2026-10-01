@@ -6,7 +6,6 @@ on:
     inputs:
       version:
         description: 'Validate this changelog version (no publishing)'
-        default: V0.1.0
         required: true
 permissions:
   contents: read
@@ -100,6 +99,9 @@ jobs:
           done
           docker tag beancount-ui:candidate "$image"
           docker push "$image"
+          latest="ghcr.io/${REPOSITORY,,}:latest"
+          docker tag beancount-ui:candidate "$latest"
+          docker push "$latest"
           docker pull "$image"
           digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')
           printf '%s\n%s\ncommit=%s\nplatform=linux/amd64\n' "$image" "$digest" "$GITHUB_SHA" > image.txt

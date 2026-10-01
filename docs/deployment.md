@@ -1,11 +1,17 @@
 # 容器部署与发布
 
-镜像：`ghcr.io/silevilence/beancount_ui:V0.1.0`，平台 `linux/amd64`。
-首版已通过 [发布验收](https://github.com/silevilence/beancount_ui/actions/runs/36725085567)，
+默认镜像：`ghcr.io/silevilence/beancount_ui:latest`，平台 `linux/amd64`。
+通用与 NAS Compose 均默认使用 `latest`，指向最近一次通过发布验收并成功推送的镜像。
+该标签会在包含本次配置改动的版本 Tag 成功发布后提供；仅修改本地配置不会在 GHCR 创建它。
+需要固定版本时，在环境变量或 Compose 同目录的 `.env` 中设置
+`BEANCOUNT_IMAGE=ghcr.io/silevilence/beancount_ui:V0.1.1`（版本号按需替换）。
+V0.1.1 修复局域网 HTTP 页面的保存失败并支持全开放来源配置，其验收记录与镜像摘要见该版本 Release 附件。
+V0.1.0 首版已通过 [发布验收](https://github.com/silevilence/beancount_ui/actions/runs/36725085567)，
 摘要为 `sha256:4df3df7a8a4a574f6dd53652e5c336914bfc3b203686d7df46f71d6386fe7351`。
 每次 Release 的 `image.txt` 附件记录完整拉取地址、不可变摘要和源码提交；生产可将
 `BEANCOUNT_IMAGE` 设置为该文件中的 `ghcr.io/...@sha256:...` 固定产物。
-GHCR 版本标签由流水线拒绝覆盖；摘要是仓库端的内容寻址保证。首版没有旧版本可供实际降级。
+GHCR 版本标签由流水线拒绝覆盖；摘要是仓库端的内容寻址保证。V0.1.1 未改变账本与状态格式，
+可按摘要回退到 V0.1.0；回退后局域网 HTTP 页面仍会重现保存失败，且需把全开放来源改回明确地址列表。
 
 ## 启动
 
@@ -60,9 +66,10 @@ beancount-ui/
 
 准备后再点「立即部署」：
 
-1. 先准备包含本次 HTTP 修复的镜像：NAS 示例默认使用本地 `beancount-ui:nas-fixed`，
-   构建/导入方法见本节末尾；也可把 `image` 替换为包含修复的新发布版本。
-2. 将示例 `user: "1000:10"` 改为实际 NAS 账户的 UID/GID（截图就是这两个值）。
+1. NAS 示例默认拉取 `ghcr.io/silevilence/beancount_ui:latest`。
+   如需固定版本或使用已导入的本地镜像，通过项目环境变量或 `.env` 设置 `BEANCOUNT_IMAGE`，
+   也可直接修改 `image`；本地构建/导入方法见本节末尾。
+2. 将示例的 `user` 改为实际 NAS 账户的 UID/GID（按 NAS 界面显示的账户填写，截图中为 `1000:10`）。
    在 NAS 共享文件夹权限中给该账户项目目录的读写权限，并确保 `ledger`、`state` 及现有文件继承正确权限。
    仅有 Unix chmod 并不能证明 NAS ACL 已允许访问；不需要让容器使用 root 或对共享目录执行 `chmod 777`。
 3. 先创建 `ledger`、`state` 目录，再复制已有账本（含隐藏的 `.git`），或保留空 `ledger` 待克隆。
@@ -120,14 +127,15 @@ PY
 已有账本仍需在页面完成一次预览、保存和同步，验证深层文件及 `.git` 的权限。仅看到容器 healthy
 并不能证明这些权限全部正确。口令读失败看容器日志；目录读写失败检查 NAS 账户、ACL 和文件属主。
 
-**镜像版本注意：** 已发布的 `V0.1.0` 在非 localhost 的 HTTP 页面中调用 `crypto.randomUUID()`，
-会导致单笔和整批预览失败。本次源码已增加 `getRandomValues()` UUID v4 兼容实现，保留重试身份；
-它需要重新构建镜像才会生效，修改 Compose 不会更新已有镜像里的前端代码。
-本次新增的 `BEANCOUNT_ALLOWED_ORIGINS: "*"` 同样需要新镜像；V0.1.0 不接受此值。
-通用回环地址示例仍指向已存在的 V0.1.0；NAS 示例默认使用本地修复镜像，没有假定新版本已发布。
-正式环境应选择包含此修复的新版本；需要立即使用局域网 HTTP 时，可在 Docker 构建主机用本次源码执行
+**镜像版本注意：** `V0.1.0` 在非 localhost 的 HTTP 页面中调用 `crypto.randomUUID()`，
+会导致单笔和整批预览失败；它也不接受 `BEANCOUNT_ALLOWED_ORIGINS: "*"`。
+本次发布的 `V0.1.1` 已包含 `getRandomValues()` UUID v4 兼容实现与全开放来源配置，
+通用与 NAS 示例均默认使用 `latest`，需要固定该版本时设置 `BEANCOUNT_IMAGE`。
+升级到 V0.1.1 需要重新创建容器：修改 Compose 不会更新已有镜像里的前端代码。
+若暂时无法使用 V0.1.1，可在 Docker 构建主机用同一份源码执行
 `docker build -t beancount-ui:nas-fixed .`，再用 `docker save -o beancount-ui-nas-fixed.tar beancount-ui:nas-fixed`
-导出并通过 NAS 镜像管理导入（构建主机与 NAS 架构需匹配；首版为 linux/amd64）。
+导出并通过 NAS 镜像管理导入（构建主机与 NAS 架构需匹配；首版为 linux/amd64），
+再设置 `BEANCOUNT_IMAGE=beancount-ui:nas-fixed` 使用该本地镜像，无需从 GHCR 拉取。
 V0.1.0 也可通过有效 HTTPS 地址避开此浏览器限制。
 
 ## 局域网与 NAS 外网转发
@@ -221,11 +229,17 @@ GHCR 私有包需要在部署主机登录具有 `read:packages` 权限的账号�
 ```bash
 docker compose stop
 # 此时用主机备份工具完整备份 BEANCOUNT_DATA_DIR，另保存浏览器配置。
-export BEANCOUNT_IMAGE=ghcr.io/silevilence/beancount_ui:V0.1.0
+# 跟随最新发布；若需固定版本，将 latest 替换为对应版本 Tag 或使用镜像摘要。
+export BEANCOUNT_IMAGE=ghcr.io/silevilence/beancount_ui:latest
 docker compose pull
 docker compose up -d --force-recreate
 docker compose ps
 ```
+
+`latest` 不会自动替换正在运行的容器；每次升级仍需拉取镜像并重建容器，
+参见 [Docker Compose 拉取说明](https://docs.docker.com/reference/cli/docker/compose/pull/)。
+NAS 使用 `docker compose -f compose.nas.yaml` 执行同样步骤（若项目保存为 `compose.yaml` 则使用实际文件名），
+或在 NAS 项目管理界面重新拉取镜像并重建。
 
 检查健康、账本诊断、当日流水、草稿与同步状态。回滚时将 `BEANCOUNT_IMAGE` 改回此前记录的摘要，
 重建容器并复验；不要重建或清空数据目录。后续版本如有不兼容状态迁移须按该版说明恢复停机备份。
@@ -234,12 +248,14 @@ docker compose ps
 
 ## 发布门槛
 
-普通分支推送和 PR 仅运行 Windows/Linux 检查。`Release` 的手动运行只验证镜像，不推送或创建 Release。
+普通分支推送和 PR 仅运行 Windows/Linux 检查。`Release` 的手动运行需填写待校验版本，
+只验证镜像，不推送或创建 Release；工作流不预填固定版本，后续发版无需修改工作流或 Compose。
 只有 `V<主>.<次>.<修订>` 或小写 `v` Tag 推送能发布，Tag 对应提交必须包含唯一且正文非空的版本章节。
 
 流水线先校验 changelog，运行双平台全部检查，再构建候选镜像；在临时脱敏账本与本地裸远端上验证
 认证拒绝、生产页面、写入、同步、健康、无关文件不变、容器删除重建、原请求恢复与浏览器草稿恢复。
-所有门槛通过后才将同一候选镜像推送 GHCR，最后创建同 Tag Release；正文仅为精确匹配的 changelog
+所有门槛通过后才将同一候选镜像以 Git Tag 对应的版本标签和 `latest` 推送 GHCR，
+版本标签拒绝覆盖，`latest` 随每次成功推送更新；最后创建同 Tag Release。正文仅为精确匹配的 changelog
 章节，镜像地址和摘要放在附件及 Actions 摘要中。`container-evidence` 提供截图与验证结果。
 
 若 GHCR 已推送但 Release 创建失败，不重建覆盖版本镜像。核对镜像 revision 标签、摘要与成功验证的

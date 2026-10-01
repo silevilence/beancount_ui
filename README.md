@@ -2,7 +2,7 @@
 
 Python / FastAPI + React / TypeScript 的本地 Beancount 记账界面。账本文本是唯一正式数据源。
 
-V0.1.0 镜像：`ghcr.io/silevilence/beancount_ui:V0.1.0`。
+默认镜像：`ghcr.io/silevilence/beancount_ui:latest`；可通过 `BEANCOUNT_IMAGE` 固定版本或摘要。
 [容器部署、升级与恢复](docs/deployment.md) · [版本说明](changelog.md)。
 绿联 NAS 请使用独立的 [compose.nas.yaml](compose.nas.yaml)，按[部署说明](docs/deployment.md#绿联-nas项目部署)准备权限、访问地址与转发。
 

@@ -230,6 +230,13 @@
 
 ### 阶段四：整体验收与最终镜像发布
 
+- [x] **移除发布配置中的固定版本并提供 latest 镜像**（小型发布配置调整；来源阶段四；依赖「通过 GitHub Actions 构建和发布 Docker 镜像」）
+    Status: ready-for-agent
+    - [x] 正式发布从 Git Tag 取版本，同一验收镜像发布版本标签与 latest；手动校验不再预填固定版本。
+    - [x] 通用与 NAS Compose 默认使用 latest，保留 BEANCOUNT_IMAGE 覆盖并同步部署及升级说明。
+    - 验收：配置与发布脚本检查通过，版本标签禁止覆盖、手动运行不发布的约束保持有效。
+    - 2026-10-01 验证：11 项版本说明测试、配置断言、Bash 语法与差异检查通过；模拟发布成功、版本已存在及版本推送失败三条路径，确认同一候选镜像发布两个标签，已有版本与推送失败不会更新 latest 或创建 Release。本机无 Docker，未执行真实镜像推送；latest 需后续 Tag 发布提供。
+
 - [x] **适配绿联 NAS 目录权限与局域网及 HTTPS 转发访问**（1 天；来源阶段四；依赖「通过 GitHub Actions 构建和发布 Docker 镜像」）
     Status: ready-for-agent
     - [x] 提供匹配 NAS 用户、持久化目录及端口的 Compose 示例，说明权限检查与外网转发配置。

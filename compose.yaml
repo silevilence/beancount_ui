@@ -1,6 +1,6 @@
 services:
   ledger:
-    image: ${BEANCOUNT_IMAGE:-ghcr.io/silevilence/beancount_ui:V0.1.0}
+    image: ${BEANCOUNT_IMAGE:-ghcr.io/silevilence/beancount_ui:latest}
     restart: unless-stopped
     user: "${PUID:-10001}:${PGID:-10001}"
     ports:
