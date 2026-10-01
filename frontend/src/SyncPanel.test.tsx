@@ -418,6 +418,70 @@ it("备份预览无变更时说明不会创建空提交", async () => {
   expect(screen.getByText(/不会创建空提交/)).toBeInTheDocument();
 });
 
+it.each([false, true])(
+  "克隆后明确引导确认接入，重新打开也不会提供重复克隆（预览失败：%s）",
+  async (previewFails) => {
+    let cloned = false;
+    let connected = false;
+    const preview = {
+      revision: "cloned-revision",
+      remote: "test.git",
+      branch: "master-1",
+      changes: [],
+      unreferenced: [],
+      errors: [],
+      diff: "",
+    };
+    const calls = serve((path) => {
+      if (path === "/status")
+        return ok(
+          status({
+            connected,
+            repository: cloned,
+            head: cloned ? "abc123" : undefined,
+            sync: connected
+              ? "已接入"
+              : cloned
+                ? "仓库已就绪 · 待确认接入"
+                : "尚未接入 Git 仓库",
+          }),
+        );
+      if (path === "clone") {
+        cloned = true;
+        return previewFails ? fail("接入预览暂时失败") : ok(preview);
+      }
+      if (path === "preview") return ok(preview);
+      if (path === "connect") {
+        connected = true;
+        return ok(status());
+      }
+      return ok({});
+    });
+    render(<Harness />);
+    fireEvent.click(await screen.findByText("接入 GitHub 仓库"));
+    fireEvent.click(screen.getByText("克隆到空目录"));
+    expect(await screen.findByText(/本地仓库已存在/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByLabelText("关闭备份")).toBeEnabled(),
+    );
+    expect(screen.queryByText("克隆到空目录")).not.toBeInTheDocument();
+    expect(calls.filter((call) => call.path === "connect")).toHaveLength(0);
+    fireEvent.click(screen.getByLabelText("关闭备份"));
+    fireEvent.click(screen.getByText("接入 GitHub 仓库"));
+    expect(screen.queryByText("克隆到空目录")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("继续接入"));
+    const confirm = await screen.findByText("确认接入（保持自动备份关闭）");
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    expect(await screen.findByRole("switch")).not.toBeChecked();
+    expect(calls.filter((call) => call.path === "clone")).toHaveLength(1);
+    expect(calls.find((call) => call.path === "connect")?.body).toEqual({
+      revision: "cloned-revision",
+      include: [],
+    });
+  },
+);
+
 it("克隆失败时提示本地记录保留", async () => {
   serve((path) =>
     path === "/status"

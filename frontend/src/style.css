@@ -1492,6 +1492,57 @@ kbd {
   padding-right: 4px;
 }
 
+.account-select {
+  position: relative;
+  min-width: 0;
+}
+.account-select input {
+  width: 100%;
+}
+.account-options {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #111b26;
+  box-shadow: 0 10px 24px #0008;
+}
+.account-options > div {
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.account-options [aria-selected="true"],
+.account-options [role="option"]:hover {
+  background: #263547;
+  color: var(--ink);
+}
+.order-note {
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.order-detail {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.order-detail p,
+.order-detail pre {
+  white-space: pre-wrap;
+}
+.order-detail pre {
+  max-height: 260px;
+  overflow: auto;
+  font-size: 12px;
+}
+
 .order-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

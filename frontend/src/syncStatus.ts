@@ -10,6 +10,7 @@ export interface SyncChange {
 }
 
 export interface SyncStatus {
+  repository?: boolean;
   connected: boolean;
   enabled: boolean;
   remote?: string;

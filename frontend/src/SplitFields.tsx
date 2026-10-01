@@ -1,3 +1,4 @@
+import AccountSelect from "./AccountSelect";
 import type { Journal } from "./api";
 import type { EntryFields } from "./Editor";
 import { decimalSum, money, signedTone } from "./format";
@@ -73,17 +74,13 @@ export default function SplitFields({
         <div className="split-row" key={i}>
           <label className="field">
             <span>分类 {i + 1}</span>
-            <select
-              aria-label={`分类 ${i + 1}`}
+            <AccountSelect
+              label={`分类 ${i + 1}`}
               value={s.category}
               required
-              onChange={(e) => update(i, "category", e.target.value)}
-            >
-              <option value="">请选择</option>
-              {categories.map((name) => (
-                <option key={name}>{name}</option>
-              ))}
-            </select>
+              onChange={(value) => update(i, "category", value)}
+              options={categories.map((name) => ({ value: name }))}
+            />
           </label>
           <label className="field">
             <span>明细金额 {i + 1}</span>

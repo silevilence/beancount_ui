@@ -63,6 +63,7 @@ export default function SyncDialog({
   const editedProxy = useRef(false);
   const autoStarted = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const connectPreview = useRef<HTMLDivElement>(null);
 
   function close() {
     dialog.current?.close();
@@ -71,6 +72,9 @@ export default function SyncDialog({
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
+  useEffect(() => {
+    if (preview) connectPreview.current?.scrollIntoView?.({ block: "start" });
+  }, [preview]);
   useEffect(() => {
     if (!editedSchedule.current && status) {
       setIntervalSeconds(status.interval ?? 300);
@@ -101,10 +105,11 @@ export default function SyncDialog({
     setDone("");
     try {
       await work();
-      await refreshSync();
     } catch (e) {
       setError(reasonOf(e));
     } finally {
+      // 克隆完成后预览仍可能失败，失败时也要读取磁盘上的实际仓库状态。
+      await refreshSync();
       setBusy(false);
       setAction("");
     }
@@ -121,6 +126,7 @@ export default function SyncDialog({
     return run("clone", async () => {
       setPreview(await post<ConnectPreview>("clone"));
       setIncludeStale(false);
+      setDone("克隆成功；请核对接入预览，再点击「确认接入」。");
     });
   }
   function previewBackup() {
@@ -183,6 +189,7 @@ export default function SyncDialog({
   }, [auto, status?.connected]);
 
   const connected = !!status?.connected;
+  const repositoryExists = !!(status?.repository || status?.head || preview);
   const pendingCount = backup?.outgoing_count ?? null;
   return (
     <dialog
@@ -250,6 +257,25 @@ export default function SyncDialog({
       {done && (
         <Notice>
           <Chip tone="ok">完成</Chip> {done}
+        </Notice>
+      )}
+      {!connected && repositoryExists && (
+        <Notice
+          action={
+            <button
+              className="ghost small"
+              disabled={busy}
+              onClick={() =>
+                preview
+                  ? connectPreview.current?.scrollIntoView?.({ block: "start" })
+                  : void previewConnect()
+              }
+            >
+              {preview ? "查看接入预览" : "继续接入"}
+            </button>
+          }
+        >
+          本地仓库已存在，还需核对预览并确认接入，才能启用备份。无需再次克隆。
         </Notice>
       )}
       <div className="backup-grid">
@@ -450,7 +476,7 @@ export default function SyncDialog({
                 {["核对远端", "预览范围", "确认接入"].map((name, index) => (
                   <li
                     key={name}
-                    className={index === 0 || preview ? "done" : ""}
+                    className={index < (preview ? 2 : 1) ? "done" : ""}
                   >
                     {name}
                   </li>
@@ -460,19 +486,21 @@ export default function SyncDialog({
                 <button disabled={busy} onClick={() => void previewConnect()}>
                   {action === "preview" ? "正在检查…" : "预览接入范围"}
                 </button>
-                <button
-                  className="ghost"
-                  disabled={busy}
-                  onClick={() => void cloneRepo()}
-                >
-                  {action === "clone" ? "正在克隆…" : "克隆到空目录"}
-                </button>
+                {!repositoryExists && (
+                  <button
+                    className="ghost"
+                    disabled={busy || !status}
+                    onClick={() => void cloneRepo()}
+                  >
+                    {action === "clone" ? "正在克隆…" : "克隆到空目录"}
+                  </button>
+                )}
               </Toolbar>
               <p className="muted small">
                 已有本地副本使用「预览接入范围」；仅空目录可以克隆，应用不会覆盖非空目录或重新克隆。
               </p>
               {preview && (
-                <div className="preview-item">
+                <div className="preview-item" ref={connectPreview}>
                   <div className="preview-head">
                     <strong className="target">{preview.remote}</strong>
                     <Chip tone="transfer">{preview.branch}</Chip>

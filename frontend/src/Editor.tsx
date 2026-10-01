@@ -1,3 +1,4 @@
+import AccountSelect from "./AccountSelect";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Journal, type Transaction } from "./api";
 import Diff from "./Diff";
@@ -414,39 +415,33 @@ export default function Editor({
                 </label>
                 <label className="field">
                   <span>支出分类</span>
-                  <select
-                    aria-label="支出分类"
+                  <AccountSelect
+                    label="支出分类"
                     required
                     value={fields.category}
-                    onChange={(e) => change("category", e.target.value)}
-                  >
-                    <option value="">请选择分类</option>
-                    {expenseGroups(names).map((group) => (
-                      <optgroup label={group.label} key={group.label}>
-                        {group.items.map((name) => (
-                          <option key={name}>{name}</option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
+                    onChange={(value) => change("category", value)}
+                    options={expenseGroups(names).flatMap((g) =>
+                      g.items.map((name) => ({
+                        value: name,
+                        label: `${g.label} · ${name}`,
+                      })),
+                    )}
+                  />
                 </label>
                 <label className="field">
                   <span>付款账户</span>
-                  <select
-                    aria-label="付款账户"
+                  <AccountSelect
+                    label="付款账户"
                     required
                     value={fields.payment}
-                    onChange={(e) => change("payment", e.target.value)}
-                  >
-                    <option value="">请选择账户</option>
-                    {fundingGroups(names).map((group) => (
-                      <optgroup label={group.label} key={group.label}>
-                        {group.items.map((name) => (
-                          <option key={name}>{name}</option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
+                    onChange={(value) => change("payment", value)}
+                    options={fundingGroups(names).flatMap((g) =>
+                      g.items.map((name) => ({
+                        value: name,
+                        label: `${g.label} · ${name}`,
+                      })),
+                    )}
+                  />
                 </label>
                 {field("note", "备注")}
               </div>

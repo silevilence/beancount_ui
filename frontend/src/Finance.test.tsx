@@ -1,4 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import Finance from "./Finance";
 import type { Journal } from "./api";
@@ -56,9 +62,7 @@ function fillBalance() {
 
 /** Facts 的值取自 dt 之后的 dd；表单标签可能同名，因此只认 dt。 */
 function factValue(label: string): string {
-  const term = screen
-    .getAllByText(label)
-    .find((node) => node.tagName === "DT");
+  const term = screen.getAllByText(label).find((node) => node.tagName === "DT");
   return term?.parentElement?.querySelector("dd")?.textContent ?? "";
 }
 
@@ -83,7 +87,9 @@ it("转账提交完整请求并把原文交给草稿", async () => {
   expect(factValue("转出账户合计（转入金额 + 手续费）")).toBe("102.00 CNY");
   fireEvent.click(screen.getByRole("button", { name: "生成分录" }));
 
-  expect(await screen.findByText(/Assets:Cash 100\.00 CNY/)).toBeInTheDocument();
+  expect(
+    await screen.findByText(/Assets:Cash 100\.00 CNY/),
+  ).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledWith(
     "/api/finance/compose",
     expect.objectContaining({ method: "POST" }),
@@ -101,9 +107,7 @@ it("转账提交完整请求并把原文交给草稿", async () => {
   });
   expect(screen.getByText("日常消费")).toBeInTheDocument();
 
-  fireEvent.click(
-    screen.getByRole("button", { name: "将核对结果加入草稿" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "将核对结果加入草稿" }));
   expect(onAdd).toHaveBeenCalledWith({ business: "ordinary", raw });
   await waitFor(() =>
     expect(container.querySelector(".result-card")).toBeNull(),
@@ -142,21 +146,23 @@ it("还款只允许负债作为对侧账户", () => {
     "aria-pressed",
     "true",
   );
-  const target = screen.getByLabelText("转入 / 还款账户") as HTMLSelectElement;
-  expect(Array.from(target.options).map((o) => o.textContent)).toEqual([
-    "请选择",
+  const target = screen.getByLabelText("转入 / 还款账户") as HTMLInputElement;
+  fireEvent.focus(target);
+  expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
     "Liabilities:Card",
   ]);
   expect(target.value).toBe("");
 
-  const source = screen.getByLabelText("转出账户") as HTMLSelectElement;
-  expect(Array.from(source.options).map((o) => o.textContent)).toEqual([
-    "请选择",
+  fireEvent.blur(target);
+  const source = screen.getByLabelText("转出账户") as HTMLInputElement;
+  fireEvent.focus(source);
+  expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
     "Assets:Bank",
     "Assets:Cash",
     "Liabilities:Card",
   ]);
   expect(screen.getByLabelText("手续费")).toHaveValue("0");
+  fireEvent.blur(source);
 
   // 负债账户对转账同样合法，切回转账时保留选择。
   fireEvent.change(target, { target: { value: "Liabilities:Card" } });
@@ -198,12 +204,10 @@ it("余额断言列出账面、预期与负差额，切换业务后作废", asyn
   const difference = await screen.findByText("-11.50 CNY");
   expect(difference).toHaveClass("difference", "neg");
   expect(screen.getByText("88.50 CNY")).toBeInTheDocument();
-  expect(
-    container.querySelector(".result-head"),
-  ).toHaveTextContent("余额断言");
-  expect(
-    container.querySelector(".result-head"),
-  ).toHaveTextContent("Assets:Bank · 2026-09-30 开始时");
+  expect(container.querySelector(".result-head")).toHaveTextContent("余额断言");
+  expect(container.querySelector(".result-head")).toHaveTextContent(
+    "Assets:Bank · 2026-09-30 开始时",
+  );
 
   fireEvent.click(screen.getByRole("button", { name: "转账" }));
   expect(container.querySelector(".result-card")).toBeNull();

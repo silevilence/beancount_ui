@@ -529,6 +529,7 @@ class Sync:
                 configured_remote = ""
             if not (self.root / ".git").exists():
                 return state | {
+                    "repository": False,
                     "connected": False,
                     "enabled": False,
                     "remote": configured_remote,
@@ -556,10 +557,11 @@ class Sync:
                 if state.get("synced_head") == head and state.get("synced_revision") == revision:
                     label = "已同步"
                 if not connected:
-                    label = "已保存 · 尚未接入"
+                    label = "仓库已就绪 · 待确认接入"
                 if state.get("error"):
                     label += " · 备份失败"
                 return state | {
+                    "repository": True,
                     "connected": connected,
                     "remote": remote,
                     "branch": self.settings.branch,
@@ -570,6 +572,7 @@ class Sync:
                 }
             except GitFailure as exc:
                 return state | {
+                    "repository": True,
                     "connected": False,
                     "enabled": False,
                     "branch": self.settings.branch,

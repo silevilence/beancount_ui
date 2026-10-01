@@ -59,6 +59,16 @@ def test_partial_then_remaining_settlement_no_extra_expense(ledger):
     assert Decimal(daily_view(ledger, date(2026, 9, 30))["expenses"]["CNY"]) == Decimal("105.50")
 
 
+def test_order_details_include_original_memo_and_source(ledger):
+    row = purchase(ledger)
+    assert row["note"] == "备注"
+    assert row["file"] == "txs/2026/09.bean"
+    assert row["line"] > 0
+    assert row["identified"]
+    assert 'memo: "备注"' in row["raw"]
+    assert "Expenses:Food" in row["raw"]
+
+
 def test_unpaid_refund_and_direct_paid_refund(ledger):
     row = purchase(ledger)
     before = read_files(ledger.settings.ledger_dir)

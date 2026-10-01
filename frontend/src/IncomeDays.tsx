@@ -1,3 +1,4 @@
+import AccountSelect from "./AccountSelect";
 import { useEffect, useState } from "react";
 import { api, type Journal, type Transaction } from "./api";
 import {
@@ -144,19 +145,15 @@ export default function IncomeDays({
           ].map(([label, value, set, prefix]) => (
             <label key={String(label)} className="field">
               <span>{String(label)}</span>
-              <select
-                aria-label={String(label)}
+              <AccountSelect
+                label={String(label)}
                 required
                 value={String(value)}
-                onChange={(e) => (set as (v: string) => void)(e.target.value)}
-              >
-                <option value="">请选择</option>
-                {accounts
+                onChange={set as (v: string) => void}
+                options={accounts
                   .filter((a) => a.name.startsWith(String(prefix)))
-                  .map((a) => (
-                    <option key={a.name}>{a.name}</option>
-                  ))}
-              </select>
+                  .map((a) => ({ value: a.name }))}
+              />
             </label>
           ))}
         </div>

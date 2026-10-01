@@ -1,3 +1,4 @@
+import AccountSelect from "./AccountSelect";
 import { useState } from "react";
 import { ApiError, api, type Journal } from "./api";
 import { businessLabel, decimalSum, money, signedTone } from "./format";
@@ -120,18 +121,14 @@ export default function Finance({
     return (
       <label className="field">
         <span>{label}</span>
-        <select
-          aria-label={label}
+        <AccountSelect
+          label={label}
           value={form[key]}
-          onChange={(e) => change(key, e.target.value)}
-        >
-          <option value="">请选择</option>
-          {accounts
+          onChange={(value) => change(key, value)}
+          options={accounts
             .filter((a) => prefixes.some((p) => a.name.startsWith(p)))
-            .map((a) => (
-              <option key={a.name}>{a.name}</option>
-            ))}
-        </select>
+            .map((a) => ({ value: a.name }))}
+        />
       </label>
     );
   }

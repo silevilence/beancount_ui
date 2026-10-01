@@ -1,3 +1,4 @@
+import AccountSelect from "./AccountSelect";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Journal, type Transaction } from "./api";
 import Diff from "./Diff";
@@ -376,19 +377,15 @@ export default function BatchEditor({
   ) => (
     <label className="field">
       <span>{label}</span>
-      <select
-        aria-label={label}
+      <AccountSelect
+        label={label}
         required
         value={String(draft.form[name] ?? "")}
-        onChange={(e) => change(name, e.target.value)}
-      >
-        <option value="">请选择</option>
-        {accounts
+        onChange={(value) => change(name, value)}
+        options={accounts
           .filter((a) => prefixes.some((p) => a.name.startsWith(p)))
-          .map((a) => (
-            <option key={a.name}>{a.name}</option>
-          ))}
-      </select>
+          .map((a) => ({ value: a.name }))}
+      />
     </label>
   );
   const field = (name: keyof EntryFields, label: string, type = "text") => (

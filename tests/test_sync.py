@@ -39,7 +39,14 @@ def test_clone_empty_and_refuse_overwrite(sync, tmp_path):
         remote=git(sync.root, "remote", "get-url", "origin"),
     )
     other = Sync(Writer(Ledger(settings)))
+    assert other.status()["repository"] is False
     assert other.clone()["errors"] == []
+    cloned = other.status()
+    assert cloned["repository"] is True
+    assert not cloned["connected"] and not cloned["enabled"]
+    assert cloned["sync"] == "仓库已就绪 · 待确认接入"
+    with pytest.raises(LedgerError, match="空目录"):
+        other.clone()
     assert connect(other)["connected"]
 
 

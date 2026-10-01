@@ -91,6 +91,7 @@ it("新增明细继承当前分类，分类变更回调完整字段", () => {
     amount: "",
     note: "",
   });
+  fireEvent.focus(screen.getByLabelText("分类 1"));
   expect(
     screen.getByRole("option", { name: "Expenses:Home" }),
   ).toBeInTheDocument();

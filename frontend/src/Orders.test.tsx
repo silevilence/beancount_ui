@@ -5,6 +5,10 @@ import type { Journal } from "./api";
 import type { DraftItem } from "./BatchEditor";
 
 interface TestOrder {
+  note?: string;
+  raw?: string;
+  file?: string;
+  line?: number;
   id: string;
   date: string;
   payee: string;
@@ -101,16 +105,20 @@ function mount(onAdd: (item: DraftItem) => boolean | void = vi.fn(() => true)) {
 it("渲染历史订单列表与状态芯片，未选择时提示先选订单", async () => {
   stubOrders(ORDERS);
   mount();
-  expect(
-    await screen.findByText("老张百货 · 日用品"),
-  ).toBeInTheDocument();
+  expect(await screen.findByText("老张百货 · 日用品")).toBeInTheDocument();
+  expect(screen.queryByText("街角食堂 · 午饭")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("记录范围"), {
+    target: { value: "all" },
+  });
   expect(screen.getByText("云记数码 · 键盘")).toBeInTheDocument();
   expect(screen.getByText("菜市 · 生鲜")).toBeInTheDocument();
-  expect(screen.getByText("2026-09-12 · Liabilities:TaobaoPayable")).toBeInTheDocument();
+  expect(
+    screen.getByText("2026-09-12 · Liabilities:TaobaoPayable"),
+  ).toBeInTheDocument();
   expect(screen.getByText("268.00 CNY")).toBeInTheDocument();
   expect(screen.getByText("680.00 CNY")).toBeInTheDocument();
   // o2 直接付款 + 已退款，o1/o3 挂账未结清且不显示已退款芯片；o4 为历史记录
-  expect(screen.getByText("直接付款")).toBeInTheDocument();
+  expect(screen.getAllByText("直接付款").length).toBeGreaterThan(0);
   expect(screen.getByText("挂账未结清 268.00 CNY")).toBeInTheDocument();
   expect(screen.getByText("挂账未结清 88.50 CNY")).toBeInTheDocument();
   expect(screen.getByText("历史记录 · 可结算 25.50 CNY")).toBeInTheDocument();
@@ -159,10 +167,9 @@ it("settle：deferred 订单金额默认未结清，账户必填并可加入草�
   expect(screen.getByLabelText("本次处理金额")).toHaveValue("");
   expect(screen.getByLabelText(CONFIRM)).not.toBeChecked();
   expect(screen.getByRole("button", { name: SUBMIT })).toBeDisabled();
-  expect(screen.getByText("老张百货 · 日用品").closest("button")).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  expect(
+    screen.getByText("老张百货 · 日用品").closest("button"),
+  ).toHaveAttribute("aria-selected", "true");
 });
 
 it("refund_unpaid：不选账户，入草稿时用原订单账户", async () => {
@@ -172,7 +179,9 @@ it("refund_unpaid：不选账户，入草稿时用原订单账户", async () => 
   fireEvent.click(await screen.findByText("菜市 · 生鲜"));
   fireEvent.click(screen.getByRole("button", { name: "未结算负债冲回" }));
   expect(screen.getByText(/未结算冲回减少原待付款负债/)).toBeInTheDocument();
-  expect(screen.queryByLabelText("实际付款 / 收款账户")).not.toBeInTheDocument();
+  expect(
+    screen.queryByLabelText("实际付款 / 收款账户"),
+  ).not.toBeInTheDocument();
   expect(screen.getByLabelText("原费用类别")).toHaveValue("Expenses:Food");
   fireEvent.click(screen.getByLabelText(CONFIRM));
   fireEvent.click(screen.getByRole("button", { name: SUBMIT }));
@@ -258,10 +267,9 @@ it("取消关联：清空选中、金额与勾选并回到初始禁用态", asyn
   expect(screen.getByRole("button", { name: SUBMIT })).toBeDisabled();
   expect(screen.queryByLabelText("本次处理金额")).not.toBeInTheDocument();
   expect(screen.getByText(/先在上方选择一个历史订单/)).toBeInTheDocument();
-  expect(screen.getByText("老张百货 · 日用品").closest("button")).toHaveAttribute(
-    "aria-selected",
-    "false",
-  );
+  expect(
+    screen.getByText("老张百货 · 日用品").closest("button"),
+  ).toHaveAttribute("aria-selected", "false");
 });
 
 it("onAdd 返回 false 时保留表单内容", async () => {
@@ -292,18 +300,15 @@ it("切换订单会重置金额与勾选", async () => {
     "aria-selected",
     "true",
   );
-  expect(screen.getByText("老张百货 · 日用品").closest("button")).toHaveAttribute(
-    "aria-selected",
-    "false",
-  );
+  expect(
+    screen.getByText("老张百货 · 日用品").closest("button"),
+  ).toHaveAttribute("aria-selected", "false");
 });
 
 it("没有历史订单时给出空态提示", async () => {
   stubOrders([]);
   mount();
-  expect(
-    await screen.findByText("没有可处理的历史订单"),
-  ).toBeInTheDocument();
+  expect(await screen.findByText("没有可处理的历史订单")).toBeInTheDocument();
   expect(screen.queryByText(/挂账未结清/)).not.toBeInTheDocument();
 });
 
@@ -332,4 +337,80 @@ it("刷新订单失败显示错误，再次刷新成功后错误消失", async (
     expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
   );
   expect(screen.getByText("老张百货 · 日用品")).toBeInTheDocument();
+});
+
+it("按备注、日期、状态与账户筛选，刷新保留条件并展示原始详情", async () => {
+  stubOrders([
+    {
+      ...ORDERS[0],
+      note: "收纳箱 蓝色",
+      raw: '2026-09-12 * "老张百货" "日用品"\n  memo: "收纳箱 蓝色"\n  Expenses:Daily 268 CNY\n',
+      file: "txs/09.bean",
+      line: 12,
+    },
+    ...ORDERS.slice(1),
+  ]);
+  mount();
+  await screen.findByText("老张百货 · 日用品");
+  fireEvent.change(screen.getByLabelText("搜索订单"), {
+    target: { value: "蓝色 收纳箱" },
+  });
+  fireEvent.change(screen.getByLabelText("订单开始日期"), {
+    target: { value: "2026-09-01" },
+  });
+  fireEvent.change(screen.getByLabelText("订单结束日期"), {
+    target: { value: "2026-09-15" },
+  });
+  fireEvent.change(screen.getByLabelText("订单状态"), {
+    target: { value: "unpaid" },
+  });
+  fireEvent.change(screen.getByLabelText("原付款账户"), {
+    target: { value: "Liabilities:TaobaoPayable" },
+  });
+  expect(screen.queryByText("菜市 · 生鲜")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText("刷新订单"));
+  await screen.findByText("老张百货 · 日用品");
+  expect(screen.getByLabelText("搜索订单")).toHaveValue("蓝色 收纳箱");
+  expect(screen.getByLabelText("订单状态")).toHaveValue("unpaid");
+  expect(screen.queryByText("菜市 · 生鲜")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText("老张百货 · 日用品"));
+  expect(screen.getByText("原备注：收纳箱 蓝色")).toBeInTheDocument();
+  expect(screen.getByText("来源：txs/09.bean:12")).toBeInTheDocument();
+  fireEvent.click(screen.getByText("查看原始交易和明细"));
+  expect(screen.getByText(/Expenses:Daily 268 CNY/)).toBeInTheDocument();
+  fireEvent.click(screen.getByText("重置筛选"));
+  expect(screen.queryByLabelText(CONFIRM)).not.toBeInTheDocument();
+  expect(screen.getByText("菜市 · 生鲜")).toBeInTheDocument();
+});
+
+it("大量记录分批显示，支持历史范围、退款状态和无匹配提示", async () => {
+  stubOrders([
+    ...Array.from({ length: 25 }, (_, i) => ({
+      ...ORDERS[0],
+      id: `order-${i}`,
+      payee: `店铺${i}`,
+    })),
+    ...ORDERS.slice(1),
+  ]);
+  mount();
+  await screen.findByText("匹配 27 条 · 当前显示 20 条");
+  fireEvent.click(screen.getByText("再显示 20 条"));
+  expect(screen.getByText("匹配 27 条 · 当前显示 27 条")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("订单状态"), {
+    target: { value: "paid" },
+  });
+  expect(screen.getByText("云记数码 · 键盘")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("订单状态"), {
+    target: { value: "historical" },
+  });
+  expect(screen.getByText(/没有匹配筛选条件/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("记录范围"), {
+    target: { value: "all" },
+  });
+  expect(screen.getByText("街角食堂 · 午饭")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("订单状态"), {
+    target: { value: "refunded" },
+  });
+  expect(screen.getByText("云记数码 · 键盘")).toBeInTheDocument();
+  expect(screen.getByText("街角食堂 · 午饭")).toBeInTheDocument();
 });

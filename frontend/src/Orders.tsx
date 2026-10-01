@@ -1,3 +1,4 @@
+import AccountSelect from "./AccountSelect";
 import { useEffect, useState } from "react";
 import { api, type Journal } from "./api";
 import { Chip, Empty, Notice, Segmented, Toolbar } from "./ui";
@@ -16,6 +17,13 @@ interface Order {
   currency: string;
   account: string;
   categories: Record<string, string>;
+  note?: string;
+  file?: string;
+  line?: number;
+  raw?: string;
+  key?: string;
+  tags?: string[];
+  identified?: boolean;
 }
 
 const KIND_ORDER = ["settle", "refund_paid", "refund_unpaid"];
@@ -51,15 +59,27 @@ export default function Orders({
   const [confirmed, setConfirmed] = useState(false);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [scope, setScope] = useState("orders");
+  const [state, setState] = useState("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [filterAccount, setFilterAccount] = useState("");
+  const [limit, setLimit] = useState(20);
   const row = rows.find((r) => r.id === source);
   const funding = accounts.filter((a) => /^(Assets|Liabilities):/.test(a.name));
 
   async function refresh() {
+    setLoading(true);
+    unlink();
     try {
       setRows(await api<Order[]>("/orders"));
       setError("");
     } catch (e) {
       setError(String(e));
+    } finally {
+      setLoading(false);
     }
   }
   useEffect(() => {
@@ -78,6 +98,49 @@ export default function Orders({
     setAmount("");
     setConfirmed(false);
   }
+  function filter(change: () => void) {
+    change();
+    setLimit(20);
+    unlink();
+  }
+  const filtered = rows
+    .filter((r) => {
+      const text = [
+        r.payee,
+        r.narration,
+        r.note,
+        r.raw,
+        r.key,
+        r.account,
+        r.total,
+        r.currency,
+        ...(r.tags ?? []),
+        ...Object.keys(r.categories),
+      ]
+        .join(" ")
+        .toLocaleLowerCase();
+      const candidate =
+        r.identified ||
+        r.mode !== "historical" ||
+        /淘宝|taobao|天猫|tmall/.test(text);
+      return (
+        (scope === "all" || candidate) &&
+        query
+          .trim()
+          .toLocaleLowerCase()
+          .split(/\s+/)
+          .every((term) => text.includes(term)) &&
+        (!from || r.date >= from) &&
+        (!to || r.date <= to) &&
+        (!filterAccount || r.account === filterAccount) &&
+        (state === "all" ||
+          (state === "unpaid" && r.mode !== "paid" && Number(r.unpaid) > 0) ||
+          (state === "paid" && r.mode === "paid") ||
+          (state === "refunded" && Number(r.refunded) > 0) ||
+          (state === "historical" && r.mode === "historical"))
+      );
+    })
+    .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
   function add() {
     if (!row || !confirmed) return;
     const added = onAdd({
@@ -105,6 +168,97 @@ export default function Orders({
           先从历史订单里认领这一笔，再确认收货、退款或冲回负债。金额与账户始终由你核对，历史匹配不会自动入账。
         </p>
       </div>
+      <div className="form-grid order-filters" aria-label="订单筛选">
+        <label className="field">
+          <span>搜索订单</span>
+          <input
+            aria-label="搜索订单"
+            placeholder="商户、商品、备注、订单号或金额"
+            value={query}
+            onChange={(e) => filter(() => setQuery(e.target.value))}
+          />
+        </label>
+        <label className="field">
+          <span>记录范围</span>
+          <select
+            aria-label="记录范围"
+            value={scope}
+            onChange={(e) => filter(() => setScope(e.target.value))}
+          >
+            <option value="orders">订单及淘宝候选</option>
+            <option value="all">全部历史消费（手动认领）</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>订单状态</span>
+          <select
+            aria-label="订单状态"
+            value={state}
+            onChange={(e) => filter(() => setState(e.target.value))}
+          >
+            <option value="all">全部状态</option>
+            <option value="unpaid">可结算 / 待核对</option>
+            <option value="paid">直接付款</option>
+            <option value="refunded">有退款</option>
+            <option value="historical">历史记录（未认领）</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>原付款账户</span>
+          <AccountSelect
+            label="原付款账户"
+            value={filterAccount}
+            onChange={(value) => filter(() => setFilterAccount(value))}
+            options={[...new Set(rows.map((r) => r.account))]
+              .sort()
+              .map((value) => ({ value }))}
+          />
+        </label>
+        <label className="field">
+          <span>订单开始日期</span>
+          <input
+            type="date"
+            aria-label="订单开始日期"
+            value={from}
+            onChange={(e) => filter(() => setFrom(e.target.value))}
+          />
+        </label>
+        <label className="field">
+          <span>订单结束日期</span>
+          <input
+            type="date"
+            aria-label="订单结束日期"
+            value={to}
+            onChange={(e) => filter(() => setTo(e.target.value))}
+          />
+        </label>
+      </div>
+      <Toolbar>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() =>
+            filter(() => {
+              setQuery("");
+              setScope("orders");
+              setState("all");
+              setFrom("");
+              setTo("");
+              setFilterAccount("");
+            })
+          }
+        >
+          重置筛选
+        </button>
+        <span className="muted small">
+          匹配 {filtered.length} 条 · 当前显示{" "}
+          {Math.min(limit, filtered.length)} 条
+        </span>
+      </Toolbar>
+      <p className="muted small">
+        默认只显示已标记订单及名称、备注或账户中含淘宝 /
+        天猫的候选。找不到时可切换「全部历史消费」；历史候选的付款状态需自行核对。
+      </p>
       {error && (
         <Notice
           tone="error"
@@ -121,11 +275,15 @@ export default function Orders({
           {error}
         </Notice>
       )}
-      {rows.length === 0 ? (
+      {loading ? (
+        <Empty>正在读取订单…</Empty>
+      ) : rows.length === 0 ? (
         <Empty>没有可处理的历史订单</Empty>
+      ) : filtered.length === 0 ? (
+        <Empty>没有匹配筛选条件的订单，可调整筛选或切换记录范围。</Empty>
       ) : (
         <div className="order-list">
-          {rows.map((r) => (
+          {filtered.slice(0, limit).map((r) => (
             <button
               key={r.id}
               type="button"
@@ -140,6 +298,12 @@ export default function Orders({
                 <span className="order-sub">
                   {r.date} · {r.account}
                 </span>
+                {r.note && <span className="order-note">备注：{r.note}</span>}
+                {r.file && (
+                  <span className="order-sub">
+                    {r.file}:{r.line}
+                  </span>
+                )}
               </span>
               <span className="order-side">
                 <span>{money(r.total, r.currency)}</span>
@@ -165,6 +329,15 @@ export default function Orders({
           ))}
         </div>
       )}
+      {filtered.length > limit && (
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => setLimit(limit + 20)}
+        >
+          再显示 20 条
+        </button>
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -176,6 +349,27 @@ export default function Orders({
             <div className="work-head">
               <h3>处理原订单</h3>
               <p>历史匹配仅为建议，请确认真实语义；取消关联不会入账</p>
+            </div>
+            <div className="order-detail">
+              <p>
+                当前选择：{row.date} · {row.payee || "未填写商户"} ·{" "}
+                {row.narration} · {money(row.total, row.currency)}
+              </p>
+              <p>
+                原备注：
+                {row.note || "无独立备注，请核对原文中的商品明细与注释。"}
+              </p>
+              {row.file && (
+                <p className="muted small">
+                  来源：{row.file}:{row.line}
+                </p>
+              )}
+              {row.raw && (
+                <details>
+                  <summary>查看原始交易和明细</summary>
+                  <pre>{row.raw}</pre>
+                </details>
+              )}
             </div>
             <p className="muted small">
               {KIND_NOTE[kind] ?? ""}
@@ -209,34 +403,36 @@ export default function Orders({
               {kind !== "refund_unpaid" && (
                 <label className="field">
                   <span>实际付款 / 收款账户</span>
-                  <select
-                    aria-label="实际付款 / 收款账户"
+                  <AccountSelect
+                    label="实际付款 / 收款账户"
                     required
                     value={account}
-                    onChange={(e) => setAccount(e.target.value)}
-                  >
-                    <option value="">请选择</option>
-                    {funding.map((a) => (
-                      <option key={a.name}>{a.name}</option>
-                    ))}
-                  </select>
+                    onChange={(value) => {
+                      setAccount(value);
+                      setConfirmed(false);
+                    }}
+                    options={funding.map((a) => ({ value: a.name }))}
+                  />
                 </label>
               )}
               {kind !== "settle" && (
                 <label className="field">
                   <span>原费用类别</span>
-                  <select
-                    aria-label="原费用类别"
+                  <AccountSelect
+                    label="原费用类别"
                     required
                     value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                  >
-                    {Object.entries(row.categories).map(([name, value]) => (
-                      <option key={name} value={name}>
-                        {name} · 可冲回 {money(value, row.currency)}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => {
+                      setCategory(value);
+                      setConfirmed(false);
+                    }}
+                    options={Object.entries(row.categories).map(
+                      ([name, value]) => ({
+                        value: name,
+                        label: `${name} · 可冲回 ${money(value, row.currency)}`,
+                      }),
+                    )}
+                  />
                 </label>
               )}
               <label className="field">
@@ -267,12 +463,17 @@ export default function Orders({
           <button
             type="button"
             className="ghost"
-            disabled={!row}
+            disabled={!row || loading}
             onClick={unlink}
           >
             取消关联
           </button>
-          <button type="button" className="ghost" onClick={() => void refresh()}>
+          <button
+            type="button"
+            className="ghost"
+            disabled={loading}
+            onClick={() => void refresh()}
+          >
             刷新订单
           </button>
         </Toolbar>
