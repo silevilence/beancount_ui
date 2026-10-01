@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, reasonOf } from "./api";
 import Diff from "./Diff";
+import GithubAuth from "./GithubAuth";
 import {
   changeLabel,
   refreshSync,
@@ -227,13 +228,16 @@ export default function SyncDialog({
             <button
               className="ghost small"
               disabled={busy}
-              onClick={() => void previewBackup()}
+              onClick={() =>
+                void (connected ? previewBackup() : previewConnect())
+              }
             >
-              重试立即同步
+              {connected ? "重试立即同步" : "检查接入范围"}
             </button>
           }
         >
-          最近一次备份未完成：{trimReason(status.error)}
+          {connected ? "最近一次备份未完成：" : "接入提示："}
+          {trimReason(status.error)}
           。已保存的记录仍在本地，请勿重复录入。
         </Notice>
       )}
@@ -300,6 +304,12 @@ export default function SyncDialog({
           )}
         </aside>
         <section className="backup-work">
+          <GithubAuth
+            auth={status?.github_auth}
+            busy={busy}
+            run={run}
+            onDone={setDone}
+          />
           <section className="work-area" aria-label="网络代理">
             <div className="work-head">
               <h3>网络代理</h3>
@@ -432,7 +442,7 @@ export default function SyncDialog({
               <div className="work-head">
                 <h3>接入账本仓库</h3>
                 <p>
-                  前置条件：服务端配置远端地址与 Git 凭据；接入只补充
+                  先核对远端地址，私有 GitHub 仓库在上方保存认证；接入只补充
                   include，不覆盖既有文件。
                 </p>
               </div>

@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, Field
 
 from .git_network import ProxyInput, redact_diagnostic, validate_proxy
+from .github_auth import GithubAuth, GithubAuthInput
 from .ledger import LedgerError, digest, load_snapshot, read_files
 from .writer import Writer, atomic_write
 
@@ -61,6 +62,7 @@ class Sync:
         self.root = writer.root
         self.settings = self.ledger.settings
         self.path = writer.state / "sync.json"
+        self.github_auth = GithubAuth(writer.state)
 
     def state(self):
         if not self.path.exists():
@@ -93,9 +95,17 @@ class Sync:
         url = proxy["proxy_url"] if mode == "custom" else self.settings.git_proxy
         overrides = []
         process_env = os.environ | {"GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
+        secret = ""
+        if args[0] in {"clone", "ls-remote", "fetch", "push"}:
+            for arg in args:
+                if arg.startswith("https://"):
+                    auth_options, auth_env, secret = self.github_auth.git_options(arg)
+                    overrides.extend(auth_options)
+                    process_env |= auth_env
+                    break
         if mode != "system" or url:
             value = url if mode != "direct" else ""
-            overrides = ["-c", f"http.proxy={value}", "-c", f"remote.origin.proxy={value}"]
+            overrides.extend(["-c", f"http.proxy={value}", "-c", f"remote.origin.proxy={value}"])
             # A URL-specific Git config outranks http.proxy, even on the command line.
             for arg in args:
                 if arg.startswith(("https://", "http://")):
@@ -106,6 +116,11 @@ class Sync:
         def log_failure(code, stderr):
             # Do not log argv, stdin, stdout or exception repr: they may contain ledger data
             # or secrets. Git stderr still requires redaction (helpers can echo credentials).
+            detail = (
+                stderr.decode("utf-8", errors="replace") if isinstance(stderr, bytes) else stderr
+            )
+            if secret and detail:
+                detail = detail.replace(secret, "[REDACTED]")
             logger.error(
                 "Git failure: operation=%s branch=%s proxy_mode=%s code=%s elapsed=%.2fs stderr=%s",
                 args[0],
@@ -113,7 +128,7 @@ class Sync:
                 mode,
                 code,
                 time.monotonic() - started,
-                redact_diagnostic(stderr),
+                redact_diagnostic(detail),
             )
 
         try:
@@ -126,19 +141,47 @@ class Sync:
             )
         except subprocess.TimeoutExpired as exc:
             log_failure("timeout", exc.stderr)
-            raise GitFailure(
-                "Git 连接超时（45 秒）；本地记录保留，请查看服务端控制台日志"
-            ) from exc
+            raise GitFailure("Git 连接超时（45 秒）；本地记录保留，请查看服务端控制台日志") from exc
         except OSError as exc:
             log_failure(f"{type(exc).__name__}:{exc.errno}", str(exc))
             raise GitFailure("Git 不可用或连接超时；本地记录保留，请检查服务端网络和凭据") from exc
         if result.returncode:
             log_failure(result.returncode, result.stderr)
+            if any(
+                marker in result.stderr.lower()
+                for marker in (
+                    b"could not read username",
+                    b"authentication failed",
+                    b"invalid username or token",
+                )
+            ):
+                raise GitFailure(
+                    "Git 认证失败或缺少凭据；请在备份中心保存或更新 GitHub Token，"
+                    "并确认其具有目标仓库权限。本地记录保留。"
+                )
             raise GitFailure(
                 f"Git {args[0]} 失败；请检查网络、认证、代理、目标分支或仓库状态。"
                 "本地记录保留；详情请查看服务端控制台日志。"
             )
         return result.stdout if binary else result.stdout.decode("utf-8").rstrip("\r\n")
+
+    def configured_remote(self):
+        return safe_remote(self.settings.remote) if self.settings.remote else self.repository()
+
+    def configure_github_auth(self, request: GithubAuthInput):
+        with self.writer.guard():
+            return self.github_auth.save(self.configured_remote(), request)
+
+    def remove_github_auth(self):
+        with self.writer.guard():
+            return self.github_auth.remove()
+
+    def check_connection(self):
+        with self.writer.guard():
+            remote = self.configured_remote()
+            self.root.mkdir(parents=True, exist_ok=True)
+            head = self.remote_head(remote)
+            return {"message": "仓库和目标分支可读取；推送权限将在实际备份时验证", "head": head}
 
     def tree_files(self, ref):
         files = {}
@@ -312,7 +355,21 @@ class Sync:
             # Reject external edits before moving the branch. Git CAS protects concurrent commits.
             if digest(read_files(self.root)) != plan["revision"]:
                 raise LedgerError("校验后文件发生变化，请重新预览")
-            commit = self.git("commit-tree", tree, "-p", plan["head"], "-m", plan["message"])
+            # A freshly deployed container need not have an interactive user's Git identity.
+            name = self.git("config", "--default", "日用账本", "--get", "user.name")
+            email = self.git("config", "--default", "beancount-ui@localhost", "--get", "user.email")
+            identity = {
+                key: os.environ.get(key) or value
+                for key, value in {
+                    "GIT_AUTHOR_NAME": name,
+                    "GIT_AUTHOR_EMAIL": email,
+                    "GIT_COMMITTER_NAME": name,
+                    "GIT_COMMITTER_EMAIL": email,
+                }.items()
+            }
+            commit = self.git(
+                "commit-tree", tree, "-p", plan["head"], "-m", plan["message"], env=identity
+            )
             self.git("update-ref", f"refs/heads/{self.settings.branch}", commit, plan["head"])
             # Only reconcile the explicitly included paths in the user's index.
             self.git("reset", "--quiet", commit, "--", *plan["files"])
@@ -463,7 +520,23 @@ class Sync:
 
     def status(self):
         with self.writer.guard():
-            state = self.state() | self.proxy()
+            state = self.state() | self.proxy() | {"github_auth": self.github_auth.status()}
+            try:
+                configured_remote = (
+                    safe_remote(self.settings.remote) if self.settings.remote else ""
+                )
+            except GitFailure:
+                configured_remote = ""
+            if not (self.root / ".git").exists():
+                return state | {
+                    "connected": False,
+                    "enabled": False,
+                    "remote": configured_remote,
+                    "branch": self.settings.branch,
+                    "changes": [],
+                    "sync": "尚未接入 Git 仓库",
+                    "error": "账本目录尚未建立 Git 仓库；空目录请先克隆，已有文件请接入完整仓库",
+                }
             try:
                 remote = self.repository()
                 changes = self.changes()
@@ -502,4 +575,6 @@ class Sync:
                     "branch": self.settings.branch,
                     "error": str(exc),
                     "changes": [],
+                    "remote": configured_remote,
+                    "sync": "仓库待检查",
                 }

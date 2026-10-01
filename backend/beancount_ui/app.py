@@ -4,6 +4,8 @@ from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from filelock import Timeout
@@ -13,6 +15,7 @@ from .access import Access
 from .config import Settings
 from .finance import FinanceInput, compose_finance
 from .git_network import ProxyInput
+from .github_auth import GithubAuthInput
 from .income import income_days
 from .ledger import Ledger, LedgerError
 from .models import BatchMutation, CommitInput, Mutation
@@ -80,6 +83,25 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     @app.post("/api/sync/proxy")
     def sync_proxy(request: ProxyInput):
         return get_sync().configure_proxy(request)
+
+    @app.post("/api/sync/github-auth")
+    def github_auth(request: GithubAuthInput):
+        return get_sync().configure_github_auth(request)
+
+    @app.delete("/api/sync/github-auth")
+    def delete_github_auth():
+        return get_sync().remove_github_auth()
+
+    @app.post("/api/sync/check-connection")
+    def check_connection():
+        return get_sync().check_connection()
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, exc: RequestValidationError):
+        if request.url.path == "/api/sync/github-auth":
+            # Pydantic's usual validation response includes the rejected input.
+            return JSONResponse(status_code=422, content={"detail": "请填写 GitHub 用户名和 Token"})
+        return await request_validation_exception_handler(request, exc)
 
     @app.post("/api/sync/preview")
     def sync_preview(request: ConnectInput):

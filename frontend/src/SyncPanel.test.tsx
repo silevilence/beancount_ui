@@ -51,6 +51,82 @@ function serve(handler: (path: string, body: Body) => Reply) {
 
 const changed = vi.fn(async () => {});
 
+it("页面保存认证后清空 Token，重新打开保留状态，并支持检查连接和移除", async () => {
+  let auth = { configured: false, username: "", repository: "" };
+  const calls = serve((path, body) => {
+    if (path === "github-auth") {
+      auth = body
+        ? {
+            configured: true,
+            username: String(body.username),
+            repository: "example/ledger",
+          }
+        : { configured: false, username: "", repository: "" };
+      return ok(auth);
+    }
+    if (path === "check-connection")
+      return ok({ message: "仓库和目标分支可读取" });
+    return ok(status({ connected: false, github_auth: auth }));
+  });
+  render(<Harness />);
+  fireEvent.click(await screen.findByText("备份中心"));
+  fireEvent.change(screen.getByLabelText("GitHub 用户名"), {
+    target: { value: "example" },
+  });
+  fireEvent.change(screen.getByLabelText("GitHub Token"), {
+    target: { value: "ghp_test_private" },
+  });
+  await refreshSync();
+  expect(screen.getByLabelText("GitHub 用户名")).toHaveValue("example");
+  expect(screen.getByLabelText("GitHub Token")).toHaveValue("ghp_test_private");
+  expect(screen.getByText("检查 GitHub 连接")).toBeDisabled();
+  fireEvent.click(screen.getByText("保存 GitHub 认证"));
+  expect(await screen.findByText(/GitHub 认证已保存/)).toBeInTheDocument();
+  expect(screen.getByLabelText("GitHub Token")).toHaveValue("");
+  expect(calls.find((c) => c.path === "github-auth")?.body).toEqual({
+    username: "example",
+    token: "ghp_test_private",
+  });
+  expect(JSON.stringify(localStorage)).not.toContain("ghp_test_private");
+  expect(JSON.stringify(sessionStorage)).not.toContain("ghp_test_private");
+  fireEvent.click(screen.getByLabelText("关闭备份"));
+  fireEvent.click(screen.getByText("备份中心"));
+  expect(await screen.findByLabelText("GitHub 用户名")).toHaveValue("example");
+  expect(screen.getByLabelText("GitHub Token")).toHaveValue("");
+  fireEvent.click(screen.getByText("检查 GitHub 连接"));
+  expect(await screen.findByText("仓库和目标分支可读取")).toBeInTheDocument();
+  fireEvent.click(screen.getByText("移除 GitHub 认证"));
+  expect(
+    await screen.findByText(/页面保存的 GitHub 认证已移除/),
+  ).toBeInTheDocument();
+  expect(await screen.findByText("尚未保存认证")).toBeInTheDocument();
+});
+
+it("认证保存失败可重试，未保存 Token 随对话框关闭丢弃", async () => {
+  const calls = serve((path) =>
+    path === "github-auth"
+      ? fail("认证配置暂时无法保存")
+      : ok(status({ connected: false })),
+  );
+  render(<Harness />);
+  fireEvent.click(await screen.findByText("备份中心"));
+  fireEvent.change(screen.getByLabelText("GitHub 用户名"), {
+    target: { value: "example" },
+  });
+  fireEvent.change(screen.getByLabelText("GitHub Token"), {
+    target: { value: "ghp_unsaved" },
+  });
+  fireEvent.click(screen.getByText("保存 GitHub 认证"));
+  expect(
+    await screen.findByText(/备份操作失败：认证配置暂时无法保存/),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("GitHub Token")).toHaveValue("ghp_unsaved");
+  expect(calls.filter((c) => c.path === "github-auth")).toHaveLength(1);
+  fireEvent.click(screen.getByLabelText("关闭备份"));
+  fireEvent.click(screen.getByText("备份中心"));
+  expect(await screen.findByLabelText("GitHub Token")).toHaveValue("");
+});
+
 it("未接入时可以保存代理，轮询不覆盖输入，失败保留输入并可重试或切回直连", async () => {
   let saved = { proxy_mode: "system", proxy_url: "" };
   let reject = true;

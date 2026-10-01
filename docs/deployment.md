@@ -61,7 +61,7 @@ Windows 挂载权限由 Docker Desktop 共享配置控制；确认容器 UID 100
 beancount-ui/
 ├── compose.yaml       # NAS 保存的项目配置
 ├── ledger/            # 正式账本，包含 main.beancount、include 文件及 .git
-├── state/             # SQLite、事务恢复日志、同步配置，以及用户 HOME
+├── state/             # SQLite、恢复日志、同步/代理设置、页面保存的 GitHub 认证及用户 HOME
 └── access-token       # 只含一行至少 32 字符的随机应用口令
 ```
 
@@ -206,12 +206,16 @@ HTTP 下浏览器可能禁用剪贴板按钮，可展开原文手工复制；HTT
 
 设置 `BEANCOUNT_GIT_REMOTE` 为无嵌入凭据的 HTTPS/SSH 地址，默认分支 `master-1`。
 首次接入预览会展示本地改动和未 include 的文件，确认后才允许备份，定时备份默认关闭。
+GitHub HTTPS 仓库推荐在「备份中心 → GitHub 认证」填写用户名和 Token，保存后检查连接，
+再克隆或预览接入，不需要进入容器执行 Git 配置命令。Token 过期后也在页面更新。
+凭据文件位于挂载的 `/data/state/github-auth.json`，原 state 目录保留时升级重建不会丢失；
+页面不回显 Token，详细保存方式与权限说明见[页面认证说明](github-sync.md#页面配置-github-认证)。
 使用镜像默认 UID `10001` 时，可挂载专用于此账本的 SSH 配置目录到 `/home/bean/.ssh:ro`（私钥 600、目录 700、属主 10001），
 提前验证服务器指纹并提供 `known_hosts`；不要关闭主机密钥检查。HTTPS 可挂载 Git credential
 helper 的运行时配置，参见 [同步说明](github-sync.md)。凭据不要写入镜像、仓库或远端 URL。
 NAS 示例覆盖为数字 UID `1000` 后，镜像 `/etc/passwd` 没有该用户，OpenSSH 可能报
-`No user exists for uid`，不能直接沿用上述 SSH 方案。此配置可用 HTTPS + 服务端 Git credential helper；
-Git 的全局配置读取 `HOME=/data/state` 下的 `.gitconfig`，按该用户配置 `user.name` / `user.email`。
+`No user exists for uid`，不能直接沿用上述 SSH 方案。此配置可用 HTTPS + 页面认证或服务端 Git credential helper；
+Git 的全局配置读取 `HOME=/data/state` 下的 `.gitconfig`；已有提交署名会沿用，缺失时使用应用默认署名，无需额外配置。
 必须使用 SSH 时，保留默认 `10001:10001` 并授予其挂载权限，或自行构建具有对应 UID 用户条目的镜像。
 GHCR 私有包需要在部署主机登录具有 `read:packages` 权限的账号；GitHub Release 本身不改变包可见性。
 
@@ -221,6 +225,7 @@ GHCR 私有包需要在部署主机登录具有 `read:packages` 权限的账号�
 | --- | --- | --- |
 | 正式账本、Git 历史 | `/data/ledger` 挂载目录 | 原样保留，不能替换为镜像内容 |
 | 待确认请求、事务恢复日志、同步配置 | `/data/state` 挂载目录 | 与账本成对备份和恢复 |
+| 页面保存的 GitHub 认证、代理设置 | `/data/state/github-auth.json`、`sync.json` | 保留原挂载目录和运行用户的访问权限，保护含凭据的备份 |
 | 补记草稿、便笺、模板设置 | 浏览器 localStorage | 保持浏览器配置、Origin 和容器账本路径相同；不属于服务器卷 |
 | 访问口令、SSH/Git 凭据 | 运行时只读挂载 | 独立妥善保存，不提交到 Git |
 

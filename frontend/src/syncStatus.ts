@@ -29,6 +29,7 @@ export interface SyncStatus {
   pending?: boolean;
   proxy_mode?: "system" | "direct" | "custom";
   proxy_url?: string;
+  github_auth?: { configured: boolean; username: string; repository: string };
   changes: SyncChange[];
 }
 
