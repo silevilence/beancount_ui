@@ -4,14 +4,15 @@
 通用与 NAS Compose 均默认使用 `latest`，指向最近一次通过发布验收并成功推送的镜像。
 该标签会在包含本次配置改动的版本 Tag 成功发布后提供；仅修改本地配置不会在 GHCR 创建它。
 需要固定版本时，在环境变量或 Compose 同目录的 `.env` 中设置
-`BEANCOUNT_IMAGE=ghcr.io/silevilence/beancount_ui:V0.1.1`（版本号按需替换）。
-V0.1.1 修复局域网 HTTP 页面的保存失败并支持全开放来源配置，其验收记录与镜像摘要见该版本 Release 附件。
+`BEANCOUNT_IMAGE=ghcr.io/silevilence/beancount_ui:V0.1.2`（版本号按需替换）。
+V0.1.2 增加备份代理设置与服务端失败诊断日志，其验收记录与镜像摘要见该版本 Release 附件。
+V0.1.1 修复局域网 HTTP 页面的保存失败并支持全开放来源配置。
 V0.1.0 首版已通过 [发布验收](https://github.com/silevilence/beancount_ui/actions/runs/36725085567)，
 摘要为 `sha256:4df3df7a8a4a574f6dd53652e5c336914bfc3b203686d7df46f71d6386fe7351`。
 每次 Release 的 `image.txt` 附件记录完整拉取地址、不可变摘要和源码提交；生产可将
 `BEANCOUNT_IMAGE` 设置为该文件中的 `ghcr.io/...@sha256:...` 固定产物。
-GHCR 版本标签由流水线拒绝覆盖；摘要是仓库端的内容寻址保证。V0.1.1 未改变账本与状态格式，
-可按摘要回退到 V0.1.0；回退后局域网 HTTP 页面仍会重现保存失败，且需把全开放来源改回明确地址列表。
+GHCR 版本标签由流水线拒绝覆盖；摘要是仓库端的内容寻址保证。V0.1.2 未改变账本与状态格式，
+可按摘要回退到 V0.1.1 或 V0.1.0；回退到 V0.1.0 后局域网 HTTP 页面仍会重现保存失败，且需把全开放来源改回明确地址列表。
 
 ## 启动
 
@@ -129,10 +130,11 @@ PY
 
 **镜像版本注意：** `V0.1.0` 在非 localhost 的 HTTP 页面中调用 `crypto.randomUUID()`，
 会导致单笔和整批预览失败；它也不接受 `BEANCOUNT_ALLOWED_ORIGINS: "*"`。
-本次发布的 `V0.1.1` 已包含 `getRandomValues()` UUID v4 兼容实现与全开放来源配置，
+`V0.1.1` 已包含 `getRandomValues()` UUID v4 兼容实现与全开放来源配置。
+本次发布的 `V0.1.2` 在此基础上增加备份代理设置与服务端失败诊断日志，
 通用与 NAS 示例均默认使用 `latest`，需要固定该版本时设置 `BEANCOUNT_IMAGE`。
-升级到 V0.1.1 需要重新创建容器：修改 Compose 不会更新已有镜像里的前端代码。
-若暂时无法使用 V0.1.1，可在 Docker 构建主机用同一份源码执行
+升级到 V0.1.2 需要重新创建容器：修改 Compose 不会更新已有镜像里的前端代码。
+若暂时无法使用 V0.1.2，可在 Docker 构建主机用同一份源码执行
 `docker build -t beancount-ui:nas-fixed .`，再用 `docker save -o beancount-ui-nas-fixed.tar beancount-ui:nas-fixed`
 导出并通过 NAS 镜像管理导入（构建主机与 NAS 架构需匹配；首版为 linux/amd64），
 再设置 `BEANCOUNT_IMAGE=beancount-ui:nas-fixed` 使用该本地镜像，无需从 GHCR 拉取。

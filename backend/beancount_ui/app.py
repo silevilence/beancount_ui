@@ -12,6 +12,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .access import Access
 from .config import Settings
 from .finance import FinanceInput, compose_finance
+from .git_network import ProxyInput
 from .income import income_days
 from .ledger import Ledger, LedgerError
 from .models import BatchMutation, CommitInput, Mutation
@@ -37,7 +38,7 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
             if app.state.scheduler:
                 app.state.scheduler.stop()
 
-    app = FastAPI(title="日用账本", version="0.1.1", lifespan=lifespan)
+    app = FastAPI(title="日用账本", version="0.1.2", lifespan=lifespan)
     app.state.scheduler = None
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=access.hosts)
     app.middleware("http")(access.protect)
@@ -75,6 +76,10 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     @app.post("/api/sync/schedule")
     def sync_schedule(request: ScheduleInput):
         return configure(get_sync(), request)
+
+    @app.post("/api/sync/proxy")
+    def sync_proxy(request: ProxyInput):
+        return get_sync().configure_proxy(request)
 
     @app.post("/api/sync/preview")
     def sync_preview(request: ConnectInput):
