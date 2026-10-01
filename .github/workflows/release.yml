@@ -62,6 +62,10 @@ jobs:
         run: uv run --frozen --with playwright playwright install --with-deps chromium
       - name: Verify container, sync, UI drafts and recreation
         run: uv run --frozen --with playwright python scripts/container_smoke.py beancount-ui:candidate
+      - name: Verify NAS user, mounted secret and writable bind mounts
+        env:
+          BEANCOUNT_SMOKE_USER: '1000:10'
+        run: uv run --frozen --with playwright python scripts/container_smoke.py beancount-ui:candidate
       - uses: actions/upload-artifact@v4
         if: always()
         with:

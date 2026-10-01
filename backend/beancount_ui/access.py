@@ -21,8 +21,10 @@ class Access:
         if self.mode not in {"local", "private"}:
             raise ValueError("BEANCOUNT_ACCESS_MODE 仅支持 local 或 private")
         if self.mode == "private" and (len(self.token) < 32 or not self.origins):
-            raise ValueError("私网访问必须配置至少 32 字符的访问口令和明确的允许 Origin")
+            raise ValueError("私网访问必须配置至少 32 字符的访问口令和允许 Origin（或 *）")
         for origin in self.origins:
+            if origin == "*":
+                continue
             parts = urlsplit(origin)
             if (
                 parts.scheme not in {"http", "https"}
@@ -34,7 +36,7 @@ class Access:
                 or parts.fragment
                 or "*" in origin
             ):
-                raise ValueError("允许 Origin 必须为明确的 http(s)://主机[:端口]，不含路径或凭据")
+                raise ValueError("允许 Origin 必须为 http(s)://主机[:端口] 或 *，不含路径或凭据")
 
     @classmethod
     def from_env(cls):
@@ -53,6 +55,8 @@ class Access:
 
     @property
     def hosts(self):
+        if "*" in self.origins:
+            return ["*"]
         return ["127.0.0.1", "localhost", "[::1]", "testserver"] + [
             urlsplit(origin).hostname for origin in self.origins
         ]
@@ -68,7 +72,11 @@ class Access:
         local_origins = {
             f"http://{host}:{port}" for host in ("127.0.0.1", "localhost") for port in (5173, 8000)
         }
-        if origin is not None and origin not in local_origins | set(self.origins):
+        if (
+            "*" not in self.origins
+            and origin is not None
+            and origin not in local_origins | set(self.origins)
+        ):
             return JSONResponse(status_code=403, content={"detail": "访问来源未获允许"})
         if self.mode == "local":
             client = request.client.host if request.client else ""

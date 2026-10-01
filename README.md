@@ -4,6 +4,7 @@ Python / FastAPI + React / TypeScript 的本地 Beancount 记账界面。账本�
 
 V0.1.0 镜像：`ghcr.io/silevilence/beancount_ui:V0.1.0`。
 [容器部署、升级与恢复](docs/deployment.md) · [版本说明](changelog.md)。
+绿联 NAS 请使用独立的 [compose.nas.yaml](compose.nas.yaml)，按[部署说明](docs/deployment.md#绿联-nas项目部署)准备权限、访问地址与转发。
 
 ## Windows 开发（不需要 Docker）
 
@@ -24,7 +25,7 @@ uv run uvicorn beancount_ui.app:create_app --factory --host 127.0.0.1 --port 800
 
 另一终端运行 `npm --prefix frontend run dev`，访问 http://127.0.0.1:5173。
 后端健康检查 http://127.0.0.1:8000/api/health，API 调试文档 http://127.0.0.1:8000/docs。
-Vite 代理 `/api`，无需跨域配置。默认仅监听本机；已提供单用户认证，私网部署按 [同步与访问说明](docs/github-sync.md) 配置，公网不在当前部署边界。
+Vite 代理 `/api`，无需跨域配置。默认仅监听本机；已提供单用户认证，私网部署按 [同步与访问说明](docs/github-sync.md) 配置，外网通过受保护的 HTTPS 入口转发，见[部署说明](docs/deployment.md)。
 日期使用 Asia/Shanghai；用户选中的补记日期不会在午夜自动切换。
 
 依赖精确版本记录于 `uv.lock`、`frontend/package-lock.json`。生产前端资源由 `npm --prefix frontend run build` 生成。

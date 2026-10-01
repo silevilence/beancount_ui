@@ -16,6 +16,7 @@ import {
   type AmountLine,
 } from "./format";
 import { Chip, Empty, Notice, Segmented, Toolbar } from "./ui";
+import { requestId } from "./requestId";
 
 export interface DraftItem {
   business: string;
@@ -266,7 +267,7 @@ export default function BatchEditor({
     try {
       const view = await api<Journal>(`/journal?day=${draft.form.date}`);
       const pending = draft.pending || {
-        request_id: crypto.randomUUID(),
+        request_id: requestId(),
         revision: view.revision,
         items: draft.items,
       };

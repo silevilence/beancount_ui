@@ -3,6 +3,7 @@ import { api, ApiError, type Journal, type Transaction } from "./api";
 import Diff from "./Diff";
 import { expenseGroups, fundingGroups, money } from "./format";
 import { Notice } from "./ui";
+import { requestId } from "./requestId";
 
 export const PENDING_KEY = "beancount-ui.pending-save.v1";
 
@@ -157,7 +158,7 @@ export default function Editor({
     setMessage("");
     try {
       const request = pending.current?.request || {
-        request_id: crypto.randomUUID(),
+        request_id: requestId(),
         revision: baseRevision.current,
         operation,
         transaction_id: row?.id,

@@ -118,7 +118,8 @@ function setup(
   return { requests, onSaved, onClose };
 }
 
-it("预览精确金额，防止重复点击，保存后保留日期并继续录入", async () => {
+it("局域网 HTTP 可预览保存，防止重复点击，保存后保留日期并继续录入", async () => {
+  vi.stubGlobal("crypto", { getRandomValues: crypto.getRandomValues.bind(crypto) });
   const { requests, onSaved } = setup();
   fill();
   expect(screen.getByText("填写")).toHaveAttribute("aria-current", "step");

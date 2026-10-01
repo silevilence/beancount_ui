@@ -1,0 +1,36 @@
+# 绿联 Docker 项目：独立使用此文件，不与 compose.yaml 合并。
+# 先阅读 docs/deployment.md；目录相对于 NAS 项目存放路径。
+services:
+  ledger:
+    # 由本次源码构建并导入 NAS，或替换为包含 HTTP 修复的新发布镜像。
+    image: ${BEANCOUNT_IMAGE:-beancount-ui:nas-fixed}
+    restart: unless-stopped
+    # 截图显示的账户是 1000:10；请按实际 NAS 账户调整。
+    user: "0:0"
+    ports:
+      - "8000:8000"
+    environment:
+      HOME: /data/state
+      BEANCOUNT_ACCESS_MODE: private
+      BEANCOUNT_ACCESS_TOKEN_FILE: /run/secrets/access_token
+      # 不限制访问域名/IP/Origin，仍要求应用口令；也可改为逗号分隔的明确地址。
+      BEANCOUNT_ALLOWED_ORIGINS: "*"
+      BEANCOUNT_GIT_BRANCH: master-1
+      # 空目录克隆时填写无凭据的仓库地址；已有副本使用 origin。
+      # BEANCOUNT_GIT_REMOTE: https://github.com/OWNER/LEDGER.git
+    volumes:
+      - type: bind
+        source: ./ledger
+        target: /data/ledger
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./state
+        target: /data/state
+        bind:
+          create_host_path: false
+    secrets:
+      - access_token
+secrets:
+  access_token:
+    file: ./access-token

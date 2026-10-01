@@ -294,7 +294,11 @@ it("账本诊断、包含关系、未纳入文件与只读记录", async () => {
             },
           }),
         )
-      : ok(view("2026-09-30", { transactions: [readonlyRow, complexRow] })),
+      : ok(
+          view(url.searchParams.get("day") ?? "", {
+            transactions: [readonlyRow, complexRow],
+          }),
+        ),
   );
   vi.stubGlobal("fetch", fetcher);
   render(<App />);
@@ -316,7 +320,7 @@ it("待确认请求可恢复，恢复期间暂停记录操作", async () => {
   const fetcher = routing((url) =>
     url.pathname === "/api/ledger"
       ? ok(status())
-      : ok(view("2026-09-30", { transactions: [row] })),
+      : ok(view(url.searchParams.get("day") ?? "", { transactions: [row] })),
   );
   vi.stubGlobal("fetch", fetcher);
   localStorage.setItem(
@@ -404,7 +408,7 @@ it("修改与删除从流水直接进入编辑器", async () => {
   const fetcher = routing((url) =>
     url.pathname === "/api/ledger"
       ? ok(status())
-      : ok(view("2026-09-30", { transactions: [row] })),
+      : ok(view(url.searchParams.get("day") ?? "", { transactions: [row] })),
   );
   vi.stubGlobal("fetch", fetcher);
   render(<App />);
@@ -470,7 +474,7 @@ it("原文可复制，剪贴板不可用时保持原提示", async () => {
   const fetcher = routing((url) =>
     url.pathname === "/api/ledger"
       ? ok(status())
-      : ok(view("2026-09-30", { transactions: [row] })),
+      : ok(view(url.searchParams.get("day") ?? "", { transactions: [row] })),
   );
   vi.stubGlobal("fetch", fetcher);
   Object.defineProperty(navigator, "clipboard", {

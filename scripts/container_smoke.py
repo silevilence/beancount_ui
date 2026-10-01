@@ -14,7 +14,8 @@ import httpx
 
 NAME = "beancount-release-smoke"
 TOKEN = "isolated-container-smoke-token-32-characters"
-EVIDENCE = Path("container-evidence")
+RUNTIME_USER = os.environ.get("BEANCOUNT_SMOKE_USER", "10001:10001")
+EVIDENCE = Path("container-evidence") / RUNTIME_USER.replace(":", "-")
 
 
 def command(*args):
@@ -83,12 +84,16 @@ def start(data):
         "-d",
         "--name",
         NAME,
+        "--user",
+        RUNTIME_USER,
         "-p",
         "127.0.0.1:8000:8000",
         "-v",
         f"{data}:/data",
         "-e",
-        f"BEANCOUNT_ACCESS_TOKEN={TOKEN}",
+        "BEANCOUNT_ACCESS_TOKEN_FILE=/data/access-token",
+        "-e",
+        "HOME=/data/state",
         "-e",
         "BEANCOUNT_ALLOWED_ORIGINS=http://127.0.0.1:8000",
         IMAGE,
@@ -114,6 +119,8 @@ def main():
         root = data / "ledger"
         shutil.copytree("examples/ledger", root)
         (data / "state").mkdir()
+        (data / "access-token").write_text(TOKEN, encoding="utf-8")
+        (data / "access-token").chmod(0o440)
         git(root, "init", "-b", "master-1")
         git(root, "config", "user.name", "Container Test")
         git(root, "config", "user.email", "container@example.invalid")
@@ -124,7 +131,7 @@ def main():
         git(root, "push", "-u", "origin", "master-1")
         git(root, "remote", "set-url", "origin", "/data/remote.git")
         original = {p.relative_to(root): p.read_bytes() for p in root.rglob("*.bean")}
-        # Match the documented bind-mount ownership, and exercise the image's default UID.
+        # Exercise both the image UID and the NAS UID with a readable secret file.
         docker(
             "run",
             "--rm",
@@ -136,7 +143,7 @@ def main():
             "chown",
             IMAGE,
             "-R",
-            "10001:10001",
+            RUNTIME_USER,
             "/data",
         )
         try:
@@ -233,5 +240,5 @@ def main():
 
 if __name__ == "__main__":
     IMAGE = sys.argv[1]
-    EVIDENCE.mkdir(exist_ok=True)
+    EVIDENCE.mkdir(parents=True, exist_ok=True)
     main()

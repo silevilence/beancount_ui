@@ -127,6 +127,7 @@ const fillDaily = (amount: string) => {
 const tray = () => within(screen.getByRole("complementary", { name: "待入账草稿" }));
 
 it("十笔草稿恢复、固定日期、整批请求重试保持身份", async () => {
+  vi.stubGlobal("crypto", { getRandomValues: crypto.getRandomValues.bind(crypto) });
   const requests = stubFetch();
   const mounted = render(<BatchEditor {...props} />);
   fireEvent.change(screen.getByLabelText("支出分类"), {

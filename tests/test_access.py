@@ -44,12 +44,44 @@ def test_local_rejects_remote_peer_even_with_spoofed_host(ledger):
     assert TestClient(app, client=("127.0.0.1", 10000)).get("/api/ledger").status_code == 200
 
 
+@pytest.mark.parametrize("origin", ["http://192.168.1.100:8000", "https://ledger.example.com"])
+def test_nas_lan_and_https_proxy_can_save_with_explicit_origins(ledger, origin):
+    access = Access(
+        "private", TOKEN, ("http://192.168.1.100:8000", "https://ledger.example.com")
+    )
+    # HTTPS terminates at the NAS; upstream HTTP retains the browser's Host and Origin.
+    client = TestClient(
+        create_app(ledger.settings, access),
+        base_url=origin.replace("https://", "http://"),
+        client=("172.18.0.1", 42000),
+    )
+    assert client.get("/api/ledger").status_code == 401
+    headers = {"Authorization": f"Bearer {TOKEN}", "Origin": origin}
+    status = client.get("/api/ledger", headers=headers).json()
+    request = {
+        "request_id": "12345678-1234-4234-8234-123456789abc",
+        "revision": status["revision"],
+        "raw": '2026-09-30 * "NAS test"\n'
+        "  Expenses:Food 1.00 CNY\n  Assets:Cash -1.00 CNY\n",
+    }
+    assert client.post("/api/preview", headers=headers, json=request).status_code == 200
+    for _ in range(2):
+        assert client.post(
+            "/api/commit", headers=headers, json={"request_id": request["request_id"]}
+        ).status_code == 200
+    rows = client.get("/api/journal?day=2026-09-30", headers=headers).json()["transactions"]
+    assert sum("NAS test" in row["raw"] for row in rows) == 1
+    assert client.post(
+        "/api/commit", headers={**headers, "Origin": "https://other.example.com"}, json={}
+    ).status_code == 403
+
+
 def test_access_configuration_from_mount_and_invalid_settings(monkeypatch, tmp_path):
     with pytest.raises(ValueError, match="口令"):
         Access("private")
     with pytest.raises(ValueError, match="仅支持"):
         Access("public")
-    for origin in ("http://x/path", "https://u:p@host", "*", "ftp://host", "http://*.test"):
+    for origin in ("http://x/path", "https://u:p@host", "ftp://host", "http://*.test"):
         with pytest.raises(ValueError, match="Origin"):
             Access("private", TOKEN, (origin,))
     path = tmp_path / "token"
@@ -59,6 +91,51 @@ def test_access_configuration_from_mount_and_invalid_settings(monkeypatch, tmp_p
     monkeypatch.setenv("BEANCOUNT_ALLOWED_ORIGINS", "http://ledger.test:8000")
     assert Access.from_env().token == TOKEN
     assert TOKEN not in repr(Access.from_env())
+
+
+@pytest.mark.parametrize("origin", ["http://192.168.50.2:18000", "https://new.example.com", "null"])
+def test_wildcard_allows_any_host_and_origin_but_still_requires_token(ledger, monkeypatch, origin):
+    monkeypatch.setenv("BEANCOUNT_ACCESS_MODE", "private")
+    monkeypatch.delenv("BEANCOUNT_ACCESS_TOKEN_FILE", raising=False)
+    monkeypatch.setenv("BEANCOUNT_ACCESS_TOKEN", TOKEN)
+    monkeypatch.setenv("BEANCOUNT_ALLOWED_ORIGINS", " * ")
+    client = TestClient(
+        create_app(ledger.settings, Access.from_env()),
+        base_url="http://unlisted-nas.test:18000",
+        client=("172.18.0.1", 42000),
+    )
+    headers = {"Origin": origin}
+    assert client.get("/api/access", headers=headers).json()["required"]
+    for auth in ({}, {"Authorization": "Bearer wrong"}):
+        unauthenticated = {**headers, **auth}
+        assert client.get("/api/ledger", headers=unauthenticated).status_code == 401
+        assert client.post("/api/commit", headers=unauthenticated, json={}).status_code == 401
+    headers["Authorization"] = f"Bearer {TOKEN}"
+    response = client.get("/api/ledger", headers=headers)
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    request = {
+        "request_id": "12345678-1234-4234-8234-123456789abc",
+        "revision": response.json()["revision"],
+        "raw": '2026-09-30 * "Wildcard test"\n'
+        "  Expenses:Food 1.00 CNY\n  Assets:Cash -1.00 CNY\n",
+    }
+    assert client.post("/api/preview", headers=headers, json=request).status_code == 200
+    assert client.post(
+        "/api/commit", headers=headers, json={"request_id": request["request_id"]}
+    ).status_code == 200
+
+
+def test_wildcard_does_not_disable_private_token_or_local_peer_requirements(ledger):
+    with pytest.raises(ValueError, match="口令"):
+        Access("private", "short", ("*",))
+    with pytest.raises(ValueError, match="Origin"):
+        Access("private", TOKEN)
+    client = TestClient(
+        create_app(ledger.settings, Access("local", origins=("*",))),
+        client=("192.168.1.30", 10000),
+    )
+    assert client.get("/api/ledger", headers={"Origin": "http://any.test"}).status_code == 403
 
 
 def test_static_entry_available_before_login_but_ledger_protected(ledger, tmp_path, monkeypatch):

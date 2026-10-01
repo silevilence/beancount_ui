@@ -2,17 +2,27 @@ services:
   ledger:
     image: ${BEANCOUNT_IMAGE:-ghcr.io/silevilence/beancount_ui:V0.1.0}
     restart: unless-stopped
+    user: "${PUID:-10001}:${PGID:-10001}"
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${BEANCOUNT_BIND_IP:-127.0.0.1}:${BEANCOUNT_PORT:-8000}:8000"
     environment:
+      HOME: /data/state
       BEANCOUNT_ACCESS_MODE: private
       BEANCOUNT_ACCESS_TOKEN_FILE: /run/secrets/access_token
       BEANCOUNT_ALLOWED_ORIGINS: ${BEANCOUNT_ALLOWED_ORIGINS:-http://127.0.0.1:8000}
       BEANCOUNT_GIT_BRANCH: ${BEANCOUNT_GIT_BRANCH:-master-1}
       BEANCOUNT_GIT_REMOTE: ${BEANCOUNT_GIT_REMOTE:-}
     volumes:
-      - ${BEANCOUNT_DATA_DIR:?Set an absolute data directory outside the source repository}/ledger:/data/ledger
-      - ${BEANCOUNT_DATA_DIR}/state:/data/state
+      - type: bind
+        source: ${BEANCOUNT_DATA_DIR:?Set an absolute data directory outside the source repository}/ledger
+        target: /data/ledger
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${BEANCOUNT_DATA_DIR}/state
+        target: /data/state
+        bind:
+          create_host_path: false
     secrets:
       - access_token
 secrets:
