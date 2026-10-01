@@ -96,7 +96,9 @@ def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Sna
     errors = []
     edges = {}
     with tempfile.TemporaryDirectory(prefix="beancount-ui-") as folder:
-        root = Path(folder)
+        # Windows temporary directories may use 8.3 aliases while Beancount
+        # source paths resolve to long names. Compare canonical paths throughout.
+        root = Path(folder).resolve()
         for name, content in files.items():
             path = root / name
             if not path.resolve().is_relative_to(root.resolve()):
@@ -152,7 +154,9 @@ def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Sna
         included = sorted(visited)
         if not errors:
             entries, load_errors, options = loader.load_file(str(root / entry))
-            included = sorted(Path(p).relative_to(root).as_posix() for p in options["include"])
+            included = sorted(
+                Path(p).resolve().relative_to(root).as_posix() for p in options["include"]
+            )
             for error in load_errors:
                 source = error.source or {}
                 filename = source.get("filename", str(root / entry))

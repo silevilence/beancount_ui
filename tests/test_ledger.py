@@ -1,9 +1,38 @@
 import subprocess
+import tempfile
+from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 from beancount_ui.app import create_app
 from beancount_ui.ledger import LedgerError, git_info, load_snapshot, read_files
 from fastapi.testclient import TestClient
+
+
+@pytest.mark.parametrize("invalid", [False, True])
+def test_temporary_directory_alias_preserves_relative_sources(ledger, monkeypatch, invalid):
+    temporary_directory = tempfile.TemporaryDirectory
+
+    @contextmanager
+    def aliased_directory(**kwargs):
+        with temporary_directory(**kwargs) as folder:
+            # Like Windows 8.3 names, this refers to the same directory but has
+            # a different spelling from the resolved directive source paths.
+            (Path(folder) / "alias").mkdir()
+            yield str(Path(folder) / "alias" / "..")
+
+    files = read_files(ledger.settings.ledger_dir)
+    if invalid:
+        files["txs/2026/08.bean"] += b'\n2026-09-30 * "bad"\n  Assets:Missing 2 CNY\n'
+    monkeypatch.setattr("beancount_ui.ledger.tempfile.TemporaryDirectory", aliased_directory)
+    snapshot = load_snapshot(files)
+    if invalid:
+        assert snapshot.errors
+        assert all(error["file"] == "txs/2026/08.bean" for error in snapshot.errors)
+    else:
+        assert not snapshot.errors
+        assert "txs/2026/08.bean" in snapshot.included
+        assert any(entry.meta["filename"] == "txs/2026/08.bean" for entry in snapshot.entries)
 
 
 def test_load_is_read_only(ledger):
