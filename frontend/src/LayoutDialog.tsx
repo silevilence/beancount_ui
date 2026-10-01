@@ -44,7 +44,7 @@ export default function LayoutDialog({
   const dialog = useRef<HTMLDialogElement>(null);
   const [config, setConfig] = useState<Configuration>();
   const [layout, setLayout] = useState<Layout>();
-  const [selected, setSelected] = useState("overview");
+  const [selected, setSelected] = useState<string | null>(null);
   const [day, setDay] = useState(shanghaiToday);
   const [preview, setPreview] = useState<Preview>();
   const [busy, setBusy] = useState(false);
@@ -271,8 +271,8 @@ export default function LayoutDialog({
               <button
                 type="button"
                 className="route-item"
-                aria-current={selected === "overview"}
-                onClick={() => setSelected("overview")}
+                aria-current={selected === null}
+                onClick={() => setSelected(null)}
               >
                 <span className="route-name">概览与入口</span>
                 <small>
@@ -339,7 +339,7 @@ export default function LayoutDialog({
               </div>
             </nav>
             <section className="layout-detail" aria-label="业务配置">
-              {confirm === "remove" && selected !== "overview" && (
+              {confirm === "remove" && selected !== null && (
                 <Notice
                   action={
                     <>
@@ -354,7 +354,7 @@ export default function LayoutDialog({
                               ),
                             ),
                           });
-                          setSelected("overview");
+                          setSelected(null);
                         }}
                       >
                         确认移除
@@ -372,7 +372,7 @@ export default function LayoutDialog({
                   新记录不再写入该文件；历史记录与旧文件保持原位。
                 </Notice>
               )}
-              {selected === "overview" ? (
+              {selected === null ? (
                 <>
                   <div className="work-head">
                     <h3>业务与文件总览</h3>
@@ -488,7 +488,7 @@ export default function LayoutDialog({
                             className="ghost small"
                             onClick={() => {
                               change(config.default);
-                              setSelected("overview");
+                              setSelected(null);
                             }}
                           >
                             确认填入
@@ -513,7 +513,7 @@ export default function LayoutDialog({
                             className="ghost small"
                             onClick={() => {
                               change(config.layout);
-                              setSelected("overview");
+                              setSelected(null);
                             }}
                           >
                             确认还原

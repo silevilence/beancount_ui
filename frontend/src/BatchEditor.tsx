@@ -1,6 +1,7 @@
 import RecordFields from "./RecordFields";
 import {
   businessNames,
+  businessKind,
   carryTemplateValues,
   inputValues,
   routeLabel,
@@ -196,17 +197,19 @@ export default function BatchEditor({
   const [draft, setDraft] = useState<Draft>(initial.value);
   const business = draft.business || "ordinary";
   const recordTemplate = businessConfig?.layout.routes[business]?.template;
+  const kind = businessKind(business, businessConfig?.layout.routes[business]);
+  const balanceRaw = kind === "balance" && !recordTemplate;
   const templateStale =
     !!draft.templateVersion &&
     !!businessConfig &&
     draft.templateVersion !== businessConfig.version;
+  const [task, setTask] = useState<TaskId>(initial.value.task || "daily");
   const accountDay = templateDay(
-    recordTemplate,
+    task === "daily" ? recordTemplate : null,
     draft.templateValues || {},
     draft.form.date,
     businessConfig?.write_day || journal.date,
   );
-  const [task, setTask] = useState<TaskId>(initial.value.task || "daily");
   const [error, setError] = useState(initial.error);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -285,7 +288,7 @@ export default function BatchEditor({
                 ),
                 layout_version: businessConfig!.version,
               }
-            : next.advanced
+            : next.advanced || balanceRaw
               ? { raw: next.advancedRaw || "" }
               : next.orderMode &&
                   (!next.business || next.business === "ordinary")
@@ -421,7 +424,7 @@ export default function BatchEditor({
         label: route.label || businessNames[key] || key,
       })),
   ];
-  const salaryLike = ["salary", "yuebao"].includes(business);
+  const salaryLike = ["salary", "yuebao"].includes(kind);
   const counts = draft.items.reduce<Partial<Record<TaskId, number>>>(
     (sum, item) => {
       const id = taskOf(item);
@@ -522,6 +525,19 @@ export default function BatchEditor({
             })
           }
         />
+      ) : balanceRaw ? (
+        <label className="field">
+          <span>Beancount 原文</span>
+          <textarea
+            aria-label="Beancount 原文"
+            className="raw-input"
+            required
+            spellCheck={false}
+            value={draft.advancedRaw || ""}
+            onChange={(e) => update({ ...draft, advancedRaw: e.target.value })}
+          />
+          <small>余额业务仅接受一条 balance，不生成补差。</small>
+        </label>
       ) : (
         <>
           {business === "ordinary" && (
@@ -556,7 +572,7 @@ export default function BatchEditor({
               "Assets:",
               ...(salaryLike ? [] : ["Liabilities:"]),
             ])}
-            {field("note", business === "salary" ? "工资 / 奖金备注" : "备注")}
+            {field("note", kind === "salary" ? "工资 / 奖金备注" : "备注")}
           </div>
           {!salaryLike && (
             <SplitFields
@@ -585,9 +601,18 @@ export default function BatchEditor({
           value={business}
           onChange={(e) => update({ ...draft, business: e.target.value })}
         >
-          {["ordinary", "salary", "phone", "yuebao", "balance"].map((value) => (
+          {[
+            ...new Set([
+              "ordinary",
+              "salary",
+              "phone",
+              "yuebao",
+              "balance",
+              ...Object.keys(businessConfig?.layout.routes || {}),
+            ]),
+          ].map((value) => (
             <option key={value} value={value}>
-              {businessLabel(value)}
+              {routeLabel(value, businessConfig?.layout.routes[value]?.label)}
             </option>
           ))}
         </select>

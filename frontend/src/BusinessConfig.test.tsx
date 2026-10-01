@@ -66,15 +66,20 @@ const config: BusinessConfig = {
   },
 };
 const props = { journal, onClose: vi.fn(), onSaved: vi.fn(async () => {}) };
-function mockApi(fail = false) {
+function mockApi(
+  fail = false,
+  businessConfig = config,
+  view = (_url: string) => journal,
+) {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     const ok = (data: unknown) => ({ ok: true, json: async () => data });
     if (url === "/api/layout")
       return fail
         ? { ok: false, status: 500, json: async () => ({ detail: "暂不可用" }) }
-        : ok(config);
-    if (url.includes("/journal")) return ok(journal);
+        : ok(businessConfig);
+    if (url.includes("/journal")) return ok(view(url));
+    if (url === "/api/orders") return ok([]);
     if (url.includes("/templates")) return ok([]);
     if (url.includes("preview"))
       return ok({
@@ -90,6 +95,156 @@ function mockApi(fail = false) {
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 }
+
+it.each(["salary", "yuebao"])(
+  "自定义 %s 无模板业务使用收入表单并提交收入账户",
+  async (kind) => {
+    const custom = structuredClone(config);
+    custom.layout.routes.bonus = {
+      target: "bonus.bean",
+      indexes: [],
+      kind,
+      label: "自定义收入",
+    };
+    const fetcher = mockApi(false, custom, () => ({
+      ...journal,
+      accounts: [
+        ...journal.accounts,
+        { name: "Income:Salary", currencies: ["CNY"] },
+      ],
+    }));
+    render(<BatchEditor {...props} />);
+    fireEvent.click(await screen.findByRole("button", { name: "自定义收入" }));
+    fireEvent.change(screen.getByLabelText("到账金额"), {
+      target: { value: "12" },
+    });
+    fireEvent.change(screen.getByLabelText("收入账户"), {
+      target: { value: "Income:Salary" },
+    });
+    fireEvent.change(screen.getByLabelText("到账账户"), {
+      target: { value: "Assets:Cash" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "加入草稿" }));
+    fireEvent.click(screen.getByRole("button", { name: /整批预览/ }));
+    await screen.findByText("预览原文");
+    const request = fetcher.mock.calls.find(
+      ([url]) => url === "/api/batch/preview",
+    )!;
+    expect(JSON.parse(String(request[1]?.body)).items).toEqual([
+      expect.objectContaining({
+        business: "bonus",
+        entry: expect.objectContaining({
+          category: "Income:Salary",
+          payment: "Assets:Cash",
+        }),
+      }),
+    ]);
+  },
+);
+
+it.each(["salary", "yuebao", "balance"])(
+  "单笔自定义 %s 无模板业务自动使用原文",
+  async (kind) => {
+    const custom = structuredClone(config);
+    custom.layout.routes.custom = {
+      target: "custom.bean",
+      indexes: [],
+      kind,
+      label: "自定义业务",
+    };
+    const fetcher = mockApi(false, custom);
+    render(<Editor {...props} operation="create" />);
+    await screen.findByRole("option", { name: "自定义业务" });
+    fireEvent.change(screen.getByLabelText("业务类型"), {
+      target: { value: "custom" },
+    });
+    expect(screen.getByLabelText("原文高级编辑")).toBeChecked();
+    expect(screen.getByLabelText("原文高级编辑")).toBeDisabled();
+    const raw =
+      kind === "balance"
+        ? "2026-09-30 balance Assets:Cash 12 CNY"
+        : '2026-09-30 * "收入"\n  Assets:Cash 12 CNY\n  Income:Salary -12 CNY';
+    fireEvent.change(screen.getByLabelText("Beancount 原文"), {
+      target: { value: raw },
+    });
+    fireEvent.click(screen.getByText("预览并校验"));
+    await screen.findByText("确认保存");
+    const request = fetcher.mock.calls.find(([url]) => url === "/api/preview")!;
+    expect(JSON.parse(String(request[1]?.body))).toMatchObject({
+      business: "custom",
+      raw,
+    });
+  },
+);
+
+it("自定义余额业务可录入原文并从草稿取回", async () => {
+  const custom = structuredClone(config);
+  custom.layout.routes.check = {
+    target: "check.bean",
+    indexes: [],
+    kind: "balance",
+    label: "自定义核对",
+  };
+  mockApi(false, custom);
+  render(<BatchEditor {...props} />);
+  fireEvent.click(await screen.findByRole("button", { name: "自定义核对" }));
+  const raw = "2026-09-30 balance Assets:Cash 12 CNY";
+  fireEvent.change(screen.getByLabelText("Beancount 原文"), {
+    target: { value: raw },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "加入草稿" }));
+  expect(JSON.parse(localStorage.getItem(draftKey(journal))!).items).toEqual([
+    { business: "check", raw },
+  ]);
+  fireEvent.click(screen.getByRole("button", { name: "取回修改" }));
+  expect(screen.getByLabelText("Beancount 原文")).toHaveValue(raw);
+  fireEvent.click(screen.getByRole("button", { name: /高级分录 多分录/ }));
+  expect(screen.getByLabelText("高级业务路由")).toHaveValue("check");
+  expect(screen.getByLabelText("高级 Beancount 原文")).toHaveValue(raw);
+});
+
+it("切换到转账作业按补记日期重新加载账户，回到模板恢复模板日期", async () => {
+  const fetcher = mockApi(false, config, (url) => ({
+    ...journal,
+    accounts: [
+      {
+        name: url.endsWith("2026-09-30") ? "Assets:Old" : "Assets:New",
+        currencies: ["CNY"],
+      },
+    ],
+  }));
+  render(<BatchEditor {...props} />);
+  fireEvent.click(await screen.findByRole("button", { name: "午餐" }));
+  await waitFor(() =>
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/journal?day=2026-10-01",
+      undefined,
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: /转账 \/ 还款 \/ 余额/ }));
+  await waitFor(() =>
+    expect(
+      fetcher.mock.calls
+        .filter(([url]) => url.includes("/journal"))
+        .at(-1)?.[0],
+    ).toBe("/api/journal?day=2026-09-30"),
+  );
+  fireEvent.focus(screen.getByLabelText("转出账户"));
+  expect(
+    await screen.findByRole("option", { name: "Assets:Old" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("option", { name: "Assets:New" }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /日常消费 支出/ }));
+  await waitFor(() =>
+    expect(
+      fetcher.mock.calls
+        .filter(([url]) => url.includes("/journal"))
+        .at(-1)?.[0],
+    ).toBe("/api/journal?day=2026-10-01"),
+  );
+});
 
 it("单笔只呈现开放字段，提交模板值及配置版本，并支持当天日期和自定义业务", async () => {
   const fetcher = mockApi();

@@ -1,6 +1,7 @@
 import RecordFields from "./RecordFields";
 import {
   businessNames,
+  businessKind,
   carryTemplateValues,
   inputValues,
   templateDay,
@@ -129,6 +130,9 @@ export default function Editor({
   );
   const recordTemplate =
     op === "create" ? businessConfig?.layout.routes[business]?.template : null;
+  const rawOnly = RAW_ONLY.includes(
+    businessKind(business, businessConfig?.layout.routes[business]),
+  );
   const [values, setValues] = useState<Record<string, string>>(
     pending.current?.request.values || {},
   );
@@ -204,7 +208,7 @@ export default function Editor({
                 values: inputValues(recordTemplate, values, fields.date),
                 layout_version: businessConfig!.version,
               }
-            : advanced
+            : advanced || rawOnly
               ? { raw }
               : { entry: fields }),
       };
@@ -396,7 +400,6 @@ export default function Editor({
                     invalidate();
                     setBusiness(e.target.value);
                     setValues({});
-                    if (RAW_ONLY.includes(e.target.value)) setAdvanced(true);
                   }}
                 >
                   {choices.map((item) => (
@@ -411,10 +414,8 @@ export default function Editor({
               <label className="check">
                 <input
                   type="checkbox"
-                  checked={advanced}
-                  disabled={
-                    (!!row && !row.simple) || RAW_ONLY.includes(business)
-                  }
+                  checked={advanced || rawOnly}
+                  disabled={(!!row && !row.simple) || rawOnly}
                   onChange={(e) => {
                     invalidate();
                     setAdvanced(e.target.checked);
@@ -435,7 +436,7 @@ export default function Editor({
                   setValues(next);
                 }}
               />
-            ) : advanced ? (
+            ) : advanced || rawOnly ? (
               <>
                 <label className="field">
                   <span>Beancount 原文</span>

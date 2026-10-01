@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import LayoutDialog, { type Layout } from "./LayoutDialog";
 
@@ -67,8 +74,31 @@ function setup(fail = "") {
 }
 
 const rail = () => within(screen.getByRole("navigation", { name: "业务列表" }));
-const detail = () =>
-  within(screen.getByRole("region", { name: "业务配置" }));
+const detail = () => within(screen.getByRole("region", { name: "业务配置" }));
+
+it("overview 业务可编辑模板并移除，与概览页相互独立", async () => {
+  setup();
+  await screen.findByLabelText("账本入口");
+  fireEvent.change(screen.getByLabelText("新增业务标识"), {
+    target: { value: "overview" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "添加业务" }));
+  expect(screen.getByLabelText("目标文件")).toHaveValue(
+    "business/overview.bean",
+  );
+  fireEvent.click(screen.getByLabelText("overview使用记录模板"));
+  expect(screen.getByLabelText("overview原文模板")).toBeInTheDocument();
+  fireEvent.click(rail().getByRole("button", { name: /概览与入口/ }));
+  expect(screen.getByLabelText("账本入口")).toBeInTheDocument();
+  fireEvent.click(rail().getByRole("button", { name: /overview/ }));
+  expect(screen.getByLabelText("overview原文模板")).toBeInTheDocument();
+  fireEvent.click(detail().getByRole("button", { name: /移除「overview」/ }));
+  fireEvent.click(detail().getByRole("button", { name: "确认移除" }));
+  expect(
+    rail().queryByRole("button", { name: /overview/ }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByLabelText("账本入口")).toBeInTheDocument();
+});
 
 it("在业务列表中选择业务，预览编辑后的规则，再明确启用并刷新账本", async () => {
   const { fetcher, changed, close } = setup();

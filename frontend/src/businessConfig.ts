@@ -35,6 +35,11 @@ export const businessNames: Record<string, string> = {
   phone: "话费",
   balance: "余额断言",
 };
+export function businessKind(business: string, route?: BusinessRoute): string {
+  return Object.hasOwn(businessNames, business)
+    ? business
+    : route?.kind || "ordinary";
+}
 export function useBusinessConfig(enabled = true) {
   const [config, setConfig] = useState<BusinessConfig>();
   const [error, setError] = useState("");
