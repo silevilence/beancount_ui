@@ -38,6 +38,7 @@ function setup(fail = "") {
           layout: defaults,
           default: defaults,
           version: "config-1",
+          write_day: "2026-10-01",
         }),
       };
     if (url === "/api/ledger")
@@ -152,6 +153,9 @@ it("在业务列表中选择业务，预览编辑后的规则，再明确启用�
 it("业务列表标记已有/新建文件、写入日期与待修正项", async () => {
   setup();
   await screen.findByLabelText("账本入口");
+  fireEvent.change(screen.getByLabelText("预览交易日期"), {
+    target: { value: "2026-10-01" },
+  });
   fireEvent.click(rail().getByRole("button", { name: /日常与转账/ }));
   const chain = detail().getByRole("group", { name: "包含链预览" });
   expect(within(chain).getByText("main.beancount")).toBeInTheDocument();
