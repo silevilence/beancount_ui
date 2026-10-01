@@ -284,3 +284,4 @@
     - [x] 提供部署示例、卷权限、启动/升级/回滚和恢复说明；开发指南继续保留直接运行方式。
     - 验收：推送 `V0.1.0` 等版本 Tag 后，仅通过 Actions 即可构建、验证并发布 GHCR 镜像及同 Tag 的 GitHub Release；Release 正文与 changelog 对应版本章节一致，在文件顶部插入新版本后仍可准确提取指定版本，普通分支推送及 PR 不触发发布，版本章节异常或镜像验证失败时不生成正式发布；部署后重建容器不丢账或草稿，账本未写入镜像层，回退旧版本可继续读取持久化账本。
     - 2026-09-30 完成：[V0.1.0 发布 Actions](https://github.com/silevilence/beancount_ui/actions/runs/36725085567) 全部成功；镜像 `ghcr.io/silevilence/beancount_ui:V0.1.0` 已推送，认证、读写、临时远端同步、容器重建与浏览器草稿恢复通过；[同 Tag Release](https://github.com/silevilence/beancount_ui/releases/tag/V0.1.0) 正文精确匹配 changelog，附件提供镜像摘要。部署、卷权限、升级、回滚和恢复说明已补齐。
+    - 2026-10-01 修复 Release #8 暴露的快捷键测试竞态：本地第 18 次独立运行复现；诊断确认 DOM 已更新时快捷键 effect 仍引用初始状态。测试通过异步 act 等待初始化请求及 effect 完成，保留全部快捷键断言，不添加重试或放宽超时。修正后连续 30 次独立运行通过，前端 112 项测试、覆盖率门槛、类型检查及生产构建通过；原 V0.1.3 发布任务正在重跑。

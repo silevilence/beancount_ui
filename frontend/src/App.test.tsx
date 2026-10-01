@@ -240,7 +240,10 @@ it("快捷键打开录入、聚焦搜索与刷新，输入中不触发", async (
     return ok(view(url.searchParams.get("day") ?? "", { transactions: [row] }));
   });
   vi.stubGlobal("fetch", fetcher);
-  render(<App />);
+  // DOM 可先于快捷键 effect 更新；等待初始请求和 effect 完成后再发送按键。
+  await act(async () => {
+    render(<App />);
+  });
   await screen.findByText("测试商户");
   const before = journalCalls;
   fireEvent.keyDown(window, { key: "x" });
