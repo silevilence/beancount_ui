@@ -440,9 +440,10 @@ export default function App() {
               <h2>账本</h2>
               <button
                 className="ghost small"
+                title="文件布局与业务记录模板"
                 onClick={() => setLayoutOpen(true)}
               >
-                文件布局
+                布局与模板
               </button>
               <span className="panel-meta">
                 {ledger ? `Beancount ${ledger.version}` : "未连接"}

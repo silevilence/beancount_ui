@@ -9,9 +9,19 @@ import TemplateSettings, {
   templateWithSource,
 } from "./TemplateSettings";
 import {
+  chainOf,
+  changedRoutes,
+  fieldIssue,
   inputValues,
+  pathIssue,
+  renderExample,
+  routeIssues,
+  routeLabel,
+  sourceIssue,
   templateDay,
+  templateSummary,
   type BusinessConfig,
+  type Layout,
   type RecordTemplate,
 } from "./businessConfig";
 import type { Journal } from "./api";
@@ -116,7 +126,7 @@ it("单笔只呈现开放字段，提交模板值及配置版本，并支持当�
     target: { value: "lunch" },
   });
   expect(screen.queryByLabelText("交易日期")).not.toBeInTheDocument();
-  expect(screen.getByText(/保存当天（/)).toBeInTheDocument();
+  expect(screen.getByText(/交易日期=保存当天/)).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("午餐金额"), {
     target: { value: "15" },
   });
@@ -202,7 +212,7 @@ it.each(["single", "batch"])("%s 配置读取失败提示重试", async (mode) =
   );
 });
 
-it("模板设置支持完整表单、增删占位符、字段类型和三种填写方式", () => {
+it("模板设置支持示例、占位符插入、重命名、字段类型和三种填写方式", () => {
   function Harness() {
     const [value, setValue] = useState<RecordTemplate | null>(null);
     return (
@@ -212,14 +222,59 @@ it("模板设置支持完整表单、增删占位符、字段类型和三种填�
       </>
     );
   }
+  const read = () =>
+    JSON.parse(screen.getByTestId("value").textContent!) as RecordTemplate | null;
   render(<Harness />);
-  fireEvent.click(screen.getByText("午餐记录模板与填写项"));
+  expect(screen.getByText(/未启用时使用内置表单/)).toBeInTheDocument();
   fireEvent.click(screen.getByLabelText("午餐使用记录模板"));
+  expect(screen.getByLabelText("午餐原文模板")).toBeInTheDocument();
+  expect(screen.getByLabelText("午餐填写示意")).toHaveTextContent(
+    "〈交易日期〉",
+  );
   fireEvent.click(screen.getByText("填入完整消费表单示例"));
+  expect(screen.getByLabelText("payee显示名称")).toHaveValue("商户");
+  expect(screen.getByLabelText("午餐填写示意")).toHaveTextContent("〈商户〉");
+  fireEvent.click(screen.getByTitle("插入 {{narration}} 到光标处"));
+  expect(read()!.source).toContain("{{narration}}");
+
+  fireEvent.click(screen.getByLabelText("category重命名"));
+  fireEvent.change(screen.getByLabelText("category字段名"), {
+    target: { value: "bucket" },
+  });
+  fireEvent.keyDown(screen.getByLabelText("category字段名"), { key: "Enter" });
+  expect(read()!.source).toContain("{{bucket}}");
+  expect(read()!.fields.bucket).toMatchObject({ label: "分类账户" });
+  expect(read()!.fields.category).toBeUndefined();
+
+  fireEvent.click(screen.getByLabelText("bucket重命名"));
+  fireEvent.change(screen.getByLabelText("bucket字段名"), {
+    target: { value: "Bad" },
+  });
+  fireEvent.keyDown(screen.getByLabelText("bucket字段名"), { key: "Enter" });
+  expect(
+    screen.getByText("字段名需小写字母开头，可含数字和下划线"),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText("bucket重命名"));
+  fireEvent.change(screen.getByLabelText("bucket字段名"), {
+    target: { value: "payee" },
+  });
+  fireEvent.keyDown(screen.getByLabelText("bucket字段名"), { key: "Enter" });
+  expect(screen.getByText("字段 payee 已存在")).toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText("bucket重命名"));
+  fireEvent.keyDown(screen.getByLabelText("bucket字段名"), { key: "Escape" });
+  expect(screen.getByLabelText("bucket重命名")).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("date填写方式"), {
     target: { value: "today" },
   });
   expect(screen.queryByLabelText("date默认值")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("午餐填写示意")).toHaveTextContent("2026-");
+  fireEvent.change(screen.getByLabelText("date显示名称"), {
+    target: { value: "" },
+  });
+  expect(screen.getByText("显示名称不能为空")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("date显示名称"), {
+    target: { value: "交易日期" },
+  });
   fireEvent.change(screen.getByLabelText("date字段类型"), {
     target: { value: "text" },
   });
@@ -233,7 +288,7 @@ it("模板设置支持完整表单、增删占位符、字段类型和三种填�
   fireEvent.change(screen.getByLabelText("currency默认值"), {
     target: { value: "USD" },
   });
-  fireEvent.change(screen.getByLabelText("currency字段名称"), {
+  fireEvent.change(screen.getByLabelText("currency显示名称"), {
     target: { value: "交易币种" },
   });
   fireEvent.change(screen.getByLabelText("payee填写方式"), {
@@ -242,9 +297,8 @@ it("模板设置支持完整表单、增删占位符、字段类型和三种填�
   fireEvent.change(screen.getByLabelText("payee固定值"), {
     target: { value: "食堂" },
   });
-  const value = JSON.parse(screen.getByTestId("value").textContent!);
-  expect(value.fields.payee).toMatchObject({ mode: "fixed", value: "食堂" });
-  expect(value.fields.currency).toMatchObject({
+  expect(read()!.fields.payee).toMatchObject({ mode: "fixed", value: "食堂" });
+  expect(read()!.fields.currency).toMatchObject({
     label: "交易币种",
     mode: "input",
     value: "USD",
@@ -256,12 +310,20 @@ it("模板设置支持完整表单、增删占位符、字段类型和三种填�
     },
   });
   expect(screen.getByLabelText("custom字段类型")).toHaveValue("text");
-  expect(screen.queryByLabelText("payee字段名称")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("payee显示名称")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText("仅日期与金额"));
+  expect(read()!.fields.amount).toMatchObject({ mode: "input" });
+  fireEvent.click(screen.getByText("清除模板"));
+  expect(read()).toBeNull();
+  expect(screen.getByText(/未启用时使用内置表单/)).toBeInTheDocument();
+  fireEvent.click(screen.getByText("恢复上次模板"));
+  expect(read()!.fields.amount).toMatchObject({ mode: "input" });
   fireEvent.click(screen.getByLabelText("午餐使用记录模板"));
-  expect(screen.getByTestId("value")).toHaveTextContent("null");
+  expect(read()).toBeNull();
+  expect(screen.getByText("恢复上次模板")).toBeInTheDocument();
 });
 
-it("动态字段提供账户选择，固定值不可输入，辅助日期识别遵循模板", () => {
+it("动态字段提供账户选择与币种候选，并说明模板生成的内容", () => {
   const template = templateWithSource(
     "{{date}} * {{payee}} {{note}}\n  {{payment}} {{amount}} {{currency}}",
     starterTemplate,
@@ -278,18 +340,26 @@ it("动态字段提供账户选择，固定值不可输入，辅助日期识别�
     mode: "fixed",
     value: "",
   };
+  template.fields.currency = {
+    label: "币种",
+    type: "currency",
+    mode: "input",
+    value: "",
+  };
   const change = vi.fn();
   render(
     <RecordFields
       template={template}
       values={{}}
       day={journal.date}
-      accounts={journal.accounts}
+      accounts={[
+        { name: "Assets:Cash", currencies: ["CNY"] },
+        { name: "Assets:Bank", currencies: ["USD"] },
+      ]}
       onChange={change}
     />,
   );
-  expect(screen.getByText("食堂")).toBeInTheDocument();
-  expect(screen.getByText("空文本")).toBeInTheDocument();
+  expect(screen.getByText(/由模板生成：商户=食堂、空备注=空文本/)).toBeInTheDocument();
   expect(screen.queryByLabelText("商户")).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("付款账户"), {
     target: { value: "Assets:Cash" },
@@ -297,6 +367,9 @@ it("动态字段提供账户选择，固定值不可输入，辅助日期识别�
   expect(change).toHaveBeenCalledWith(
     expect.objectContaining({ payment: "Assets:Cash" }),
   );
+  const list = document.querySelector("datalist")!;
+  expect(screen.getByLabelText("币种")).toHaveAttribute("list", list.id);
+  expect(list.querySelectorAll("option")).toHaveLength(2);
   expect(
     inputValues(template, { payee: "伪造" }, journal.date),
   ).not.toHaveProperty("payee");
@@ -318,4 +391,239 @@ it("动态字段提供账户选择，固定值不可输入，辅助日期识别�
   template.fields.date.mode = "fixed";
   template.fields.date.value = "2021-02-03";
   expect(templateDay(template, {}, "fallback", "today")).toBe("2021-02-03");
+});
+
+it("模板字段覆盖日期、金额与标记输入，全部固定时无需填写", () => {
+  const template = templateWithSource(
+    '{{date}} * "午餐" {{tag}}\n  Assets:Cash {{amount}} CNY\n',
+    starterTemplate,
+  );
+  template.fields.tag = {
+    label: "标签",
+    type: "token",
+    mode: "input",
+    value: "",
+  };
+  template.fields.amount = {
+    label: "金额",
+    type: "amount",
+    mode: "input",
+    value: "12.30",
+  };
+  const change = vi.fn();
+  const { unmount } = render(
+    <RecordFields
+      template={template}
+      values={{}}
+      day={journal.date}
+      accounts={[{ name: "Assets:Cash", currencies: ["CNY"] }]}
+      onChange={change}
+    />,
+  );
+  expect(screen.getByLabelText("金额")).toHaveAttribute("inputmode", "decimal");
+  expect(screen.getByText("默认 12.30")).toBeInTheDocument();
+  expect(screen.getByLabelText("标签")).toHaveAttribute(
+    "placeholder",
+    "*、!、#tag 或 ^link",
+  );
+  expect(screen.getByLabelText("交易日期")).toHaveValue(journal.date);
+  fireEvent.change(screen.getByLabelText("标签"), {
+    target: { value: "#lunch" },
+  });
+  expect(change).toHaveBeenCalledWith(
+    expect.objectContaining({ tag: "#lunch" }),
+  );
+  unmount();
+  render(
+    <RecordFields
+      template={{
+        source: '2026-01-01 * "午餐"\n  Assets:Cash 12 CNY\n',
+        fields: {},
+      }}
+      values={{}}
+      day={journal.date}
+      accounts={[]}
+      onChange={change}
+    />,
+  );
+  expect(screen.getByText(/无需填写字段/)).toBeInTheDocument();
+});
+
+it("业务配置辅助函数解析包含链、路径规则、填写示意与冲突", () => {
+  const layout: Layout = {
+    entry: "main.beancount",
+    routes: {
+      ordinary: { target: "a/{year}/{month}.bean", indexes: ["a/index.bean"] },
+      lunch: { target: "b.bean", indexes: [], kind: "phone", label: "午餐" },
+    },
+  };
+  expect(
+    chainOf(layout.entry, layout.routes.ordinary, "2026-09-30", "2026-10-01"),
+  ).toEqual(["main.beancount", "a/index.bean", "a/2026/09.bean"]);
+  expect(
+    chainOf(
+      layout.entry,
+      { ...layout.routes.ordinary, date_source: "write" },
+      "2026-09-30",
+      "2026-10-01",
+    ).at(-1),
+  ).toBe("a/2026/10.bean");
+  expect(chainOf(layout.entry, layout.routes.lunch, "", "").at(-1)).toBe(
+    "b.bean",
+  );
+  expect(pathIssue("a/{year}/{month}.bean")).toBe("");
+  expect(pathIssue("a/{month}/{month}.bean")).toContain("最多出现一次");
+  expect(pathIssue("a/{week}.bean")).toContain("仅支持");
+  expect(pathIssue("../a.bean")).toContain("上级目录");
+  expect(pathIssue("a.txt")).toContain("扩展名");
+  expect(pathIssue("a/..b.bean")).toContain("空路径段");
+  expect(pathIssue("gnucash/a.bean")).toContain("只读");
+  expect(pathIssue("a/{year}.bean", false)).toContain("入口路径不支持日期占位符");
+  expect(pathIssue("")).toContain("不能为空");
+  expect(
+    fieldIssue({ label: "", type: "text", mode: "input", value: "" }),
+  ).toBe("显示名称不能为空");
+  expect(
+    fieldIssue({ label: "金额", type: "amount", mode: "fixed", value: "abc" }),
+  ).toContain("金额");
+  expect(
+    fieldIssue({ label: "标签", type: "token", mode: "input", value: "" }),
+  ).toContain("默认值");
+  expect(
+    fieldIssue({ label: "币种", type: "currency", mode: "input", value: "cny" }),
+  ).toContain("币种");
+  expect(
+    fieldIssue({ label: "账户", type: "account", mode: "input", value: "" }),
+  ).toBe("");
+  const template = templateWithSource(
+    '{{date}} * "午餐"\n  Expenses:Food {{amount}} CNY\n',
+    starterTemplate,
+  );
+  expect(sourceIssue(template)).toBe("");
+  expect(
+    sourceIssue({
+      ...template,
+      source: '{{date}} * "午餐{{amount}}"\n',
+    }),
+  ).toContain("独立放置");
+  expect(
+    sourceIssue({
+      ...template,
+      source: '{{date}} * "午餐"\n  Expenses:Food {{-amount}} CNY\n',
+      fields: {
+        ...template.fields,
+        amount: { ...template.fields.amount, type: "text" },
+      },
+    }),
+  ).toContain("只有金额字段");
+  expect(
+    sourceIssue({ ...template, source: '{{date}} * "午餐" {{amount}\n' }),
+  ).toContain("格式");
+  expect(renderExample(template, "2026-10-01")).toContain('〈交易日期〉 * "午餐"');
+  expect(renderExample(template, "2026-10-01")).toContain("〈金额〉");
+  expect(
+    renderExample(
+      {
+        ...template,
+        fields: {
+          ...template.fields,
+          date: { ...template.fields.date, mode: "today" },
+        },
+      },
+      "2026-10-01",
+    ),
+  ).toContain('2026-10-01 * "午餐"');
+  expect(templateSummary(template).input.map(({ key }) => key)).toEqual([
+    "date",
+    "amount",
+  ]);
+  expect(routeIssues(layout, "lunch", "2026-09-30", "2026-10-01")).toEqual([]);
+  const clash: Layout = {
+    ...layout,
+    routes: {
+      ...layout.routes,
+      lunch: { ...layout.routes.lunch, target: "a/index.bean" },
+    },
+  };
+  expect(
+    routeIssues(clash, "lunch", "2026-09-30", "2026-10-01").join(),
+  ).toContain("使用同一文件");
+  expect(
+    changedRoutes(layout, {
+      ...layout,
+      routes: {
+        ...layout.routes,
+        lunch: { ...layout.routes.lunch, label: "午餐2" },
+      },
+    }),
+  ).toEqual(["lunch"]);
+  expect(routeLabel("lunch", "午餐")).toBe("午餐");
+  expect(routeLabel("lunch")).toBe("lunch");
+  expect(routeLabel("ordinary")).toBe("日常与转账");
+  expect(pathIssue("con.bean")).toContain("保留名称");
+  expect(pathIssue(`a/${"x".repeat(240)}.bean`)).toContain("过长");
+  expect(
+    fieldIssue({ label: "日期", type: "date", mode: "today", value: "" }),
+  ).toBe("");
+  expect(
+    fieldIssue({ label: "日期", type: "text", mode: "today", value: "" }),
+  ).toContain("自动当天");
+  expect(
+    fieldIssue({ label: "账户", type: "account", mode: "fixed", value: "Cash" }),
+  ).toContain("账户");
+  expect(
+    fieldIssue({ label: "标签", type: "token", mode: "input", value: "#lunch" }),
+  ).toBe("");
+  expect(
+    fieldIssue({ label: "金额", type: "amount", mode: "input", value: "12.30" }),
+  ).toBe("");
+  expect(sourceIssue({ ...template, source: "   " })).toContain("不能为空");
+  expect(
+    renderExample({ ...template, source: "{{missing}}" }, "2026-10-01"),
+  ).toContain("{{missing}}");
+  expect(
+    changedRoutes(layout, {
+      ...layout,
+      routes: { ordinary: layout.routes.ordinary },
+    }),
+  ).toEqual(["lunch"]);
+  const clashIndex: Layout = {
+    ...layout,
+    routes: {
+      ...layout.routes,
+      lunch: {
+        ...layout.routes.lunch,
+        target: "c.bean",
+        indexes: ["a/{year}/{month}.bean"],
+      },
+    },
+  };
+  expect(
+    routeIssues(clashIndex, "lunch", "2026-09-30", "2026-10-01").join(),
+  ).toContain("使用同一文件");
+  expect(
+    routeIssues(
+      { ...layout, entry: "b.bean" },
+      "lunch",
+      "2026-09-30",
+      "2026-10-01",
+    ).join(),
+  ).toContain("账本入口");
+  expect(
+    routeIssues(
+      {
+        ...layout,
+        routes: {
+          ...layout.routes,
+          lunch: { target: "c.bean", indexes: ["c.bean"], label: "午餐" },
+        },
+      },
+      "lunch",
+      "2026-09-30",
+      "2026-10-01",
+    ).join(),
+  ).toContain("自身索引");
+  expect(routeIssues(layout, "unknown", "2026-09-30", "2026-10-01")).toEqual(
+    [],
+  );
 });

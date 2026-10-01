@@ -3,8 +3,10 @@ import {
   businessNames,
   carryTemplateValues,
   inputValues,
+  routeLabel,
   templateDay,
   useBusinessConfig,
+  type BusinessConfig,
 } from "./businessConfig";
 import AccountSelect from "./AccountSelect";
 import { useEffect, useRef, useState } from "react";
@@ -125,8 +127,12 @@ function taskOf(item: DraftItem): TaskId {
   return item.raw ? "advanced" : "daily";
 }
 
-function titleOf(item: DraftItem): string {
-  if (item.values) return `业务模板 · ${item.business}`;
+function titleOf(item: DraftItem, config?: BusinessConfig): string {
+  if (item.values)
+    return `模板记录 · ${routeLabel(
+      item.business,
+      config?.layout.routes[item.business]?.label,
+    )}`;
   if (item.entry) return item.entry.payee || item.entry.narration || "一笔记录";
   if (item.order)
     return item.order.purchase
@@ -808,7 +814,7 @@ export default function BatchEditor({
                 <article className="item-card" key={index}>
                   <div className="item-head">
                     <strong>
-                      {index + 1}. {titleOf(item)}
+                      {index + 1}. {titleOf(item, businessConfig)}
                     </strong>
                     {amountOf(item) && (
                       <span className="item-figure">
@@ -819,12 +825,16 @@ export default function BatchEditor({
                   <div className="item-meta">
                     <Chip tone="transfer">
                       {item.values
-                        ? businessConfig?.layout.routes[item.business]?.label ||
-                          businessNames[item.business] ||
-                          item.business
+                        ? routeLabel(
+                            item.business,
+                            businessConfig?.layout.routes[item.business]?.label,
+                          )
                         : labelOf(item)}
                     </Chip>
-                    <Chip>{(item.entry || item.order?.purchase)?.date}</Chip>
+                    {(item.entry || item.order?.purchase)?.date && (
+                      <Chip>{(item.entry || item.order?.purchase)?.date}</Chip>
+                    )}
+                    {item.values && <Chip>模板 · 日期由模板生成</Chip>}
                   </div>
                   {item.raw && (
                     <details>

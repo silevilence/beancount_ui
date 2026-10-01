@@ -129,7 +129,7 @@ it("包含图出现循环时显示诊断，仍可进入布局设置", async () =
   expect(
     await screen.findByText("main.beancount（循环引用）"),
   ).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "文件布局" }));
+  fireEvent.click(screen.getByRole("button", { name: "布局与模板" }));
   expect(await screen.findByText("请先修复入口")).toBeInTheDocument();
   fireEvent.keyDown(window, { key: "n" });
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
