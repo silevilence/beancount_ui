@@ -62,11 +62,13 @@ class Mutation(BaseModel):
     request_id: UUID
     revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     operation: Literal["create", "edit", "delete"] = "create"
-    business: Literal["ordinary", "yuebao", "salary", "phone", "balance"] = "ordinary"
+    business: str = Field(default="ordinary", pattern=r"^[a-z][a-z0-9_-]{0,63}$")
     transaction_id: str | None = None
     entry: EntryInput | None = None
     raw: str | None = Field(default=None, max_length=100000)
     order: OrderInput | None = None
+    values: dict[str, str] | None = Field(default=None, max_length=100)
+    layout_version: str | None = None
 
 
 class CommitInput(BaseModel):
@@ -75,10 +77,12 @@ class CommitInput(BaseModel):
 
 class BatchItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    business: Literal["ordinary", "yuebao", "salary", "phone", "balance"] = "ordinary"
+    business: str = Field(default="ordinary", pattern=r"^[a-z][a-z0-9_-]{0,63}$")
     entry: EntryInput | None = None
     raw: str | None = Field(default=None, max_length=100000)
     order: OrderInput | None = None
+    values: dict[str, str] | None = Field(default=None, max_length=100)
+    layout_version: str | None = None
 
 
 class BatchMutation(BaseModel):

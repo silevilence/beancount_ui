@@ -20,6 +20,8 @@ from pydantic import BaseModel, Field
 
 from .git_network import ProxyInput, redact_diagnostic, validate_proxy
 from .github_auth import GithubAuth, GithubAuthInput
+from .layout import ensure_include
+from .layout_config import read_layout
 from .ledger import LedgerError, digest, load_snapshot, read_files
 from .writer import Writer, atomic_write
 
@@ -224,7 +226,7 @@ class Sync:
         if snap.errors:
             raise LedgerError("账本校验失败；已保存的文件保留，请先修复账本错误")
         before = self.tree_files(head)
-        old = load_snapshot(before, self.settings.entry)
+        old = self.historical_snapshot(before)
         allowed = set(snap.included) | set(old.included)
         allowed = {n for n in allowed if not any(p.startswith(".") for p in Path(n).parts)}
         changed = {c["file"] for c in self.changes()}
@@ -245,7 +247,7 @@ class Sync:
         for name in names:
             if name not in snap.files:
                 candidate.pop(name, None)
-        if load_snapshot(candidate, self.settings.entry).errors:
+        if load_snapshot(candidate, self.ledger.entry).errors:
             raise LedgerError("允许提交的文件不能组成有效账本，请检查 include 范围")
         today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
         return {
@@ -311,7 +313,7 @@ class Sync:
         committed = {n: b.replace(b"\r\n", b"\n") for n, b in self.tree_files(head).items()}
         if self.changes() or local_files != committed:
             raise SyncBlocked("远端有新记录且本地有未处理变更；请先保留并人工处理，再立即同步")
-        remote = load_snapshot(self.tree_files(remote_head), self.settings.entry)
+        remote = load_snapshot(self.tree_files(remote_head), self.ledger.entry)
         if remote.errors:
             raise SyncBlocked("远端账本校验失败；保留当前有效本地版本，请修复远端后重试")
         for item in self.git("ls-tree", "-rz", remote_head).split("\0"):
@@ -327,12 +329,23 @@ class Sync:
             raise SyncBlocked("更新后账本校验失败，请检查外部修改；暂停同步")
         return True
 
+    def historical_snapshot(self, files):
+        layout, history, _ = read_layout(self.settings)
+        # Unpushed commits may predate a newly created entry. Validate them with
+        # the last known entry that actually existed in that commit. Never fall
+        # back from an existing but invalid current entry.
+        entry = next(
+            (item.entry for item in [layout, *reversed(history)] if item.entry in files),
+            layout.entry,
+        )
+        return load_snapshot(files, entry)
+
     def validate_outgoing(self, remote_head, head):
         for commit in self.git("rev-list", "--reverse", f"{remote_head}..{head}").splitlines():
             files = self.tree_files(commit)
-            snap = load_snapshot(files, self.settings.entry)
+            snap = self.historical_snapshot(files)
             parent = self.git("rev-parse", f"{commit}^1")
-            old = load_snapshot(self.tree_files(parent), self.settings.entry)
+            old = self.historical_snapshot(self.tree_files(parent))
             names = self.git("diff", "--name-only", "-z", parent, commit).split("\0")
             allowed = set(snap.included) | set(old.included)
             if snap.errors or any(
@@ -438,18 +451,15 @@ class Sync:
 
     def candidate(self, include):
         files = read_files(self.root)
-        snap = load_snapshot(files, self.settings.entry)
+        snap = load_snapshot(files, self.ledger.entry)
         for name in include:
             if name not in files or name in snap.included or not re.fullmatch(r"[\w/.-]+", name):
                 raise LedgerError("请选择未纳入 include 的账本文件")
         if include:
-            entry = self.settings.entry
-            files[entry] = (
-                files[entry].rstrip()
-                + b"\n"
-                + "".join(f'include "{name}"\n' for name in sorted(set(include))).encode()
-            )
-        return files, load_snapshot(files, self.settings.entry)
+            entry = self.ledger.entry
+            for name in sorted(set(include)):
+                ensure_include(files, entry, name)
+        return files, load_snapshot(files, self.ledger.entry)
 
     def preview(self, include=()):
         with self.writer.guard():
@@ -466,10 +476,10 @@ class Sync:
                 "errors": snap.errors,
                 "diff": "".join(
                     difflib.unified_diff(
-                        original[self.settings.entry].decode().splitlines(True),
-                        files[self.settings.entry].decode().splitlines(True),
-                        fromfile=self.settings.entry,
-                        tofile=self.settings.entry,
+                        original[self.ledger.entry].decode().splitlines(True),
+                        files[self.ledger.entry].decode().splitlines(True),
+                        fromfile=self.ledger.entry,
+                        tofile=self.ledger.entry,
                     )
                 ),
             }
@@ -498,7 +508,7 @@ class Sync:
             if digest(read_files(self.root)) != request.revision:
                 raise LedgerError("接入期间文件发生变化，请重新预览")
             if files != original:
-                atomic_write(self.root / self.settings.entry, files[self.settings.entry])
+                atomic_write(self.root / self.ledger.entry, files[self.ledger.entry])
             self.save(
                 connected=True,
                 enabled=False,

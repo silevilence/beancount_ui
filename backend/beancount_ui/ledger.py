@@ -4,7 +4,7 @@ import hashlib
 import json
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import beancount
@@ -73,6 +73,12 @@ def git_info(root: Path) -> dict:
         return {"repository": False, "sync": "Git 状态读取失败"}
 
 
+def default_business_files():
+    from .layout import default_layout
+
+    return {b: [route.target] for b, route in default_layout().routes.items() if b != "ordinary"}
+
+
 @dataclass
 class Snapshot:
     files: dict[str, bytes]
@@ -82,6 +88,7 @@ class Snapshot:
     included: list[str]
     edges: dict[str, list[str]]
     records: list[dict] | None = None
+    business_files: dict[str, list[str]] = field(default_factory=default_business_files)
 
 
 def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Snapshot:
@@ -117,7 +124,7 @@ def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Sna
                 ):
                     errors.append({"file": name, "line": 0, "message": "include 不得越出账本目录"})
                     continue
-                pattern = candidate.relative_to(root).as_posix()
+                pattern = candidate.resolve().relative_to(root.resolve()).as_posix()
                 matches = list(root.glob(pattern))
                 children.extend(p.relative_to(root).as_posix() for p in matches)
                 if not matches:
@@ -126,6 +133,21 @@ def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Sna
                     )
             edges[name] = sorted(children)
             pending.extend(children)
+        visited, visiting = set(), set()
+
+        def visit(name):
+            if name in visiting:
+                errors.append({"file": name, "line": 0, "message": "include 存在循环"})
+                return
+            if name in visited:
+                return
+            visited.add(name)
+            visiting.add(name)
+            for child in edges.get(name, []):
+                visit(child)
+            visiting.remove(name)
+
+        visit(entry)
         entries = []
         included = sorted(visited)
         if not errors:
@@ -134,9 +156,12 @@ def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Sna
             for error in load_errors:
                 source = error.source or {}
                 filename = source.get("filename", str(root / entry))
+                source_path = Path(filename).resolve()
                 errors.append(
                     {
-                        "file": Path(filename).relative_to(root).as_posix(),
+                        "file": source_path.relative_to(root).as_posix()
+                        if source_path.is_relative_to(root)
+                        else entry,
                         "line": source.get("lineno", 0),
                         "type": type(error).__name__,
                         "message": error.message.replace(str(root), "."),
@@ -145,7 +170,7 @@ def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Sna
             for directive in entries:
                 if directive.meta and directive.meta.get("filename"):
                     directive.meta["filename"] = (
-                        Path(directive.meta["filename"]).relative_to(root).as_posix()
+                        Path(directive.meta["filename"]).resolve().relative_to(root).as_posix()
                     )
     return Snapshot(files, digest(files), entries, errors, included, edges)
 
@@ -155,11 +180,25 @@ class Ledger:
         self.settings = settings
         self.latest: Snapshot | None = None
         self.last_valid: Snapshot | None = None
+        self.layout_version: str | None = None
+
+    @property
+    def entry(self):
+        from .layout_config import read_layout
+
+        return read_layout(self.settings)[0].entry
 
     def refresh(self) -> Snapshot:
+        from .layout_config import business_files, read_layout
+
+        layout, history, version = read_layout(self.settings)
+        if version != self.layout_version:
+            self.latest = self.last_valid = None
+            self.layout_version = version
         files = read_files(self.settings.ledger_dir)
         if self.latest is None or digest(files) != self.latest.revision:
-            self.latest = load_snapshot(files, self.settings.entry)
+            self.latest = load_snapshot(files, layout.entry)
+            self.latest.business_files = business_files(history)
             # A writer outside this process must not turn a mixed snapshot into a valid view.
             if digest(read_files(self.settings.ledger_dir)) != self.latest.revision:
                 self.latest = None
@@ -171,7 +210,7 @@ class Ledger:
     def status(self) -> dict:
         snap = self.refresh()
         return {
-            "entry": self.settings.entry,
+            "entry": self.entry,
             "version": beancount.__version__,
             "revision": snap.revision,
             "writable": not snap.errors,

@@ -17,6 +17,7 @@ from .finance import FinanceInput, compose_finance
 from .git_network import ProxyInput
 from .github_auth import GithubAuthInput
 from .income import income_days
+from .layout_config import LayoutInput, activate_layout, configuration, preview_layout
 from .ledger import Ledger, LedgerError
 from .models import BatchMutation, CommitInput, Mutation
 from .orders import orders
@@ -69,6 +70,18 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     def get_sync():
         return Sync(get_writer())
 
+    @app.get("/api/layout")
+    def layout_config():
+        return configuration(get_writer())
+
+    @app.post("/api/layout/preview")
+    def layout_preview(request: LayoutInput):
+        return preview_layout(get_writer(), request)
+
+    @app.post("/api/layout/activate")
+    def layout_activate(request: LayoutInput):
+        return activate_layout(get_writer(), request)
+
     @app.get("/api/sync")
     def sync_status():
         result = get_sync().status()
@@ -98,6 +111,15 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/api/layout/"):
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "detail": "；".join(
+                        error["msg"].removeprefix("Value error, ") for error in exc.errors()
+                    )
+                },
+            )
         if request.url.path == "/api/sync/github-auth":
             # Pydantic's usual validation response includes the rejected input.
             return JSONResponse(status_code=422, content={"detail": "请填写 GitHub 用户名和 Token"})

@@ -8,6 +8,7 @@ import {
 import BatchEditor, { draftKey } from "./BatchEditor";
 import Editor, { readPending } from "./Editor";
 import JournalPanel, { type Filters } from "./Journal";
+import LayoutDialog from "./LayoutDialog";
 import SyncDialog from "./SyncDialog";
 import SyncPanel from "./SyncPanel";
 import {
@@ -70,18 +71,29 @@ function Stat({
 function IncludeTree({
   name,
   graph,
+  ancestors = [],
 }: {
   name: string;
   graph: Record<string, string[]>;
+  ancestors?: string[];
 }) {
-  const children = graph[name] ?? [];
+  const circular = ancestors.includes(name);
+  const children = circular ? [] : (graph[name] ?? []);
   return (
     <li>
-      <span className="tree-name">{name}</span>
+      <span className="tree-name">
+        {name}
+        {circular && "（循环引用）"}
+      </span>
       {children.length > 0 && (
         <ul>
           {children.map((child) => (
-            <IncludeTree key={child} name={child} graph={graph} />
+            <IncludeTree
+              key={child}
+              name={child}
+              graph={graph}
+              ancestors={[...ancestors, name]}
+            />
           ))}
         </ul>
       )}
@@ -120,6 +132,7 @@ export default function App() {
   const [hasPending, setHasPending] = useState(() => !!readPending());
   const [drafts, setDrafts] = useState(0);
   const [backupOpen, setBackupOpen] = useState<{ auto: boolean } | null>(null);
+  const [layoutOpen, setLayoutOpen] = useState(false);
   const [updated, setUpdated] = useState<Date>();
   const sync = useSyncSnapshot();
   const sequence = useRef(0);
@@ -167,6 +180,7 @@ export default function App() {
     function onKey(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (layoutOpen) return;
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
         return;
       if (event.key === "n") {
@@ -188,7 +202,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canEditRow, openCreate, refresh]);
+  }, [canEditRow, openCreate, refresh, layoutOpen]);
   const relative = dayRelative(day);
   const status = error
     ? "连接异常"
@@ -424,6 +438,12 @@ export default function App() {
           <section className="panel card">
             <div className="panel-head">
               <h2>账本</h2>
+              <button
+                className="ghost small"
+                onClick={() => setLayoutOpen(true)}
+              >
+                文件布局
+              </button>
               <span className="panel-meta">
                 {ledger ? `Beancount ${ledger.version}` : "未连接"}
               </span>
@@ -508,6 +528,12 @@ export default function App() {
         <SyncDialog
           auto={backupOpen.auto}
           onClose={() => setBackupOpen(null)}
+          onChanged={refresh}
+        />
+      )}
+      {layoutOpen && (
+        <LayoutDialog
+          onClose={() => setLayoutOpen(false)}
           onChanged={refresh}
         />
       )}

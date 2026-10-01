@@ -3,6 +3,7 @@
 from collections import Counter
 from datetime import date
 
+from .layout import matches_business_file
 from .ledger import LedgerError, Snapshot
 from .query import accounts_at, transactions
 
@@ -24,7 +25,11 @@ def recommendations(snapshot: Snapshot, day: date):
         if category["currency"] != payment["currency"]:
             continue
         business = next(
-            (b for b in ("yuebao", "salary", "phone") if row["file"] == f"txs/category/{b}.bean"),
+            (
+                b
+                for b in ("yuebao", "salary", "phone")
+                if matches_business_file(row["file"], snapshot.business_files[b])
+            ),
             "ordinary",
         )
         if business == "ordinary" and category["account"].startswith("Income:"):

@@ -1,3 +1,11 @@
+import RecordFields from "./RecordFields";
+import {
+  businessNames,
+  carryTemplateValues,
+  inputValues,
+  templateDay,
+  useBusinessConfig,
+} from "./businessConfig";
 import AccountSelect from "./AccountSelect";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Journal, type Transaction } from "./api";
@@ -37,6 +45,8 @@ interface SaveRequest {
   business: string;
   entry?: EntryFields;
   raw?: string;
+  values?: Record<string, string>;
+  layout_version?: string;
 }
 
 interface Pending {
@@ -114,6 +124,29 @@ export default function Editor({
   const [accounts, setAccounts] = useState(journal.accounts);
   const [accountError, setAccountError] = useState("");
   const op = pending.current?.request.operation || operation;
+  const { config: businessConfig, error: configError } = useBusinessConfig(
+    op === "create",
+  );
+  const recordTemplate =
+    op === "create" ? businessConfig?.layout.routes[business]?.template : null;
+  const [values, setValues] = useState<Record<string, string>>(
+    pending.current?.request.values || {},
+  );
+  const choices = [
+    ...BUSINESSES.map((item) => ({
+      ...item,
+      label: businessConfig?.layout.routes[item.value]?.label || item.label,
+    })),
+    ...Object.entries(businessConfig?.layout.routes || {})
+      .filter(([key]) => !BUSINESSES.some((item) => item.value === key))
+      .map(([key, route]) => ({ value: key, label: route.label || key })),
+  ];
+  const accountDay = templateDay(
+    recordTemplate,
+    values,
+    fields.date,
+    businessConfig?.write_day || journal.date,
+  );
   useEffect(() => {
     dialog.current?.showModal();
     return () => dialog.current?.close();
@@ -121,7 +154,7 @@ export default function Editor({
   useEffect(() => {
     let active = true;
     setAccountError("");
-    api<Journal>(`/journal?day=${fields.date}`)
+    api<Journal>(`/journal?day=${accountDay}`)
       .then((view) => {
         if (active) setAccounts(view.accounts);
       })
@@ -131,7 +164,7 @@ export default function Editor({
     return () => {
       active = false;
     };
-  }, [fields.date]);
+  }, [accountDay]);
   function persist(value: Pending) {
     localStorage.setItem(PENDING_KEY, JSON.stringify(value));
     pending.current = value;
@@ -166,9 +199,14 @@ export default function Editor({
         business,
         ...(operation === "delete"
           ? {}
-          : advanced
-            ? { raw }
-            : { entry: fields }),
+          : recordTemplate
+            ? {
+                values: inputValues(recordTemplate, values, fields.date),
+                layout_version: businessConfig!.version,
+              }
+            : advanced
+              ? { raw }
+              : { entry: fields }),
       };
       persist({ request });
       const result = await api<Preview>("/preview", {
@@ -209,8 +247,14 @@ export default function Editor({
         setLog([
           ...log,
           {
-            label: fields.payee || fields.narration || "一笔记录",
-            amount: money(fields.amount, fields.currency),
+            label: recordTemplate
+              ? businessConfig?.layout.routes[business]?.label ||
+                businessNames[business] ||
+                business
+              : fields.payee || fields.narration || "一笔记录",
+            amount: recordTemplate
+              ? "已按模板保存"
+              : money(fields.amount, fields.currency),
           },
         ]);
         setFields({
@@ -221,6 +265,7 @@ export default function Editor({
           note: "",
         });
         setRaw("");
+        setValues(carryTemplateValues(recordTemplate, values, fields.date));
         setMessage("已保存到本地账本，可以继续记下一笔。");
       } else onClose();
     } catch (e) {
@@ -302,6 +347,9 @@ export default function Editor({
       </header>
       {error && <Notice tone="error">{error}</Notice>}
       {message && <Notice>{message}</Notice>}
+      {configError && (
+        <Notice>业务配置读取失败：{configError}。请关闭后重试。</Notice>
+      )}
       {uncertain && (
         <Notice>
           正在核对原保存请求，内容已锁定。即使上次已经保存，重试也不会重复入账。
@@ -347,10 +395,11 @@ export default function Editor({
                   onChange={(e) => {
                     invalidate();
                     setBusiness(e.target.value);
+                    setValues({});
                     if (RAW_ONLY.includes(e.target.value)) setAdvanced(true);
                   }}
                 >
-                  {BUSINESSES.map((item) => (
+                  {choices.map((item) => (
                     <option value={item.value} key={item.value}>
                       {item.label}
                     </option>
@@ -358,20 +407,35 @@ export default function Editor({
                 </select>
               </label>
             )}
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={advanced}
-                disabled={(!!row && !row.simple) || RAW_ONLY.includes(business)}
-                onChange={(e) => {
+            {!recordTemplate && (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={advanced}
+                  disabled={
+                    (!!row && !row.simple) || RAW_ONLY.includes(business)
+                  }
+                  onChange={(e) => {
+                    invalidate();
+                    setAdvanced(e.target.checked);
+                  }}
+                />
+                原文高级编辑
+                {row && !row.simple ? "（复杂记录必须保留完整分录）" : ""}
+              </label>
+            )}
+            {recordTemplate ? (
+              <RecordFields
+                template={recordTemplate}
+                values={values}
+                day={fields.date}
+                accounts={accounts}
+                onChange={(next) => {
                   invalidate();
-                  setAdvanced(e.target.checked);
+                  setValues(next);
                 }}
               />
-              原文高级编辑
-              {row && !row.simple ? "（复杂记录必须保留完整分录）" : ""}
-            </label>
-            {advanced ? (
+            ) : advanced ? (
               <>
                 <label className="field">
                   <span>Beancount 原文</span>

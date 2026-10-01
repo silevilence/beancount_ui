@@ -16,11 +16,13 @@ from beancount.parser import parser
 from filelock import FileLock
 
 from .editing import basic_edit, locate, replace_record
-from .layout import insert_new
+from .layout import insert_new, matches_business_file
+from .layout_config import business_files, read_layout
 from .ledger import Ledger, LedgerError, digest, load_snapshot, read_files
 from .models import BatchMutation, Mutation
 from .orders import guard_order_edit, order_raw, validate_order_totals
 from .query import transactions
+from .record_template import current_day
 
 
 def quote(text: str) -> str:
@@ -167,7 +169,19 @@ class Writer:
         atomic_write(path, after)
 
     def preview(self, mutation: Mutation | BatchMutation) -> dict:
-        fingerprint = hashlib.sha256(mutation.model_dump_json().encode()).hexdigest()
+        # Preserve receipts created before template fields were introduced.
+        omit = {key for key in ("values", "layout_version") if getattr(mutation, key, None) is None}
+        exclude = (
+            {
+                "items": {
+                    i: {k for k in omit if getattr(item, k) is None}
+                    for i, item in enumerate(mutation.items)
+                }
+            }
+            if isinstance(mutation, BatchMutation)
+            else omit
+        )
+        fingerprint = hashlib.sha256(mutation.model_dump_json(exclude=exclude).encode()).hexdigest()
         request_id = str(mutation.request_id)
         with self.guard():
             with self.database() as db:
@@ -176,6 +190,10 @@ class Writer:
                 if existing["fingerprint"] != fingerprint:
                     raise LedgerError("请求标识已用于不同内容，请创建新请求")
                 return {**json.loads(existing["result"]), "status": existing["status"]}
+            layout, history, layout_version = read_layout(self.ledger.settings)
+            known_files = business_files(history)
+            write_day = current_day()
+            depends_on_today = False
             snapshot = self.ledger.refresh()
             if snapshot.errors:
                 raise LedgerError("账本存在错误，禁止写入")
@@ -188,36 +206,75 @@ class Writer:
             for index, item in enumerate(items, 1):
                 try:
                     operation = getattr(item, "operation", "create")
+                    kind = "ordinary"
                     if item.order and operation != "create":
                         raise LedgerError("订单业务只能创建，请删除误录后重新关联")
                     if (
                         operation != "delete"
-                        and sum(v is not None for v in (item.entry, item.raw, item.order)) != 1
+                        and sum(
+                            v is not None for v in (item.entry, item.raw, item.order, item.values)
+                        )
+                        != 1
                     ):
                         raise LedgerError("必须选择基础表单或原文中的一种输入")
                     if operation == "create":
+                        if item.business not in layout.routes:
+                            raise LedgerError("业务类型不存在，请重新加载业务配置")
+                        route = layout.routes[item.business]
+                        kind = layout.kind(item.business)
+                        if (
+                            item.layout_version is not None
+                            and item.layout_version != layout_version
+                        ):
+                            raise LedgerError("业务配置已变化，请重新打开表单核对字段")
+                        if route.template:
+                            if item.values is None:
+                                raise LedgerError("该业务已配置记录模板，请使用业务模板表单填写")
+                            if item.layout_version != layout_version:
+                                raise LedgerError("业务配置已变化，请重新打开表单核对字段")
+                            try:
+                                raw = route.template.render(item.values, write_day)
+                            except ValueError as exc:
+                                raise LedgerError(str(exc)) from exc
+                            depends_on_today |= any(
+                                f.mode == "today" for f in route.template.fields.values()
+                            )
+                        elif item.values is not None:
+                            raise LedgerError("该业务未启用记录模板，请重新加载表单")
                         if item.order and item.business != "ordinary":
                             raise LedgerError("订单业务必须使用普通月份路由")
                         raw = (
-                            order_raw(
-                                item.order, load_snapshot(files), f"{request_id}-{index}", basic_raw
+                            raw
+                            if route.template
+                            else (
+                                order_raw(
+                                    item.order,
+                                    load_snapshot(files, layout.entry),
+                                    f"{request_id}-{index}",
+                                    basic_raw,
+                                )
+                                if item.order
+                                else basic_raw(item.entry, kind)
+                                if item.entry
+                                else item.raw
                             )
-                            if item.order
-                            else basic_raw(item.entry, item.business)
-                            if item.entry
-                            else item.raw
                         )
-                        directive = parse_single(raw, item.business)
+                        directive = parse_single(raw, kind)
                         if not item.order and any(k.startswith("order-") for k in directive.meta):
                             raise LedgerError("order- 元数据由订单入口管理，请使用订单业务录入")
-                        if item.business == "yuebao" and any(
-                            r["file"] == "txs/category/yuebao.bean"
+                        if kind == "yuebao" and any(
+                            matches_business_file(r["file"], known_files["yuebao"])
                             and r["date"] == str(directive.date)
-                            for r in transactions(load_snapshot(files))
+                            for r in transactions(load_snapshot(files, layout.entry))
                         ):
                             raise LedgerError("该日期已有余额宝收益，请选择已有记录更正")
-                        target = insert_new(files, item.business, directive.date, raw)
+                        depends_on_today |= route.date_source == "write"
+                        target = insert_new(
+                            files, item.business, directive.date, raw, layout, write_day
+                        )
                     else:
+                        if item.values is not None:
+                            raise LedgerError("历史记录请使用原位编辑，不重新套用业务模板")
                         row = locate(snapshot, item.transaction_id)
                         parse_single(row["raw"], "ordinary")
                         target = row["file"]
@@ -234,17 +291,17 @@ class Writer:
                             }
                             if metadata != row["metadata"]:
                                 raise LedgerError("不能修改订单关联元数据")
-                        if target == "txs/category/yuebao.bean" and raw:
+                        if matches_business_file(target, known_files["yuebao"]) and raw:
                             edited = parse_single(raw, "ordinary")
                             if any(
                                 r["id"] != row["id"]
-                                and r["file"] == target
+                                and matches_business_file(r["file"], known_files["yuebao"])
                                 and r["date"] == str(edited.date)
                                 for r in transactions(snapshot)
                             ):
                                 raise LedgerError("更正日期已有余额宝收益，不能形成重复日期")
                         replace_record(files, row, raw)
-                    if raw and item.business != "balance":
+                    if raw and kind != "balance":
                         parsed = parse_single(raw, "ordinary")
                         if any(
                             isinstance(getattr(p.units, "number", None), Decimal)
@@ -254,7 +311,9 @@ class Writer:
                             warnings.append(
                                 f"第 {index} 笔含零金额分录，请确认；不会根据备注推算或补值。"
                             )
-                    candidate = load_snapshot(files)
+                    candidate = load_snapshot(files, layout.entry)
+                    if target not in candidate.included:
+                        raise LedgerError("目标文件未纳入入口，请检查 include 规则")
                     # A later item may restore an existing dated balance assertion.
                     # Structural/transaction errors remain attributable to this item;
                     # balance assertions are authoritative on the final whole batch.
@@ -293,6 +352,8 @@ class Writer:
                 for name in changes
             }
             result = {
+                "write_day": str(write_day) if depends_on_today else None,
+                "layout_version": layout_version,
                 "request_id": request_id,
                 "target": target,
                 "items": targets,
@@ -323,6 +384,12 @@ class Writer:
                 raise LedgerError("预览不存在，请重新预览")
             if request["status"] == "done":
                 return {**json.loads(request["result"]), "status": "done"}
+            write_day = json.loads(request["result"]).get("write_day")
+            if write_day and write_day != str(current_day()):
+                raise LedgerError("预览后已跨日，请取消旧预览并重新预览实际写入日期")
+            expected_layout = json.loads(request["result"]).get("layout_version", "default")
+            if expected_layout != read_layout(self.ledger.settings)[2]:
+                raise LedgerError("预览后布局已变化，请重新预览后保存（使用新的请求标识）")
             if digest(read_files(self.root)) != request["revision"]:
                 raise LedgerError("预览后账本已被修改，请重新加载并预览")
             with self.database() as db:

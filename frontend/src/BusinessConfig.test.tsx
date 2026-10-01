@@ -1,0 +1,321 @@
+import { useState } from "react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
+import Editor from "./Editor";
+import BatchEditor, { draftKey } from "./BatchEditor";
+import RecordFields from "./RecordFields";
+import TemplateSettings, {
+  starterTemplate,
+  templateWithSource,
+} from "./TemplateSettings";
+import {
+  inputValues,
+  templateDay,
+  type BusinessConfig,
+  type RecordTemplate,
+} from "./businessConfig";
+import type { Journal } from "./api";
+
+const journal: Journal = {
+  date: "2026-09-30",
+  revision: "a".repeat(64),
+  view_revision: "a".repeat(64),
+  stale: false,
+  errors: [],
+  transactions: [],
+  expenses: {},
+  income: {},
+  sync: "待提交",
+  accounts: [{ name: "Assets:Cash", currencies: ["CNY"] }],
+};
+const config: BusinessConfig = {
+  version: "config-1",
+  write_day: "2026-10-01",
+  layout: {
+    entry: "main.beancount",
+    routes: {
+      ordinary: { target: "a.bean", indexes: [], template: starterTemplate },
+      lunch: {
+        target: "lunch.bean",
+        indexes: [],
+        label: "午餐",
+        template: {
+          ...starterTemplate,
+          fields: {
+            date: { label: "交易日期", type: "date", mode: "today", value: "" },
+            amount: {
+              label: "午餐金额",
+              type: "amount",
+              mode: "input",
+              value: "",
+            },
+          },
+        },
+      },
+    },
+  },
+};
+const props = { journal, onClose: vi.fn(), onSaved: vi.fn(async () => {}) };
+function mockApi(fail = false) {
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    const ok = (data: unknown) => ({ ok: true, json: async () => data });
+    if (url === "/api/layout")
+      return fail
+        ? { ok: false, status: 500, json: async () => ({ detail: "暂不可用" }) }
+        : ok(config);
+    if (url.includes("/journal")) return ok(journal);
+    if (url.includes("/templates")) return ok([]);
+    if (url.includes("preview"))
+      return ok({
+        request_id: body.request_id,
+        status: "preview",
+        revision: journal.revision,
+        target: "a.bean",
+        diffs: { "a.bean": "+记录" },
+        items: [{ item: 1, target: "a.bean", raw: "预览原文" }],
+      });
+    return ok({ status: "done", revision: journal.revision });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  return fetcher;
+}
+
+it("单笔只呈现开放字段，提交模板值及配置版本，并支持当天日期和自定义业务", async () => {
+  const fetcher = mockApi();
+  render(<Editor {...props} operation="create" />);
+  await waitFor(() =>
+    expect(screen.queryByLabelText("支出分类")).not.toBeInTheDocument(),
+  );
+  expect(screen.queryByLabelText("原文高级编辑")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("金额"), {
+    target: { value: "12.30" },
+  });
+  fireEvent.change(screen.getByLabelText("交易日期"), {
+    target: { value: "2026-09-29" },
+  });
+  fireEvent.click(screen.getByText("预览并校验"));
+  await screen.findByText("确认保存");
+  const sent = JSON.parse(
+    String(
+      fetcher.mock.calls.find(([url]) => url === "/api/preview")?.[1]?.body,
+    ),
+  );
+  expect(sent).toMatchObject({
+    business: "ordinary",
+    values: { date: "2026-09-29", amount: "12.30" },
+    layout_version: "config-1",
+  });
+  expect(sent.raw).toBeUndefined();
+  expect(sent.entry).toBeUndefined();
+  fireEvent.click(screen.getByText("确认保存"));
+  await screen.findByText("已保存到本地账本，可以继续记下一笔。");
+  expect(screen.getByText("已按模板保存")).toBeInTheDocument();
+  expect(screen.getByLabelText("交易日期")).toHaveValue("2026-09-29");
+  fireEvent.change(screen.getByLabelText("业务类型"), {
+    target: { value: "lunch" },
+  });
+  expect(screen.queryByLabelText("交易日期")).not.toBeInTheDocument();
+  expect(screen.getByText(/保存当天（/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("午餐金额"), {
+    target: { value: "15" },
+  });
+  fireEvent.click(screen.getByText("预览并校验"));
+  await screen.findByText("确认保存");
+  const last = JSON.parse(
+    String(
+      fetcher.mock.calls.filter(([url]) => url === "/api/preview").at(-1)?.[1]
+        ?.body,
+    ),
+  );
+  expect(last.values).toEqual({ amount: "15" });
+  expect(
+    fetcher.mock.calls.some(([url]) => url === "/api/journal?day=2026-10-01"),
+  ).toBe(true);
+});
+
+it("批量模板草稿可恢复、改回表单，并将同一字段约束提交给后端", async () => {
+  const fetcher = mockApi();
+  render(<BatchEditor {...props} />);
+  await screen.findByRole("button", { name: "午餐" });
+  fireEvent.click(screen.getByRole("button", { name: "午餐" }));
+  fireEvent.change(screen.getByLabelText("午餐金额"), {
+    target: { value: "15" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "加入草稿" }));
+  let draft = JSON.parse(localStorage.getItem(draftKey(journal))!);
+  expect(draft.templateVersion).toBe("config-1");
+  expect(draft.items).toEqual([
+    { business: "lunch", values: { amount: "15" }, layout_version: "config-1" },
+  ]);
+  fireEvent.click(screen.getByRole("button", { name: "取回修改" }));
+  expect(screen.getByLabelText("午餐金额")).toHaveValue("15");
+  fireEvent.click(screen.getByRole("button", { name: "加入草稿" }));
+  fireEvent.click(screen.getByRole("button", { name: /整批预览/ }));
+  await screen.findByText("预览原文");
+  const sent = JSON.parse(
+    String(
+      fetcher.mock.calls.find(([url]) => url === "/api/batch/preview")?.[1]
+        ?.body,
+    ),
+  );
+  draft = JSON.parse(localStorage.getItem(draftKey(journal))!);
+  expect(sent.items).toEqual(draft.items);
+});
+
+it("恢复旧配置的草稿保留输入，要求显式重新填写", async () => {
+  mockApi();
+  localStorage.setItem(
+    draftKey(journal),
+    JSON.stringify({
+      form: { date: journal.date },
+      items: [],
+      business: "lunch",
+      templateVersion: "old",
+      templateValues: { amount: "15" },
+    }),
+  );
+  render(<BatchEditor {...props} />);
+  const reset = await screen.findByText("按新配置重新填写");
+  expect(screen.getByLabelText("午餐金额")).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "加入草稿" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("业务配置已变化");
+  expect(JSON.parse(localStorage.getItem(draftKey(journal))!).items).toEqual(
+    [],
+  );
+  fireEvent.click(reset);
+  expect(screen.getByLabelText("午餐金额")).toBeEnabled();
+  expect(screen.getByLabelText("午餐金额")).toHaveValue("");
+});
+
+it.each(["single", "batch"])("%s 配置读取失败提示重试", async (mode) => {
+  mockApi(true);
+  render(
+    mode === "single" ? (
+      <Editor {...props} operation="create" />
+    ) : (
+      <BatchEditor {...props} />
+    ),
+  );
+  expect(await screen.findByText(/业务配置读取失败/)).toHaveTextContent(
+    "暂不可用",
+  );
+});
+
+it("模板设置支持完整表单、增删占位符、字段类型和三种填写方式", () => {
+  function Harness() {
+    const [value, setValue] = useState<RecordTemplate | null>(null);
+    return (
+      <>
+        <TemplateSettings value={value} onChange={setValue} name="午餐" />
+        <output data-testid="value">{JSON.stringify(value)}</output>
+      </>
+    );
+  }
+  render(<Harness />);
+  fireEvent.click(screen.getByText("午餐记录模板与填写项"));
+  fireEvent.click(screen.getByLabelText("午餐使用记录模板"));
+  fireEvent.click(screen.getByText("填入完整消费表单示例"));
+  fireEvent.change(screen.getByLabelText("date填写方式"), {
+    target: { value: "today" },
+  });
+  expect(screen.queryByLabelText("date默认值")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("date字段类型"), {
+    target: { value: "text" },
+  });
+  expect(screen.getByLabelText("date填写方式")).toHaveValue("input");
+  fireEvent.change(screen.getByLabelText("date字段类型"), {
+    target: { value: "date" },
+  });
+  fireEvent.change(screen.getByLabelText("currency填写方式"), {
+    target: { value: "input" },
+  });
+  fireEvent.change(screen.getByLabelText("currency默认值"), {
+    target: { value: "USD" },
+  });
+  fireEvent.change(screen.getByLabelText("currency字段名称"), {
+    target: { value: "交易币种" },
+  });
+  fireEvent.change(screen.getByLabelText("payee填写方式"), {
+    target: { value: "fixed" },
+  });
+  fireEvent.change(screen.getByLabelText("payee固定值"), {
+    target: { value: "食堂" },
+  });
+  const value = JSON.parse(screen.getByTestId("value").textContent!);
+  expect(value.fields.payee).toMatchObject({ mode: "fixed", value: "食堂" });
+  expect(value.fields.currency).toMatchObject({
+    label: "交易币种",
+    mode: "input",
+    value: "USD",
+  });
+  fireEvent.change(screen.getByLabelText("午餐原文模板"), {
+    target: {
+      value:
+        "{{date}} * {{custom}}\n  Assets:Cash {{amount}} CNY\n  Expenses:Food {{-amount}} CNY",
+    },
+  });
+  expect(screen.getByLabelText("custom字段类型")).toHaveValue("text");
+  expect(screen.queryByLabelText("payee字段名称")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText("午餐使用记录模板"));
+  expect(screen.getByTestId("value")).toHaveTextContent("null");
+});
+
+it("动态字段提供账户选择，固定值不可输入，辅助日期识别遵循模板", () => {
+  const template = templateWithSource(
+    "{{date}} * {{payee}} {{note}}\n  {{payment}} {{amount}} {{currency}}",
+    starterTemplate,
+  );
+  template.fields.payee = {
+    label: "商户",
+    type: "text",
+    mode: "fixed",
+    value: "食堂",
+  };
+  template.fields.note = {
+    label: "空备注",
+    type: "text",
+    mode: "fixed",
+    value: "",
+  };
+  const change = vi.fn();
+  render(
+    <RecordFields
+      template={template}
+      values={{}}
+      day={journal.date}
+      accounts={journal.accounts}
+      onChange={change}
+    />,
+  );
+  expect(screen.getByText("食堂")).toBeInTheDocument();
+  expect(screen.getByText("空文本")).toBeInTheDocument();
+  expect(screen.queryByLabelText("商户")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("付款账户"), {
+    target: { value: "Assets:Cash" },
+  });
+  expect(change).toHaveBeenCalledWith(
+    expect.objectContaining({ payment: "Assets:Cash" }),
+  );
+  expect(
+    inputValues(template, { payee: "伪造" }, journal.date),
+  ).not.toHaveProperty("payee");
+  expect(templateDay(null, {}, "fallback", "today")).toBe("fallback");
+  expect(
+    templateDay({ ...template, source: "invalid" }, {}, "fallback", "today"),
+  ).toBe("fallback");
+  expect(
+    templateDay(
+      { ...template, source: '2020-01-01 * "x"' },
+      {},
+      "fallback",
+      "today",
+    ),
+  ).toBe("2020-01-01");
+  expect(templateDay(template, { date: "" }, "fallback", "today")).toBe(
+    "fallback",
+  );
+  template.fields.date.mode = "fixed";
+  template.fields.date.value = "2021-02-03";
+  expect(templateDay(template, {}, "fallback", "today")).toBe("2021-02-03");
+});

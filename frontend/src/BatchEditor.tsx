@@ -1,3 +1,11 @@
+import RecordFields from "./RecordFields";
+import {
+  businessNames,
+  carryTemplateValues,
+  inputValues,
+  templateDay,
+  useBusinessConfig,
+} from "./businessConfig";
 import AccountSelect from "./AccountSelect";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Journal, type Transaction } from "./api";
@@ -23,6 +31,8 @@ export interface DraftItem {
   business: string;
   entry?: EntryFields;
   raw?: string;
+  values?: Record<string, string>;
+  layout_version?: string;
   order?: {
     kind: string;
     purchase?: EntryFields;
@@ -49,6 +59,8 @@ interface Draft {
   orderMode?: string;
   advanced?: boolean;
   advancedRaw?: string;
+  templateValues?: Record<string, string>;
+  templateVersion?: string;
   form: EntryFields;
   items: DraftItem[];
   pending?: {
@@ -61,17 +73,16 @@ interface Draft {
 }
 
 type TaskId =
-  | "daily"
-  | "transfer"
-  | "income"
-  | "orders"
-  | "advanced"
-  | "templates";
+  "daily" | "transfer" | "income" | "orders" | "advanced" | "templates";
 
 /** 作业分区：一笔补记只能属于一个作业，草稿托盘按作业计数。 */
 const TASKS: { id: TaskId; label: string; hint: string }[] = [
   { id: "daily", label: "日常消费", hint: "支出、工资话费与购物明细" },
-  { id: "transfer", label: "转账 / 还款 / 余额", hint: "资产负债移动与余额断言" },
+  {
+    id: "transfer",
+    label: "转账 / 还款 / 余额",
+    hint: "资产负债移动与余额断言",
+  },
   { id: "income", label: "余额宝收益", hint: "逐日补录实际收益" },
   { id: "orders", label: "淘宝订单", hint: "确认收货、部分结算与退款" },
   { id: "advanced", label: "高级分录", hint: "多分录、外币与元数据原文" },
@@ -107,6 +118,7 @@ const ORDERS: Record<string, string> = {
 
 /** 草稿条目归属的作业分区，用于托盘与轨道计数。 */
 function taskOf(item: DraftItem): TaskId {
+  if (item.values) return "daily";
   if (item.order) return "orders";
   if (item.business === "yuebao") return "income";
   if (item.business === "balance") return "transfer";
@@ -114,6 +126,7 @@ function taskOf(item: DraftItem): TaskId {
 }
 
 function titleOf(item: DraftItem): string {
+  if (item.values) return `业务模板 · ${item.business}`;
   if (item.entry) return item.entry.payee || item.entry.narration || "一笔记录";
   if (item.order)
     return item.order.purchase
@@ -151,6 +164,7 @@ export default function BatchEditor({
   onEdit?: (row: Transaction) => void;
 }) {
   const key = draftKey(journal);
+  const { config: businessConfig, error: configError } = useBusinessConfig();
   const [initial] = useState(() => {
     try {
       const text = localStorage.getItem(key);
@@ -174,6 +188,18 @@ export default function BatchEditor({
   });
   const original = useRef(initial.text);
   const [draft, setDraft] = useState<Draft>(initial.value);
+  const business = draft.business || "ordinary";
+  const recordTemplate = businessConfig?.layout.routes[business]?.template;
+  const templateStale =
+    !!draft.templateVersion &&
+    !!businessConfig &&
+    draft.templateVersion !== businessConfig.version;
+  const accountDay = templateDay(
+    recordTemplate,
+    draft.templateValues || {},
+    draft.form.date,
+    businessConfig?.write_day || journal.date,
+  );
   const [task, setTask] = useState<TaskId>(initial.value.task || "daily");
   const [error, setError] = useState(initial.error);
   const [message, setMessage] = useState("");
@@ -188,7 +214,7 @@ export default function BatchEditor({
   }, []);
   useEffect(() => {
     let active = true;
-    api<Journal>(`/journal?day=${draft.form.date}`)
+    api<Journal>(`/journal?day=${accountDay}`)
       .then((view) => {
         if (active) setAccounts(view.accounts);
       })
@@ -198,7 +224,7 @@ export default function BatchEditor({
     return () => {
       active = false;
     };
-  }, [draft.form.date]);
+  }, [accountDay]);
   useEffect(() => {
     if (draft.pending?.preview) preview.current?.scrollIntoView?.();
   }, [draft.pending?.preview]);
@@ -234,29 +260,48 @@ export default function BatchEditor({
   }
   function add(extra: Partial<Draft> = {}) {
     const next = { ...draft, ...extra };
+    if (templateStale && !next.advanced) {
+      setError("业务配置已变化，请按新配置重新填写后加入草稿。");
+      return;
+    }
     update({
       ...next,
       items: [
         ...next.items,
         {
           business: next.business || "ordinary",
-          ...(next.advanced
-            ? { raw: next.advancedRaw || "" }
-            : next.orderMode &&
-                (!next.business || next.business === "ordinary")
-              ? {
-                  order: {
-                    kind: next.orderMode,
-                    purchase: next.form,
-                    date: next.form.date,
-                    amount: next.form.amount,
-                    account: next.form.payment,
-                  },
-                }
-              : { entry: next.form }),
+          ...(recordTemplate && !next.advanced
+            ? {
+                values: inputValues(
+                  recordTemplate,
+                  next.templateValues || {},
+                  next.form.date,
+                ),
+                layout_version: businessConfig!.version,
+              }
+            : next.advanced
+              ? { raw: next.advancedRaw || "" }
+              : next.orderMode &&
+                  (!next.business || next.business === "ordinary")
+                ? {
+                    order: {
+                      kind: next.orderMode,
+                      purchase: next.form,
+                      date: next.form.date,
+                      amount: next.form.amount,
+                      account: next.form.payment,
+                    },
+                  }
+                : { entry: next.form }),
         },
       ],
       advancedRaw: "",
+      templateValues: carryTemplateValues(
+        recordTemplate,
+        next.templateValues || {},
+        next.form.date,
+      ),
+      templateVersion: recordTemplate ? businessConfig!.version : undefined,
       form: { ...next.form, amount: "", note: "", splits: [] },
     });
   }
@@ -347,12 +392,29 @@ export default function BatchEditor({
       advancedRaw: item.raw,
       orderMode: item.order?.kind || "",
       form: item.entry || item.order?.purchase || draft.form,
+      templateValues: item.values,
+      templateVersion: item.layout_version,
       items: draft.items.filter((_, position) => position !== index),
     });
   }
   const locked = busy || !!draft.pending || !!initial.error;
   const last = draft.items.at(-1);
-  const business = draft.business || "ordinary";
+  const businessChoices = [
+    ...BUSINESS_CHOICES.map((item) => ({
+      ...item,
+      label: businessConfig?.layout.routes[item.value]?.label || item.label,
+    })),
+    ...Object.entries(businessConfig?.layout.routes || {})
+      .filter(
+        ([key, route]) =>
+          !BUSINESS_CHOICES.some((item) => item.value === key) &&
+          (key !== "balance" || route.template),
+      )
+      .map(([key, route]) => ({
+        value: key,
+        label: route.label || businessNames[key] || key,
+      })),
+  ];
   const salaryLike = ["salary", "yuebao"].includes(business);
   const counts = draft.items.reduce<Partial<Record<TaskId, number>>>(
     (sum, item) => {
@@ -410,48 +472,94 @@ export default function BatchEditor({
       <Segmented
         label="业务类型"
         value={business}
-        options={BUSINESS_CHOICES}
-        onChange={(value) => update({ ...draft, business: value })}
+        options={businessChoices}
+        onChange={(value) =>
+          update({
+            ...draft,
+            business: value,
+            templateValues: {},
+            templateVersion: undefined,
+          })
+        }
         disabled={locked}
       />
-      {business === "ordinary" && (
-        <label className="field">
-          <span>购物付款方式</span>
-          <select
-            aria-label="购物付款方式"
-            value={draft.orderMode || ""}
-            onChange={(e) => update({ ...draft, orderMode: e.target.value })}
+      {templateStale && (
+        <Notice>
+          业务配置已变化，旧填写内容仍保留。请核对新规则后重新填写。
+          <button
+            type="button"
+            className="ghost small"
+            onClick={() =>
+              update({
+                ...draft,
+                templateValues: {},
+                templateVersion: businessConfig!.version,
+              })
+            }
           >
-            <option value="">普通消费</option>
-            {Object.entries(ORDERS).map(([value, text]) => (
-              <option key={value} value={value}>
-                {text}
-              </option>
-            ))}
-          </select>
-        </label>
+            按新配置重新填写
+          </button>
+        </Notice>
       )}
-      <div className="form-grid">
-        {field("date", "补记日期", "date")}
-        {field("amount", salaryLike ? "到账金额" : "实付金额")}
-        {field("payee", "商户")}
-        {field("narration", "摘要")}
-        {field("currency", "币种")}
-        {account("category", salaryLike ? "收入账户" : "支出分类", [
-          salaryLike ? "Income:" : "Expenses:",
-        ])}
-        {account("payment", salaryLike ? "到账账户" : "付款账户", [
-          "Assets:",
-          ...(salaryLike ? [] : ["Liabilities:"]),
-        ])}
-        {field("note", business === "salary" ? "工资 / 奖金备注" : "备注")}
-      </div>
-      {!salaryLike && (
-        <SplitFields
-          fields={draft.form}
+      {recordTemplate ? (
+        <RecordFields
+          disabled={templateStale}
+          template={recordTemplate}
+          values={draft.templateValues || {}}
+          day={draft.form.date}
           accounts={accounts}
-          onChange={(form) => update({ ...draft, form })}
+          onChange={(templateValues) =>
+            update({
+              ...draft,
+              templateValues,
+              templateVersion: businessConfig!.version,
+            })
+          }
         />
+      ) : (
+        <>
+          {business === "ordinary" && (
+            <label className="field">
+              <span>购物付款方式</span>
+              <select
+                aria-label="购物付款方式"
+                value={draft.orderMode || ""}
+                onChange={(e) =>
+                  update({ ...draft, orderMode: e.target.value })
+                }
+              >
+                <option value="">普通消费</option>
+                {Object.entries(ORDERS).map(([value, text]) => (
+                  <option key={value} value={value}>
+                    {text}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <div className="form-grid">
+            {field("date", "补记日期", "date")}
+            {field("amount", salaryLike ? "到账金额" : "实付金额")}
+            {field("payee", "商户")}
+            {field("narration", "摘要")}
+            {field("currency", "币种")}
+            {account("category", salaryLike ? "收入账户" : "支出分类", [
+              salaryLike ? "Income:" : "Expenses:",
+            ])}
+            {account("payment", salaryLike ? "到账账户" : "付款账户", [
+              "Assets:",
+              ...(salaryLike ? [] : ["Liabilities:"]),
+            ])}
+            {field("note", business === "salary" ? "工资 / 奖金备注" : "备注")}
+          </div>
+          {!salaryLike && (
+            <SplitFields
+              fields={draft.form}
+              accounts={accounts}
+              onChange={(form) => update({ ...draft, form })}
+            />
+          )}
+        </>
       )}
     </>
   );
@@ -459,7 +567,10 @@ export default function BatchEditor({
     <>
       <div className="work-head">
         <h3>高级分录原文</h3>
-        <p>一条完整交易，原文日期决定路由；余额业务只接受一条 balance。</p>
+        <p>
+          一条完整交易，文件位置遵循业务配置；余额业务只接受一条
+          balance。启用记录模板的业务请在「日常消费」填写。
+        </p>
       </div>
       <label className="field">
         <span>高级业务路由</span>
@@ -483,14 +594,13 @@ export default function BatchEditor({
           required
           spellCheck={false}
           value={draft.advancedRaw || ""}
-          onChange={(e) =>
-            update({ ...draft, advancedRaw: e.target.value })
-          }
+          onChange={(e) => update({ ...draft, advancedRaw: e.target.value })}
         />
       </label>
       <p className="muted small">
-        支持多分录、外币、负折扣、标签 #tag、链接 ^link、交易与 posting 元数据、成本{" "}
-        {"{}"}、价格 @ / @@、省略金额和预算权益分录；未经整批完整校验不可入账。
+        支持多分录、外币、负折扣、标签 #tag、链接 ^link、交易与 posting
+        元数据、成本 {"{}"}、价格 @ /
+        @@、省略金额和预算权益分录；未经整批完整校验不可入账。
       </p>
     </>
   );
@@ -540,7 +650,10 @@ export default function BatchEditor({
             >
               {item.label}
               {counts[item.id] ? (
-                <span className="task-count" title={`${counts[item.id]} 笔草稿`}>
+                <span
+                  className="task-count"
+                  title={`${counts[item.id]} 笔草稿`}
+                >
                   {counts[item.id]}
                 </span>
               ) : null}
@@ -552,6 +665,9 @@ export default function BatchEditor({
           className="work-area"
           aria-label={TASKS.find((item) => item.id === task)?.label ?? "补记"}
         >
+          {configError && (
+            <Notice>业务配置读取失败：{configError}。请关闭后重试。</Notice>
+          )}
           {task === "daily" && (
             <form
               onSubmit={(e) => {
@@ -566,14 +682,16 @@ export default function BatchEditor({
               }}
             >
               <fieldset disabled={locked}>
-                <Templates
-                  journal={journal}
-                  fields={draft.form}
-                  business={business}
-                  accounts={accounts}
-                  mode="quick"
-                  onApply={applyTemplate}
-                />
+                {!recordTemplate && (
+                  <Templates
+                    journal={journal}
+                    fields={draft.form}
+                    business={business}
+                    accounts={accounts}
+                    mode="quick"
+                    onApply={applyTemplate}
+                  />
+                )}
                 {entryForm}
                 <Toolbar>
                   <button type="submit">加入草稿</button>
@@ -699,7 +817,13 @@ export default function BatchEditor({
                     )}
                   </div>
                   <div className="item-meta">
-                    <Chip tone="transfer">{labelOf(item)}</Chip>
+                    <Chip tone="transfer">
+                      {item.values
+                        ? businessConfig?.layout.routes[item.business]?.label ||
+                          businessNames[item.business] ||
+                          item.business
+                        : labelOf(item)}
+                    </Chip>
                     <Chip>{(item.entry || item.order?.purchase)?.date}</Chip>
                   </div>
                   {item.raw && (
@@ -712,7 +836,9 @@ export default function BatchEditor({
                     <button
                       type="button"
                       className="ghost small"
-                      disabled={locked || (!!item.order && !item.order.purchase)}
+                      disabled={
+                        locked || (!!item.order && !item.order.purchase)
+                      }
                       onClick={() => recall(index)}
                     >
                       取回修改
@@ -738,7 +864,9 @@ export default function BatchEditor({
           <div className="tray-actions">
             <button
               type="button"
-              disabled={busy || !draft.items.length || !!draft.pending?.uncertain}
+              disabled={
+                busy || !draft.items.length || !!draft.pending?.uncertain
+              }
               onClick={() => void submitPreview()}
             >
               整批预览并校验
@@ -754,11 +882,7 @@ export default function BatchEditor({
               </button>
             )}
             {draft.pending?.preview && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void save()}
-              >
+              <button type="button" disabled={busy} onClick={() => void save()}>
                 {draft.pending.uncertain ? "重试原批次保存" : "确认整批入账"}
               </button>
             )}
@@ -806,7 +930,8 @@ export default function BatchEditor({
         </section>
       )}
       <footer className="muted small">
-        最近一次核对日期 {shortDay(draft.form.date)}；清除浏览器数据会同时清除草稿。
+        最近一次核对日期 {shortDay(draft.form.date)}
+        ；清除浏览器数据会同时清除草稿。
       </footer>
     </dialog>
   );

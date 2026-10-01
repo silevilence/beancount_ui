@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from .layout import matches_business_file
 from .ledger import LedgerError
 from .query import transactions
 
@@ -9,7 +10,11 @@ def income_days(snapshot, start, end):
         raise LedgerError("账本有错误，无法核对收益")
     if not 0 <= (end - start).days <= 365:
         raise LedgerError("日期范围应为 1—366 天")
-    rows = [r for r in transactions(snapshot) if r["file"] == "txs/category/yuebao.bean"]
+    rows = [
+        r
+        for r in transactions(snapshot)
+        if matches_business_file(r["file"], snapshot.business_files["yuebao"])
+    ]
     return [
         {
             "date": str(start + timedelta(days=i)),

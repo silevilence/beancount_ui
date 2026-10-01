@@ -104,6 +104,39 @@ function routing(handler: (url: URL) => Reply, backup: Payload = sync()) {
   });
 }
 
+it("包含图出现循环时显示诊断，仍可进入布局设置", async () => {
+  vi.stubGlobal(
+    "fetch",
+    routing((url) => {
+      if (url.pathname === "/api/ledger")
+        return ok(
+          status({
+            writable: false,
+            errors: [
+              { file: "index.bean", line: 0, message: "include 存在循环" },
+            ],
+            include_graph: {
+              "main.beancount": ["index.bean"],
+              "index.bean": ["main.beancount"],
+            },
+          }),
+        );
+      if (url.pathname === "/api/layout") return fail("请先修复入口");
+      return ok(view(url.searchParams.get("day") || "2026-10-01"));
+    }),
+  );
+  render(<App />);
+  expect(
+    await screen.findByText("main.beancount（循环引用）"),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "文件布局" }));
+  expect(await screen.findByText("请先修复入口")).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "n" });
+  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  fireEvent.click(screen.getByText("关闭布局"));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
 /** 手动泵：按路径解析挂起请求，避免依赖请求发起顺序。 */
 function deferredFetch() {
   const queue: { path: string; resolve: (reply: Reply) => void }[] = [];
