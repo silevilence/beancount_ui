@@ -16,6 +16,8 @@ services:
       # 不限制访问域名/IP/Origin，仍要求应用口令；也可改为逗号分隔的明确地址。
       BEANCOUNT_ALLOWED_ORIGINS: "*"
       BEANCOUNT_GIT_BRANCH: master-1
+      # 可选代理，也可在备份中心设置；使用容器可访问的地址。
+      BEANCOUNT_GIT_PROXY: ${BEANCOUNT_GIT_PROXY:-}
       # 空目录克隆时填写无凭据的仓库地址；已有副本使用 origin。
       # BEANCOUNT_GIT_REMOTE: https://github.com/OWNER/LEDGER.git
     volumes:

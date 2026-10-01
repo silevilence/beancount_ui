@@ -1,23 +1,28 @@
 """Explicit repository onboarding and snapshot-bound Git operations.
 
 Git credentials are supplied by the server's credential helper/SSH environment.
-Never relay command output on failure: it can contain a credential-bearing URL.
+Only log redacted stderr on failure; never relay raw output to the browser.
 """
 
 import difflib
 import json
+import logging
 import os
 import re
 import subprocess
 import tempfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field
 
+from .git_network import ProxyInput, redact_diagnostic, validate_proxy
 from .ledger import LedgerError, digest, load_snapshot, read_files
 from .writer import Writer, atomic_write
+
+logger = logging.getLogger(__name__)
 
 
 class ConnectInput(BaseModel):
@@ -67,22 +72,71 @@ class Sync:
         atomic_write(self.path, json.dumps(state, ensure_ascii=False).encode())
         return state
 
+    def proxy(self):
+        state = self.state()
+        return {
+            "proxy_mode": state.get("proxy_mode", "system"),
+            "proxy_url": state.get("proxy_url", ""),
+        }
+
+    def configure_proxy(self, request: ProxyInput):
+        if request.mode not in {"system", "direct", "custom"}:
+            raise ValueError("请选择跟随服务端、直连或自定义代理")
+        url = validate_proxy(request.url) if request.mode == "custom" else ""
+        with self.writer.guard():
+            self.save(proxy_mode=request.mode, proxy_url=url, next_check=0, failures=0)
+            return self.proxy()
+
     def git(self, *args, env=None, data=None, binary=False):
+        proxy = self.proxy()
+        mode = proxy["proxy_mode"]
+        url = proxy["proxy_url"] if mode == "custom" else self.settings.git_proxy
+        overrides = []
+        process_env = os.environ | {"GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
+        if mode != "system" or url:
+            value = url if mode != "direct" else ""
+            overrides = ["-c", f"http.proxy={value}", "-c", f"remote.origin.proxy={value}"]
+            # A URL-specific Git config outranks http.proxy, even on the command line.
+            for arg in args:
+                if arg.startswith(("https://", "http://")):
+                    overrides.extend(["-c", f"http.{arg}.proxy={value}"])
+            process_env |= {"NO_PROXY": "", "no_proxy": ""}
+        started = time.monotonic()
+
+        def log_failure(code, stderr):
+            # Do not log argv, stdin, stdout or exception repr: they may contain ledger data
+            # or secrets. Git stderr still requires redaction (helpers can echo credentials).
+            logger.error(
+                "Git failure: operation=%s branch=%s proxy_mode=%s code=%s elapsed=%.2fs stderr=%s",
+                args[0],
+                redact_diagnostic(self.settings.branch),
+                mode,
+                code,
+                time.monotonic() - started,
+                redact_diagnostic(stderr),
+            )
+
         try:
             result = subprocess.run(
-                ["git", "-c", "core.hooksPath=", "-C", str(self.root), *args],
+                ["git", "-c", "core.hooksPath=", *overrides, "-C", str(self.root), *args],
                 input=data,
                 capture_output=True,
                 timeout=45,
-                env=os.environ
-                | {"GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
-                | (env or {}),
+                env=process_env | (env or {}),
             )
-        except (OSError, subprocess.TimeoutExpired) as exc:
+        except subprocess.TimeoutExpired as exc:
+            log_failure("timeout", exc.stderr)
+            raise GitFailure(
+                "Git 连接超时（45 秒）；本地记录保留，请查看服务端控制台日志"
+            ) from exc
+        except OSError as exc:
+            log_failure(f"{type(exc).__name__}:{exc.errno}", str(exc))
             raise GitFailure("Git 不可用或连接超时；本地记录保留，请检查服务端网络和凭据") from exc
         if result.returncode:
+            log_failure(result.returncode, result.stderr)
             raise GitFailure(
-                f"Git {args[0]} 失败；请检查网络、认证、目标分支或仓库状态。本地记录保留。"
+                f"Git {args[0]} 失败；请检查网络、认证、代理、目标分支或仓库状态。"
+                "本地记录保留；详情请查看服务端控制台日志。"
             )
         return result.stdout if binary else result.stdout.decode("utf-8").rstrip("\r\n")
 
@@ -409,7 +463,7 @@ class Sync:
 
     def status(self):
         with self.writer.guard():
-            state = self.state()
+            state = self.state() | self.proxy()
             try:
                 remote = self.repository()
                 changes = self.changes()

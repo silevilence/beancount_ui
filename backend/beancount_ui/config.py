@@ -2,6 +2,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .git_network import validate_proxy
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -10,8 +12,11 @@ class Settings:
     entry: str = "main.beancount"
     remote: str = ""
     branch: str = "master-1"
+    git_proxy: str = ""
 
     def __post_init__(self):
+        if self.git_proxy:
+            object.__setattr__(self, "git_proxy", validate_proxy(self.git_proxy))
         ledger, state = self.ledger_dir.resolve(), self.state_dir.resolve()
         object.__setattr__(self, "ledger_dir", ledger)
         object.__setattr__(self, "state_dir", state)
@@ -38,4 +43,5 @@ class Settings:
             state,
             remote=os.environ.get("BEANCOUNT_GIT_REMOTE", ""),
             branch=os.environ.get("BEANCOUNT_GIT_BRANCH", "master-1"),
+            git_proxy=os.environ.get("BEANCOUNT_GIT_PROXY", ""),
         )

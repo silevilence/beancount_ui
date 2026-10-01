@@ -57,6 +57,9 @@ export default function SyncDialog({
   const [interval, setIntervalSeconds] = useState(300);
   const [quiet, setQuiet] = useState(60);
   const editedSchedule = useRef(false);
+  const [proxyMode, setProxyMode] = useState("system");
+  const [proxyUrl, setProxyUrl] = useState("");
+  const editedProxy = useRef(false);
   const autoStarted = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
 
@@ -71,6 +74,12 @@ export default function SyncDialog({
     if (!editedSchedule.current && status) {
       setIntervalSeconds(status.interval ?? 300);
       setQuiet(status.quiet ?? 60);
+    }
+  }, [status]);
+  useEffect(() => {
+    if (!editedProxy.current && status) {
+      setProxyMode(status.proxy_mode ?? "system");
+      setProxyUrl(status.proxy_url ?? "");
     }
   }, [status]);
 
@@ -153,6 +162,16 @@ export default function SyncDialog({
       await post<SyncStatus>("schedule", { enabled, interval, quiet });
       editedSchedule.current = false;
       setDone(enabled ? "定时备份已更新。" : "定时备份已关闭。");
+    });
+  }
+  function saveProxy() {
+    return run("proxy", async () => {
+      await post("proxy", {
+        mode: proxyMode,
+        url: proxyMode === "custom" ? proxyUrl.trim() : "",
+      });
+      editedProxy.current = false;
+      setDone("代理设置已保存，下次连接 GitHub 时生效；可重新尝试克隆或同步。");
     });
   }
   // 「立即同步」直接进入预览，省去再点一次；只在打开时执行一次。
@@ -281,6 +300,59 @@ export default function SyncDialog({
           )}
         </aside>
         <section className="backup-work">
+          <section className="work-area" aria-label="网络代理">
+            <div className="work-head">
+              <h3>网络代理</h3>
+              <p>
+                用于 HTTPS 仓库的克隆、接入检查和备份；SSH 仓库使用服务端 SSH
+                配置。
+              </p>
+            </div>
+            <label className="field">
+              代理模式
+              <select
+                value={proxyMode}
+                disabled={busy}
+                onChange={(e) => {
+                  editedProxy.current = true;
+                  setProxyMode(e.target.value);
+                }}
+              >
+                <option value="system">跟随服务端配置</option>
+                <option value="direct">直连（不使用 HTTP 代理）</option>
+                <option value="custom">自定义代理</option>
+              </select>
+            </label>
+            {proxyMode === "custom" && (
+              <label className="field">
+                代理服务器地址
+                <input
+                  type="url"
+                  placeholder="http://192.168.1.10:7890"
+                  autoComplete="off"
+                  disabled={busy}
+                  value={proxyUrl}
+                  onChange={(e) => {
+                    editedProxy.current = true;
+                    setProxyUrl(e.target.value);
+                  }}
+                />
+              </label>
+            )}
+            <p className="muted small">
+              支持 HTTP、HTTPS、SOCKS5、SOCKS5H；地址不含用户名或密码。 NAS /
+              Docker 请填写容器可访问的代理地址，127.0.0.1 指向容器自身。
+              修改后先保存，再重试备份；详细错误可在服务端控制台或容器日志查看。
+            </p>
+            <Toolbar>
+              <button
+                disabled={busy || (proxyMode === "custom" && !proxyUrl.trim())}
+                onClick={() => void saveProxy()}
+              >
+                {action === "proxy" ? "正在保存…" : "保存代理设置"}
+              </button>
+            </Toolbar>
+          </section>
           {connected ? (
             <section className="work-area" aria-label="手动同步">
               <div className="work-head">

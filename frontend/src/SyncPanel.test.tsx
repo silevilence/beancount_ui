@@ -3,6 +3,7 @@ import { useState } from "react";
 import { expect, it, vi } from "vitest";
 import SyncDialog from "./SyncDialog";
 import SyncPanel from "./SyncPanel";
+import { refreshSync } from "./syncStatus";
 
 type Reply = { ok: boolean; status?: number; json: () => Promise<unknown> };
 type Body = Record<string, unknown> | undefined;
@@ -49,6 +50,54 @@ function serve(handler: (path: string, body: Body) => Reply) {
 }
 
 const changed = vi.fn(async () => {});
+
+it("未接入时可以保存代理，轮询不覆盖输入，失败保留输入并可重试或切回直连", async () => {
+  let saved = { proxy_mode: "system", proxy_url: "" };
+  let reject = true;
+  const calls = serve((path, body) => {
+    if (path === "proxy") {
+      if (reject) return fail("代理地址无效", 422);
+      saved = { proxy_mode: String(body?.mode), proxy_url: String(body?.url) };
+      return ok(saved);
+    }
+    return ok(status({ connected: false, ...saved }));
+  });
+  render(<Harness />);
+  fireEvent.click(await screen.findByText("备份中心"));
+  fireEvent.change(await screen.findByLabelText("代理模式"), {
+    target: { value: "custom" },
+  });
+  fireEvent.change(screen.getByLabelText("代理服务器地址"), {
+    target: { value: "socks5h://192.168.1.10:7890" },
+  });
+  await refreshSync();
+  expect(screen.getByLabelText("代理服务器地址")).toHaveValue(
+    "socks5h://192.168.1.10:7890",
+  );
+  fireEvent.click(screen.getByText("保存代理设置"));
+  expect(
+    await screen.findByText(/备份操作失败：代理地址无效/),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("代理服务器地址")).toHaveValue(
+    "socks5h://192.168.1.10:7890",
+  );
+  reject = false;
+  fireEvent.click(screen.getByText("保存代理设置"));
+  expect(await screen.findByText(/代理设置已保存/)).toBeInTheDocument();
+  expect(calls.filter((c) => c.path === "proxy").at(-1)?.body).toEqual({
+    mode: "custom",
+    url: "socks5h://192.168.1.10:7890",
+  });
+  fireEvent.change(screen.getByLabelText("代理模式"), {
+    target: { value: "direct" },
+  });
+  fireEvent.click(screen.getByText("保存代理设置"));
+  await waitFor(() => expect(saved.proxy_mode).toBe("direct"));
+  expect(saved.proxy_url).toBe("");
+  fireEvent.click(screen.getByLabelText("关闭备份"));
+  fireEvent.click(screen.getByText("备份中心"));
+  expect(await screen.findByLabelText("代理模式")).toHaveValue("direct");
+});
 
 /** 卡片与对话框的接线方式与 App 一致。 */
 function Harness() {

@@ -27,6 +27,8 @@ export interface SyncStatus {
   failures?: number;
   blocked?: boolean;
   pending?: boolean;
+  proxy_mode?: "system" | "direct" | "custom";
+  proxy_url?: string;
   changes: SyncChange[];
 }
 
