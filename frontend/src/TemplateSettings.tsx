@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import {
   fieldIssue,
+  defaultEntryMode,
   renderExample,
   sourceIssue,
   templateSummary,
@@ -35,7 +36,15 @@ const FIELD_TYPES: Record<TemplateField["type"], string> = {
   currency: "币种",
   token: "标记或标签",
 };
-const INSERTABLE = ["date", "amount", "payee", "narration", "category", "payment", "currency"];
+const INSERTABLE = [
+  "date",
+  "amount",
+  "payee",
+  "narration",
+  "category",
+  "payment",
+  "currency",
+];
 
 export function templateWithSource(
   source: string,
@@ -71,10 +80,12 @@ export function templateWithSource(
  */
 export default function TemplateSettings({
   name,
+  kind = "ordinary",
   value,
   onChange,
 }: {
   name: string;
+  kind?: string;
   value: RecordTemplate | null | undefined;
   onChange: (value: RecordTemplate | null) => void;
 }) {
@@ -87,7 +98,10 @@ export default function TemplateSettings({
   function patch(key: string, changes: Partial<TemplateField>) {
     onChange({
       ...value!,
-      fields: { ...value!.fields, [key]: { ...value!.fields[key], ...changes } },
+      fields: {
+        ...value!.fields,
+        [key]: { ...value!.fields[key], ...changes },
+      },
     });
   }
 
@@ -95,7 +109,9 @@ export default function TemplateSettings({
     const el = area.current;
     const source = value!.source;
     const focused = !!el && document.activeElement === el;
-    const start = focused ? (el.selectionStart ?? source.length) : source.length;
+    const start = focused
+      ? (el.selectionStart ?? source.length)
+      : source.length;
     const end = focused ? (el.selectionEnd ?? start) : start;
     onChange(
       templateWithSource(
@@ -144,7 +160,8 @@ export default function TemplateSettings({
   }
 
   const summary = value ? templateSummary(value) : undefined;
-  const inputs = summary?.input.map((item) => item.field.label).join("、") || "";
+  const inputs =
+    summary?.input.map((item) => item.field.label).join("、") || "";
   const generated = [
     ...(summary?.fixed ?? []).map(
       (item) => `${item.field.label}=${item.field.value || "（空）"}`,
@@ -175,7 +192,12 @@ export default function TemplateSettings({
       </div>
       {!value ? (
         <p className="muted small">
-          未启用时使用内置表单（日期、金额、商户、摘要、分类账户、付款账户、币种）。启用后录入页面只显示「用户填写」字段，其余内容按原文生成。
+          {defaultEntryMode(kind) === "raw"
+            ? "未启用时使用原文输入，仅接受一条 balance 余额断言，不生成补差。"
+            : defaultEntryMode(kind) === "income"
+              ? "未启用时使用收入表单（日期、到账金额、商户、摘要、收入账户、到账账户、币种、备注）。"
+              : "未启用时使用内置表单（日期、金额、商户、摘要、分类账户、付款账户、币种、备注）。"}
+          启用后录入页面只显示「用户填写」字段，其余内容按原文生成。
           {memory && (
             <button
               type="button"
@@ -225,7 +247,9 @@ export default function TemplateSettings({
                 <button
                   type="button"
                   className="ghost small"
-                  onClick={() => onChange(templateWithSource(fullFormSource, value))}
+                  onClick={() =>
+                    onChange(templateWithSource(fullFormSource, value))
+                  }
                 >
                   填入完整消费表单示例
                 </button>
@@ -248,7 +272,8 @@ export default function TemplateSettings({
                 </button>
               </div>
               <p className="muted small">
-                固定内容直接写在原文里；文本字段自动加引号，不要给占位符再加引号。占位符需独立放置，金额取负值用 {"{{-amount}}"}。
+                固定内容直接写在原文里；文本字段自动加引号，不要给占位符再加引号。占位符需独立放置，金额取负值用{" "}
+                {"{{-amount}}"}。
               </p>
             </div>
             <div className="template-example">
@@ -260,7 +285,9 @@ export default function TemplateSettings({
                 <Chip tone="transfer">
                   {inputs ? `录入 ${inputs}` : "无需填写字段"}
                 </Chip>
-                {generated.length > 0 && <Chip>生成 {generated.join("、")}</Chip>}
+                {generated.length > 0 && (
+                  <Chip>生成 {generated.join("、")}</Chip>
+                )}
               </div>
               <p className="muted small">
                 〈…〉是用户填写项，其余按固定值或保存当天生成；实际写入前由服务器再次校验。
@@ -362,7 +389,9 @@ export default function TemplateSettings({
                     </label>
                     {field.mode !== "today" && (
                       <label className="field">
-                        <span>{field.mode === "fixed" ? "固定值" : "默认值"}</span>
+                        <span>
+                          {field.mode === "fixed" ? "固定值" : "默认值"}
+                        </span>
                         <input
                           aria-label={`${key}${field.mode === "fixed" ? "固定值" : "默认值"}`}
                           type={field.type === "date" ? "date" : "text"}
@@ -370,7 +399,9 @@ export default function TemplateSettings({
                             field.type === "token" ? "*、!、#tag 或 ^link" : ""
                           }
                           value={field.value}
-                          onChange={(e) => patch(key, { value: e.target.value })}
+                          onChange={(e) =>
+                            patch(key, { value: e.target.value })
+                          }
                         />
                       </label>
                     )}

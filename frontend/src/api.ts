@@ -10,7 +10,12 @@ export interface Transaction {
   narration: string;
   kind: string;
   tags: string[];
-  postings: { account: string; amount: string; currency: string }[];
+  postings: {
+    account: string;
+    amount: string;
+    currency: string;
+    note?: string;
+  }[];
   file: string;
   line: number;
   raw: string;

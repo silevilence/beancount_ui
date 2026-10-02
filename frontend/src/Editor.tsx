@@ -2,6 +2,7 @@ import RecordFields from "./RecordFields";
 import {
   businessNames,
   businessKind,
+  defaultEntryMode,
   carryTemplateValues,
   inputValues,
   templateDay,
@@ -73,8 +74,6 @@ const BUSINESSES = [
   { value: "balance", label: "余额核对断言" },
 ];
 
-const RAW_ONLY = ["salary", "yuebao", "balance"];
-
 export default function Editor({
   journal,
   row,
@@ -130,9 +129,11 @@ export default function Editor({
   );
   const recordTemplate =
     op === "create" ? businessConfig?.layout.routes[business]?.template : null;
-  const rawOnly = RAW_ONLY.includes(
+  const entryMode = defaultEntryMode(
     businessKind(business, businessConfig?.layout.routes[business]),
   );
+  const rawOnly = entryMode === "raw";
+  const income = entryMode === "income";
   const [values, setValues] = useState<Record<string, string>>(
     pending.current?.request.values || {},
   );
@@ -398,6 +399,15 @@ export default function Editor({
                   value={business}
                   onChange={(e) => {
                     invalidate();
+                    const nextMode = defaultEntryMode(
+                      businessKind(
+                        e.target.value,
+                        businessConfig?.layout.routes[e.target.value],
+                      ),
+                    );
+                    if (nextMode !== entryMode) {
+                      setFields({ ...fields, category: "", payment: "" });
+                    }
                     setBusiness(e.target.value);
                     setValues({});
                   }}
@@ -460,7 +470,7 @@ export default function Editor({
             ) : (
               <div className="form-grid">
                 {field("date", "交易日期", "date")}
-                {field("amount", "金额")}
+                {field("amount", income ? "到账金额" : "金额")}
                 {field("payee", "商户")}
                 {field("narration", "摘要")}
                 <label className="field">
@@ -479,33 +489,45 @@ export default function Editor({
                   </datalist>
                 </label>
                 <label className="field">
-                  <span>支出分类</span>
+                  <span>{income ? "收入账户" : "支出分类"}</span>
                   <AccountSelect
-                    label="支出分类"
+                    label={income ? "收入账户" : "支出分类"}
                     required
                     value={fields.category}
                     onChange={(value) => change("category", value)}
-                    options={expenseGroups(names).flatMap((g) =>
-                      g.items.map((name) => ({
-                        value: name,
-                        label: `${g.label} · ${name}`,
-                      })),
-                    )}
+                    options={
+                      income
+                        ? names
+                            .filter((name) => name.startsWith("Income:"))
+                            .map((value) => ({ value }))
+                        : expenseGroups(names).flatMap((g) =>
+                            g.items.map((name) => ({
+                              value: name,
+                              label: `${g.label} · ${name}`,
+                            })),
+                          )
+                    }
                   />
                 </label>
                 <label className="field">
-                  <span>付款账户</span>
+                  <span>{income ? "到账账户" : "付款账户"}</span>
                   <AccountSelect
-                    label="付款账户"
+                    label={income ? "到账账户" : "付款账户"}
                     required
                     value={fields.payment}
                     onChange={(value) => change("payment", value)}
-                    options={fundingGroups(names).flatMap((g) =>
-                      g.items.map((name) => ({
-                        value: name,
-                        label: `${g.label} · ${name}`,
-                      })),
-                    )}
+                    options={
+                      income
+                        ? names
+                            .filter((name) => name.startsWith("Assets:"))
+                            .map((value) => ({ value }))
+                        : fundingGroups(names).flatMap((g) =>
+                            g.items.map((name) => ({
+                              value: name,
+                              label: `${g.label} · ${name}`,
+                            })),
+                          )
+                    }
                   />
                 </label>
                 {field("note", "备注")}

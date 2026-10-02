@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { expect, it, vi } from "vitest";
 import Orders from "./Orders";
 import type { Journal } from "./api";
@@ -99,8 +100,53 @@ function stubOrders(data: unknown) {
 }
 
 function mount(onAdd: (item: DraftItem) => boolean | void = vi.fn(() => true)) {
-  render(<Orders date="2026-09-30" accounts={ACCOUNTS} onAdd={onAdd} />);
+  function Harness() {
+    const [date, setDate] = useState("2026-09-30");
+    return (
+      <Orders
+        date={date}
+        onDateChange={setDate}
+        accounts={ACCOUNTS}
+        onAdd={onAdd}
+      />
+    );
+  }
+  render(<Harness />);
 }
+
+it("订单显示分录备注并使用明确选择的本次处理日期", async () => {
+  stubOrders([
+    {
+      ...ORDERS[0],
+      note: "Expenses:Daily：发带",
+      raw: '2026-09-12 * "淘宝"\n  Expenses:Daily 268 CNY\n    memo: "发带"\n  Liabilities:TaobaoPayable -268 CNY\n',
+    },
+  ]);
+  const onAdd = vi.fn(() => true);
+  mount(onAdd);
+  fireEvent.click(await screen.findByText("老张百货 · 日用品"));
+  expect(screen.getByText("原备注：Expenses:Daily：发带")).toBeInTheDocument();
+  expect(screen.queryByText(/无独立备注/)).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("实际付款 / 收款账户"), {
+    target: { value: "Assets:Cash" },
+  });
+  fireEvent.click(screen.getByLabelText(CONFIRM));
+  fireEvent.change(screen.getByLabelText("本次处理日期"), {
+    target: { value: "2026-10-02" },
+  });
+  expect(screen.getByLabelText(CONFIRM)).not.toBeChecked();
+  expect(screen.getByLabelText("实际付款 / 收款账户")).toHaveValue("");
+  fireEvent.change(screen.getByLabelText("实际付款 / 收款账户"), {
+    target: { value: "Assets:Cash" },
+  });
+  fireEvent.click(screen.getByLabelText(CONFIRM));
+  fireEvent.click(screen.getByText(SUBMIT));
+  expect(onAdd).toHaveBeenCalledWith(
+    expect.objectContaining({
+      order: expect.objectContaining({ date: "2026-10-02" }),
+    }),
+  );
+});
 
 it("渲染历史订单列表与状态芯片，未选择时提示先选订单", async () => {
   stubOrders(ORDERS);

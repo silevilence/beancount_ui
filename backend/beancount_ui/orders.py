@@ -66,7 +66,10 @@ def orders(snapshot):
                 "date": row["date"],
                 "payee": row["payee"],
                 "narration": row["narration"],
-                "note": row["note"],
+                "note": "\n".join(
+                    ([row["note"]] if row["note"] else [])
+                    + [f'{p["account"]}：{p["note"]}' for p in row["postings"] if p["note"]]
+                ),
                 "file": row["file"],
                 "line": row["line"],
                 "raw": row["raw"],

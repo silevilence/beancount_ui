@@ -119,7 +119,9 @@ function setup(
 }
 
 it("局域网 HTTP 可预览保存，防止重复点击，保存后保留日期并继续录入", async () => {
-  vi.stubGlobal("crypto", { getRandomValues: crypto.getRandomValues.bind(crypto) });
+  vi.stubGlobal("crypto", {
+    getRandomValues: crypto.getRandomValues.bind(crypto),
+  });
   const { requests, onSaved } = setup();
   fill();
   expect(screen.getByText("填写")).toHaveAttribute("aria-current", "step");
@@ -217,11 +219,12 @@ it("保存超时后刷新页面仍能完成原请求", async () => {
   expect(onSaved).toHaveBeenCalledOnce();
 });
 
-it("切换业务类型进入原文模式，取消预览后关闭不入账", async () => {
+it("收入业务可手动进入原文模式，取消预览后关闭不入账", async () => {
   const { onClose, onSaved } = setup();
   fireEvent.change(screen.getByLabelText("业务类型"), {
     target: { value: "salary" },
   });
+  fireEvent.click(screen.getByLabelText("原文高级编辑"));
   expect(screen.getByLabelText("Beancount 原文")).toBeEnabled();
   expect(screen.getByLabelText("业务类型")).toHaveValue("salary");
   fireEvent.change(screen.getByLabelText("Beancount 原文"), {
@@ -264,10 +267,7 @@ it("已知失效的预览会被取消，不会当作保存成功", async () => {
   fill();
   fireEvent.click(screen.getByText("预览并校验"));
   await screen.findByText("确认保存");
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(fail("预览后账本已被修改")),
-  );
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(fail("预览后账本已被修改")));
   fireEvent.click(screen.getByText("确认保存"));
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "预览后账本已被修改",
@@ -354,10 +354,7 @@ it("恢复已有预览时可以取消并关闭", async () => {
 });
 
 it("账户加载失败时禁止预览并给出原因", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(fail("账本读取失败", 503)),
-  );
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(fail("账本读取失败", 503)));
   render(
     <Editor
       journal={journal}

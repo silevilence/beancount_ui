@@ -19,6 +19,7 @@ import {
   useSyncSnapshot,
 } from "./syncStatus";
 import { Chip, Notice } from "./ui";
+import { useToday } from "./useToday";
 import {
   byCurrency,
   clockOf,
@@ -117,6 +118,13 @@ export default function App() {
   const [ledger, setLedger] = useState<LedgerStatus>();
   const [journal, setJournal] = useState<JournalView>();
   const [day, setDay] = useState(shanghaiToday);
+  const today = useToday();
+  const previousToday = useRef(today);
+  useEffect(() => {
+    const previous = previousToday.current;
+    previousToday.current = today;
+    setDay((selected) => (selected === previous ? today : selected));
+  }, [today]);
   const [draftFilters, setDraftFilters] = useState<Filters>({
     payee: "",
     narration: "",

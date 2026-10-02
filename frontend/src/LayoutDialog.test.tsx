@@ -77,6 +77,19 @@ function setup(fail = "") {
 const rail = () => within(screen.getByRole("navigation", { name: "业务列表" }));
 const detail = () => within(screen.getByRole("region", { name: "业务配置" }));
 
+it("无模板业务展示收入表单或余额原文的实际录入方式", async () => {
+  setup();
+  await screen.findByLabelText("账本入口");
+  expect(screen.getAllByText("收入表单")).toHaveLength(2);
+  expect(screen.getByText("原文输入")).toBeInTheDocument();
+  fireEvent.click(rail().getByRole("button", { name: /余额宝收益/ }));
+  expect(detail().getByText("收入表单")).toBeInTheDocument();
+  expect(screen.getByText(/未启用时使用收入表单/)).toBeInTheDocument();
+  fireEvent.click(rail().getByRole("button", { name: /余额断言/ }));
+  expect(detail().getByText("原文输入")).toBeInTheDocument();
+  expect(screen.getByText(/未启用时使用原文输入/)).toBeInTheDocument();
+});
+
 it("overview 业务可编辑模板并移除，与概览页相互独立", async () => {
   setup();
   await screen.findByLabelText("账本入口");
@@ -104,7 +117,9 @@ it("overview 业务可编辑模板并移除，与概览页相互独立", async (
 it("在业务列表中选择业务，预览编辑后的规则，再明确启用并刷新账本", async () => {
   const { fetcher, changed, close } = setup();
   await screen.findByLabelText("账本入口");
-  expect(rail().getByRole("button", { name: /日常与转账/ })).toBeInTheDocument();
+  expect(
+    rail().getByRole("button", { name: /日常与转账/ }),
+  ).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("账本入口"), {
     target: { value: "config/book.bean" },
   });
@@ -124,11 +139,11 @@ it("在业务列表中选择业务，预览编辑后的规则，再明确启用�
   fireEvent.click(screen.getByText("检查并预览布局"));
   await screen.findByText("布局预览 · 已校验");
   expect(screen.getByText("预览有效 · ", { exact: false })).toBeInTheDocument();
+  expect(detail().getByText("config/book.bean")).toBeInTheDocument();
   expect(
-    detail().getByText("config/book.bean"),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByText("config/book.bean → index.bean → indexes/{year}.bean → journal/{year}-{month}.bean"),
+    screen.getByText(
+      "config/book.bean → index.bean → indexes/{year}.bean → journal/{year}-{month}.bean",
+    ),
   ).toBeInTheDocument();
   const payload = JSON.parse(String(fetcher.mock.calls.at(-1)?.[1]?.body));
   expect(payload.layout.routes.ordinary.indexes).toEqual([
@@ -165,9 +180,7 @@ it("业务列表标记已有/新建文件、写入日期与待修正项", async 
   expect(
     detail().getByText(/补记历史日期时写入服务器当天 2026-10-01/),
   ).toBeInTheDocument();
-  expect(
-    rail().getAllByText("写入日期").length,
-  ).toBeGreaterThan(0);
+  expect(rail().getAllByText("写入日期").length).toBeGreaterThan(0);
   fireEvent.change(screen.getByLabelText("索引链"), {
     target: { value: "index.bean\n" },
   });
@@ -187,7 +200,9 @@ it("业务列表标记已有/新建文件、写入日期与待修正项", async 
   fireEvent.change(screen.getByLabelText("目标文件"), {
     target: { value: "txs/category/yuebao.bean" },
   });
-  expect(detail().getByText(/目标文件与「余额宝收益」使用同一文件/)).toBeInTheDocument();
+  expect(
+    detail().getByText(/目标文件与「余额宝收益」使用同一文件/),
+  ).toBeInTheDocument();
   expect(rail().getAllByText("1 项待修正")).toHaveLength(2);
 });
 
@@ -269,9 +284,11 @@ it("配置写入日期、模板字段和自定义业务，再预览完整配置"
   fireEvent.click(detail().getByRole("button", { name: "实际写入日期" }));
   fireEvent.click(screen.getByLabelText("日常使用记录模板"));
   fireEvent.change(screen.getByLabelText("日常原文模板"), {
-    target: { value: "{{date}} * \"午餐\"\n  Expenses:Food {{amount}} CNY\n" },
+    target: { value: '{{date}} * "午餐"\n  Expenses:Food {{amount}} CNY\n' },
   });
-  expect(screen.getByLabelText("日常填写示意")).toHaveTextContent("〈交易日期〉");
+  expect(screen.getByLabelText("日常填写示意")).toHaveTextContent(
+    "〈交易日期〉",
+  );
   fireEvent.click(screen.getByText("清除模板"));
   expect(screen.getByText("恢复上次模板")).toBeInTheDocument();
   fireEvent.click(rail().getByRole("button", { name: /话费/ }));
@@ -412,9 +429,7 @@ it("自定义业务使用内置表单，且已启用业务的记账语义不可�
   await screen.findByLabelText("账本入口");
   fireEvent.click(rail().getByRole("button", { name: /午餐/ }));
   expect(screen.getByLabelText("记账语义")).toBeDisabled();
-  expect(
-    detail().getByText(/需要新语义请另建业务标识/),
-  ).toBeInTheDocument();
+  expect(detail().getByText(/需要新语义请另建业务标识/)).toBeInTheDocument();
   expect(
     detail().getByText("记录模板", { selector: ".template-head h4" }),
   ).toBeInTheDocument();
@@ -430,9 +445,7 @@ it("操作进行中阻止关闭和修改，完成后恢复", async () => {
   expect(screen.getByText("关闭布局")).toBeDisabled();
   expect(screen.getByText("检查并预览布局")).toBeDisabled();
   expect(screen.getByLabelText("账本入口")).toBeDisabled();
-  expect(
-    rail().getByRole("button", { name: /余额宝收益/ }),
-  ).toBeDisabled();
+  expect(rail().getByRole("button", { name: /余额宝收益/ })).toBeDisabled();
   fireEvent(
     screen.getByRole("dialog"),
     new Event("cancel", { bubbles: true, cancelable: true }),
@@ -441,9 +454,7 @@ it("操作进行中阻止关闭和修改，完成后恢复", async () => {
   await act(async () => {
     pending.resolve({ ok: false, json: async () => ({ detail: "请重试" }) });
   });
-  await waitFor(() =>
-    expect(screen.getByText("检查并预览布局")).toBeEnabled(),
-  );
+  await waitFor(() => expect(screen.getByText("检查并预览布局")).toBeEnabled());
   expect(screen.getByLabelText("账本入口")).toBeEnabled();
 });
 

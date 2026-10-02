@@ -40,6 +40,24 @@ export function businessKind(business: string, route?: BusinessRoute): string {
     ? business
     : route?.kind || "ordinary";
 }
+
+export function defaultEntryMode(kind: string) {
+  return kind === "balance"
+    ? "raw"
+    : ["salary", "yuebao"].includes(kind)
+      ? "income"
+      : "expense";
+}
+
+export function entryModeLabel(business: string, route?: BusinessRoute) {
+  if (route?.template) return "记录模板";
+  const mode = defaultEntryMode(businessKind(business, route));
+  return mode === "raw"
+    ? "原文输入"
+    : mode === "income"
+      ? "收入表单"
+      : "内置表单";
+}
 export function useBusinessConfig(enabled = true) {
   const [config, setConfig] = useState<BusinessConfig>();
   const [error, setError] = useState("");
@@ -156,15 +174,17 @@ export function pathIssue(path: string, dated = true): string {
     return "需使用 .bean 或 .beancount 扩展名";
   if (plain.length > 240) return "路径过长";
   if (
-    plain.split("/").some(
-      (part) =>
-        !part ||
-        part === "." ||
-        part === ".." ||
-        part.startsWith(".") ||
-        part.endsWith(".") ||
-        RESERVED.test(part),
-    )
+    plain
+      .split("/")
+      .some(
+        (part) =>
+          !part ||
+          part === "." ||
+          part === ".." ||
+          part.startsWith(".") ||
+          part.endsWith(".") ||
+          RESERVED.test(part),
+      )
   )
     return "存在空路径段、上级目录或保留名称";
   if (dated && plain.toLowerCase().startsWith("gnucash/"))
@@ -181,7 +201,9 @@ function valueIssue(type: TemplateField["type"], value: string): string {
         ? ""
         : "金额应为最多 16 位整数、8 位小数的十进制数";
     case "account":
-      return /^(?:Assets|Liabilities|Equity|Income|Expenses):[^\s";{}]+$/.test(value)
+      return /^(?:Assets|Liabilities|Equity|Income|Expenses):[^\s";{}]+$/.test(
+        value,
+      )
         ? ""
         : "账户需为 Assets: 等完整账户名";
     case "currency":
@@ -287,7 +309,12 @@ export function routeIssues(
   for (const other of Object.keys(layout.routes)) {
     if (other === business) continue;
     const label = routeLabel(other, layout.routes[other].label);
-    const otherChain = chainOf(layout.entry, layout.routes[other], day, writeDay);
+    const otherChain = chainOf(
+      layout.entry,
+      layout.routes[other],
+      day,
+      writeDay,
+    );
     forTarget.set(otherChain.at(-1)!.toLowerCase(), label);
     forIndex.set(otherChain.at(-1)!.toLowerCase(), label);
     otherChain.slice(1, -1).forEach((path) => {
@@ -299,7 +326,9 @@ export function routeIssues(
     const resolved = chain[position + 1];
     const owner = forIndex.get(resolved.toLowerCase());
     if (owner)
-      issues.push(`索引链第 ${position + 1} 行与「${owner}」使用同一文件 ${resolved}`);
+      issues.push(
+        `索引链第 ${position + 1} 行与「${owner}」使用同一文件 ${resolved}`,
+      );
   });
   const resolvedTarget = chain.at(-1)!;
   const owner = forTarget.get(resolvedTarget.toLowerCase());
@@ -362,6 +391,7 @@ export function changedRoutes(current: Layout, proposed: Layout): string[] {
   ]);
   return [...keys].filter(
     (key) =>
-      JSON.stringify(current.routes[key]) !== JSON.stringify(proposed.routes[key]),
+      JSON.stringify(current.routes[key]) !==
+      JSON.stringify(proposed.routes[key]),
   );
 }

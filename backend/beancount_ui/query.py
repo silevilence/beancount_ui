@@ -42,7 +42,12 @@ def transactions(snapshot: Snapshot) -> list[dict]:
         occurrences[fingerprint] += 1
         identity = f"{fingerprint}:{ordinal}"
         postings = [
-            {"account": p.account, "amount": str(p.units.number), "currency": p.units.currency}
+            {
+                "account": p.account,
+                "amount": str(p.units.number),
+                "currency": p.units.currency,
+                "note": str((p.meta or {}).get("memo", "")),
+            }
             for p in entry.postings
         ]
         simple = (

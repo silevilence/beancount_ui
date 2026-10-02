@@ -6,6 +6,7 @@ import { clockOf, shanghaiToday } from "./format";
 import { Chip, Notice } from "./ui";
 import {
   changedRoutes,
+  entryModeLabel,
   pathIssue,
   routeLabel,
   routeIssues,
@@ -83,7 +84,9 @@ export default function LayoutDialog({
   const original = config?.layout;
   const writeDay = config?.write_day || shanghaiToday();
   const dirty =
-    !!layout && !!original && JSON.stringify(layout) !== JSON.stringify(original);
+    !!layout &&
+    !!original &&
+    JSON.stringify(layout) !== JSON.stringify(original);
   const changed = dirty ? changedRoutes(original, layout) : [];
   // 提交期间的最新输入，用于丢弃过期的预览或启用结果。
   const current = useRef({ day, layout: "" });
@@ -234,10 +237,16 @@ export default function LayoutDialog({
         </div>
         <div className="editor-side">
           <span className="layout-flags">
-            {dirty && <Chip tone="warn">{changed.length || "入口"} 项修改待启用</Chip>}
+            {dirty && (
+              <Chip tone="warn">{changed.length || "入口"} 项修改待启用</Chip>
+            )}
             {enabled && <Chip tone="ok">已更新</Chip>}
           </span>
-          <button className="ghost small" disabled={busy} onClick={requestClose}>
+          <button
+            className="ghost small"
+            disabled={busy}
+            onClick={requestClose}
+          >
             关闭布局
           </button>
         </div>
@@ -248,10 +257,7 @@ export default function LayoutDialog({
         <Notice
           action={
             <>
-              <button
-                className="ghost small"
-                onClick={() => setConfirm("")}
-              >
+              <button className="ghost small" onClick={() => setConfirm("")}>
                 继续编辑
               </button>
               <button className="ghost small" onClick={onClose}>
@@ -368,8 +374,8 @@ export default function LayoutDialog({
                     </>
                   }
                 >
-                  移除「{routeLabel(selected, layout.routes[selected]?.label)}」后，
-                  新记录不再写入该文件；历史记录与旧文件保持原位。
+                  移除「{routeLabel(selected, layout.routes[selected]?.label)}
+                  」后， 新记录不再写入该文件；历史记录与旧文件保持原位。
                 </Notice>
               )}
               {selected === null ? (
@@ -387,7 +393,9 @@ export default function LayoutDialog({
                     <input
                       aria-label="账本入口"
                       value={layout.entry}
-                      onChange={(e) => change({ ...layout, entry: e.target.value })}
+                      onChange={(e) =>
+                        change({ ...layout, entry: e.target.value })
+                      }
                     />
                     <small>
                       入口须已存在并包含全部历史账本；当前生效入口为{" "}
@@ -436,9 +444,7 @@ export default function LayoutDialog({
                               ].join(" → ")}
                             </code>
                           </td>
-                          <td>
-                            {route.template ? "记录模板" : "内置表单"}
-                          </td>
+                          <td>{entryModeLabel(key, route)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -502,7 +508,8 @@ export default function LayoutDialog({
                         </>
                       }
                     >
-                      默认 MyBill 布局会替换当前编辑内容，仍需预览并启用后才生效。
+                      默认 MyBill
+                      布局会替换当前编辑内容，仍需预览并启用后才生效。
                     </Notice>
                   )}
                   {confirm === "reset" && (
@@ -582,7 +589,8 @@ export default function LayoutDialog({
               </div>
               <details>
                 <summary>
-                  查看 include 示例差异（{Object.keys(preview.diffs).length} 个文件）
+                  查看 include 示例差异（{Object.keys(preview.diffs).length}{" "}
+                  个文件）
                 </summary>
                 {Object.entries(preview.diffs).map(([name, diff]) => (
                   <section className="file-card" key={name}>

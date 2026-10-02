@@ -29,6 +29,7 @@ import {
 } from "./format";
 import { Chip, Empty, Notice, Segmented, Toolbar } from "./ui";
 import { requestId } from "./requestId";
+import { useToday } from "./useToday";
 
 export interface DraftItem {
   business: string;
@@ -171,6 +172,7 @@ export default function BatchEditor({
   onEdit?: (row: Transaction) => void;
 }) {
   const key = draftKey(journal);
+  const today = useToday();
   const { config: businessConfig, error: configError } = useBusinessConfig();
   const [initial] = useState(() => {
     try {
@@ -184,6 +186,20 @@ export default function BatchEditor({
         typeof value.form.date !== "string"
       )
         throw new Error("草稿格式无效，请保留浏览器存储并核对");
+      // 已清空的上次录入只保留账户等默认值；真实草稿和待确认请求不改日期。
+      if (
+        !value.pending &&
+        !value.items.length &&
+        !value.form.amount &&
+        !value.form.payee &&
+        !value.form.narration &&
+        !value.form.note &&
+        !value.form.splits?.length &&
+        !value.advancedRaw &&
+        !Object.values(value.templateValues || {}).some(Boolean)
+      ) {
+        value.form = { ...value.form, date: journal.date };
+      }
       return { text, value, error: "" };
     } catch (e) {
       return {
@@ -699,6 +715,20 @@ export default function BatchEditor({
           {configError && (
             <Notice>业务配置读取失败：{configError}。请关闭后重试。</Notice>
           )}
+          {draft.form.date !== today && (
+            <Notice>
+              当前录入日期为 {draft.form.date}，今天是 {today}
+              。已有草稿日期保持不变。
+              <button
+                type="button"
+                className="ghost small"
+                disabled={locked}
+                onClick={() => change("date", today)}
+              >
+                新记录改用今天
+              </button>
+            </Notice>
+          )}
           {task === "daily" && (
             <form
               onSubmit={(e) => {
@@ -773,6 +803,7 @@ export default function BatchEditor({
             <fieldset disabled={locked}>
               <Orders
                 date={draft.form.date}
+                onDateChange={(day) => change("date", day)}
                 accounts={accounts}
                 onAdd={(item) =>
                   update({ ...draft, items: [...draft.items, item] })
@@ -856,8 +887,8 @@ export default function BatchEditor({
                           )
                         : labelOf(item)}
                     </Chip>
-                    {(item.entry || item.order?.purchase)?.date && (
-                      <Chip>{(item.entry || item.order?.purchase)?.date}</Chip>
+                    {(item.entry?.date || item.order?.date) && (
+                      <Chip>{item.entry?.date || item.order?.date}</Chip>
                     )}
                     {item.values && <Chip>模板 · 日期由模板生成</Chip>}
                   </div>

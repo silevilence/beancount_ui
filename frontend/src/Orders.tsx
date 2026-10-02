@@ -43,10 +43,12 @@ const KIND_NOTE: Record<string, string> = {
 
 export default function Orders({
   date,
+  onDateChange,
   accounts,
   onAdd,
 }: {
   date: string;
+  onDateChange: (day: string) => void;
   accounts: Journal["accounts"];
   onAdd: (item: DraftItem) => boolean | void;
 }) {
@@ -85,6 +87,10 @@ export default function Orders({
   useEffect(() => {
     void refresh();
   }, []);
+  useEffect(() => {
+    setConfirmed(false);
+    setAccount("");
+  }, [date]);
 
   /** 选中订单：金额回落到未结清金额，类别回落到第一条原费用。 */
   function pick(next: Order) {
@@ -376,6 +382,18 @@ export default function Orders({
               赔偿等特殊收入请用高级分录。
             </p>
             <div className="form-grid">
+              <label className="field">
+                <span>本次处理日期</span>
+                <input
+                  aria-label="本次处理日期"
+                  type="date"
+                  required
+                  value={date}
+                  onChange={(e) => {
+                    if (e.target.value) onDateChange(e.target.value);
+                  }}
+                />
+              </label>
               <div className="field">
                 <span>处理方式</span>
                 <Segmented

@@ -104,6 +104,39 @@ function routing(handler: (url: URL) => Reply, backup: Payload = sync()) {
   });
 }
 
+it("跨上海零点后今日视图随当天更新，历史日期保持选择", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-01T15:59:50Z"));
+  vi.stubGlobal(
+    "fetch",
+    routing((url) =>
+      url.pathname === "/api/ledger"
+        ? ok(status())
+        : ok(view(url.searchParams.get("day")!)),
+    ),
+  );
+  try {
+    await act(async () => {
+      render(<App />);
+    });
+    expect(screen.getByText("2026-10-01 · Asia/Shanghai")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    expect(screen.getByText("2026-10-02 · Asia/Shanghai")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("记账日期"), {
+      target: { value: "2026-09-29" },
+    });
+    vi.setSystemTime(new Date("2026-10-02T16:00:00Z"));
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(screen.getByText("2026-09-29 · Asia/Shanghai")).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("包含图出现循环时显示诊断，仍可进入布局设置", async () => {
   vi.stubGlobal(
     "fetch",
@@ -149,8 +182,7 @@ function deferredFetch() {
         });
       }),
   );
-  const pending = (path: string) =>
-    queue.filter((item) => item.path === path);
+  const pending = (path: string) => queue.filter((item) => item.path === path);
   return { fetcher, pending };
 }
 
@@ -234,9 +266,7 @@ it("旧请求不会覆盖新选择的日期", async () => {
   fireEvent.change(screen.getByLabelText("记账日期"), {
     target: { value: "2026-09-29" },
   });
-  await waitFor(() =>
-    expect(pending("/api/journal").length).toBe(2),
-  );
+  await waitFor(() => expect(pending("/api/journal").length).toBe(2));
   const journals = pending("/api/journal");
   act(() => {
     pending("/api/ledger")[1].resolve(ok(status()));
@@ -435,9 +465,7 @@ it("备份失败显示待备份提示，暂停时给出人工处理指引", asyn
   );
   vi.stubGlobal("fetch", forks);
   render(<App />);
-  expect(
-    await screen.findByText(/备份已暂停：历史分叉/),
-  ).toBeInTheDocument();
+  expect(await screen.findByText(/备份已暂停：历史分叉/)).toBeInTheDocument();
 });
 
 it("修改与删除从流水直接进入编辑器", async () => {
@@ -500,7 +528,9 @@ it("账本校验失败时保留旧视图并暂停写入", async () => {
   vi.stubGlobal("fetch", fetcher);
   render(<App />);
   expect(
-    await screen.findByText("账本校验失败，以下保留上一次有效视图，已暂停写入。"),
+    await screen.findByText(
+      "账本校验失败，以下保留上一次有效视图，已暂停写入。",
+    ),
   ).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "＋ 记一笔" })).toBeDisabled();
   expect(screen.getByText("读取中")).toBeInTheDocument();

@@ -1,7 +1,14 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import BatchEditor, { draftKey } from "./BatchEditor";
 import type { Journal } from "./api";
+import { shanghaiToday } from "./format";
 
 const journal: Journal = {
   date: "2026-09-29",
@@ -124,10 +131,42 @@ const fillDaily = (amount: string) => {
 };
 
 /** 草稿单元格：托盘与轨道都会显示笔数，断言统一在托盘内进行。 */
-const tray = () => within(screen.getByRole("complementary", { name: "待入账草稿" }));
+const tray = () =>
+  within(screen.getByRole("complementary", { name: "待入账草稿" }));
+
+it("重新打开已清空的补记草稿时采用当前工作台日期", () => {
+  setup({
+    form: {
+      ...base,
+      date: "2026-09-28",
+      amount: "",
+      payee: "",
+      narration: "",
+      note: "",
+    },
+    items: [],
+  });
+  expect(screen.getByLabelText("补记日期")).toHaveValue(journal.date);
+});
+
+it("恢复未完成内容和待入账记录时保留原日期并明确提示", () => {
+  setup({
+    form: { ...base, date: "2026-09-28" },
+    items: [{ business: "ordinary", entry: { ...base, date: "2026-09-28" } }],
+  });
+  expect(screen.getByLabelText("补记日期")).toHaveValue("2026-09-28");
+  expect(screen.getByText(/当前录入日期为 2026-09-28/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "新记录改用今天" }));
+  expect(screen.getByLabelText("补记日期")).toHaveValue(shanghaiToday());
+  const saved = JSON.parse(localStorage.getItem(draftKey(journal))!);
+  expect(saved.items[0].entry.date).toBe("2026-09-28");
+  expect(saved.form.amount).toBe(base.amount);
+});
 
 it("十笔草稿恢复、固定日期、整批请求重试保持身份", async () => {
-  vi.stubGlobal("crypto", { getRandomValues: crypto.getRandomValues.bind(crypto) });
+  vi.stubGlobal("crypto", {
+    getRandomValues: crypto.getRandomValues.bind(crypto),
+  });
   const requests = stubFetch();
   const mounted = render(<BatchEditor {...props} />);
   fireEvent.change(screen.getByLabelText("支出分类"), {
@@ -204,7 +243,8 @@ it("草稿逐笔取回修改、移除、复制与高级原文预览", async () =
   fireEvent.click(screen.getByText("整批预览并校验"));
   await screen.findByText("第 1 笔含零金额");
   /** 预览请求体由本测试的 stub 记录，形状即 BatchMutation。 */
-  const sent = requests.find((call) => call.url === "/api/batch/preview")!.body as {
+  const sent = requests.find((call) => call.url === "/api/batch/preview")!
+    .body as {
     items: { raw: string }[];
   };
   expect(sent.items[0].raw).toContain("原文");
@@ -305,10 +345,7 @@ it("损坏的草稿明确报告并锁定，不能静默覆盖", () => {
 it("账户加载失败明确显示，取消对话框可返回", async () => {
   const { unmount } = setup(undefined, { journal: true });
   expect(await screen.findByText(/校验失败/)).toBeInTheDocument();
-  fireEvent(
-    screen.getByRole("dialog"),
-    new Event("cancel", { bubbles: true }),
-  );
+  fireEvent(screen.getByRole("dialog"), new Event("cancel", { bubbles: true }));
   expect(props.onClose).toHaveBeenCalled();
   unmount();
 });

@@ -1,6 +1,8 @@
 import TemplateSettings from "./TemplateSettings";
 import {
   businessNames,
+  businessKind,
+  entryModeLabel,
   chainOf,
   routeLabel,
   type BusinessRoute,
@@ -54,9 +56,11 @@ export default function RouteEditor({
           <Chip tone={builtIn ? "muted" : "transfer"}>
             {builtIn ? "内置业务" : `自定义 · ${business}`}
           </Chip>
-          <Chip>{businessNames[builtIn ? business : route.kind || "ordinary"]}</Chip>
+          <Chip>
+            {businessNames[builtIn ? business : route.kind || "ordinary"]}
+          </Chip>
           <Chip tone={route.template ? "ok" : "muted"}>
-            {route.template ? "记录模板" : "内置表单"}
+            {entryModeLabel(business, route)}
           </Chip>
           {changed && <Chip tone="warn">未启用的修改</Chip>}
         </div>
@@ -80,7 +84,9 @@ export default function RouteEditor({
             placeholder={businessNames[business] || business}
             onChange={(e) => patch({ label: e.target.value })}
           />
-          <small>仅用于界面显示；重命名不移动历史记录，也不改变文件位置。</small>
+          <small>
+            仅用于界面显示；重命名不移动历史记录，也不改变文件位置。
+          </small>
         </label>
         {!builtIn && (
           <label className="field">
@@ -122,7 +128,11 @@ export default function RouteEditor({
             label="路径日期来源"
             value={route.date_source || "record"}
             options={[
-              { value: "record", label: "交易日期", hint: "按记录发生日期生成路径" },
+              {
+                value: "record",
+                label: "交易日期",
+                hint: "按记录发生日期生成路径",
+              },
               {
                 value: "write",
                 label: "实际写入日期",
@@ -150,7 +160,8 @@ export default function RouteEditor({
           onChange={(e) => patch({ indexes: e.target.value.split("\n") })}
         />
         <small>
-          每行一个路径，按 入口 → 索引 → 目标文件 依次 include；留空表示入口直接包含目标文件。
+          每行一个路径，按 入口 → 索引 → 目标文件 依次
+          include；留空表示入口直接包含目标文件。
         </small>
       </label>
       <div className="chain" role="group" aria-label="包含链预览">
@@ -158,7 +169,11 @@ export default function RouteEditor({
           <span className="chain-step" key={`${index}-${path}`}>
             <code>{path}</code>
             <em>
-              {index === 0 ? "入口" : index === chain.length - 1 ? "目标" : "索引"}
+              {index === 0
+                ? "入口"
+                : index === chain.length - 1
+                  ? "目标"
+                  : "索引"}
             </em>
             {files &&
               (files.includes(path) ? (
@@ -171,17 +186,23 @@ export default function RouteEditor({
       </div>
       <p className="muted small">
         预览日期 {day}
-        {writing && ` · 该业务使用服务器当天 ${writeDay}`}；新建文件与 include 链在保存新记录时才写入。
+        {writing && ` · 该业务使用服务器当天 ${writeDay}`}；新建文件与 include
+        链在保存新记录时才写入。
       </p>
       <TemplateSettings
         key={business}
         name={name}
+        kind={businessKind(business, route)}
         value={route.template}
         onChange={(template) => patch({ template })}
       />
       {!builtIn && (
         <div className="toolbar">
-          <button type="button" className="ghost small danger" onClick={onRemove}>
+          <button
+            type="button"
+            className="ghost small danger"
+            onClick={onRemove}
+          >
             移除「{name}」（保留历史记录）
           </button>
         </div>

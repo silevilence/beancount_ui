@@ -142,40 +142,101 @@ it.each(["salary", "yuebao"])(
   },
 );
 
-it.each(["salary", "yuebao", "balance"])(
-  "单笔自定义 %s 无模板业务自动使用原文",
-  async (kind) => {
-    const custom = structuredClone(config);
-    custom.layout.routes.custom = {
-      target: "custom.bean",
-      indexes: [],
-      kind,
-      label: "自定义业务",
-    };
-    const fetcher = mockApi(false, custom);
-    render(<Editor {...props} operation="create" />);
-    await screen.findByRole("option", { name: "自定义业务" });
-    fireEvent.change(screen.getByLabelText("业务类型"), {
-      target: { value: "custom" },
-    });
-    expect(screen.getByLabelText("原文高级编辑")).toBeChecked();
-    expect(screen.getByLabelText("原文高级编辑")).toBeDisabled();
-    const raw =
-      kind === "balance"
-        ? "2026-09-30 balance Assets:Cash 12 CNY"
-        : '2026-09-30 * "收入"\n  Assets:Cash 12 CNY\n  Income:Salary -12 CNY';
-    fireEvent.change(screen.getByLabelText("Beancount 原文"), {
-      target: { value: raw },
-    });
-    fireEvent.click(screen.getByText("预览并校验"));
-    await screen.findByText("确认保存");
-    const request = fetcher.mock.calls.find(([url]) => url === "/api/preview")!;
-    expect(JSON.parse(String(request[1]?.body))).toMatchObject({
-      business: "custom",
-      raw,
-    });
-  },
-);
+it("单笔自定义余额业务无模板时自动使用原文", async () => {
+  const custom = structuredClone(config);
+  custom.layout.routes.custom = {
+    target: "custom.bean",
+    indexes: [],
+    kind: "balance",
+    label: "自定义业务",
+  };
+  const fetcher = mockApi(false, custom);
+  render(<Editor {...props} operation="create" />);
+  await screen.findByRole("option", { name: "自定义业务" });
+  fireEvent.change(screen.getByLabelText("业务类型"), {
+    target: { value: "custom" },
+  });
+  expect(screen.getByLabelText("原文高级编辑")).toBeChecked();
+  expect(screen.getByLabelText("原文高级编辑")).toBeDisabled();
+  const raw = "2026-09-30 balance Assets:Cash 12 CNY";
+  fireEvent.change(screen.getByLabelText("Beancount 原文"), {
+    target: { value: raw },
+  });
+  fireEvent.click(screen.getByText("预览并校验"));
+  await screen.findByText("确认保存");
+  const request = fetcher.mock.calls.find(([url]) => url === "/api/preview")!;
+  expect(JSON.parse(String(request[1]?.body))).toMatchObject({
+    business: "custom",
+    raw,
+  });
+});
+
+it.each([
+  ["salary", "salary"],
+  ["yuebao", "yuebao"],
+  ["custom", "salary"],
+  ["custom", "yuebao"],
+])("单笔 %s（%s）使用收入表单并提交到账金额", async (business, kind) => {
+  const custom = structuredClone(config);
+  custom.layout.routes[business] = {
+    target: "income.bean",
+    indexes: [],
+    kind,
+    label: "收入业务",
+  };
+  const fetcher = mockApi(false, custom, () => ({
+    ...journal,
+    accounts: [
+      ...journal.accounts,
+      { name: "Income:Salary", currencies: ["CNY"] },
+      { name: "Expenses:Food", currencies: ["CNY"] },
+      { name: "Liabilities:Card", currencies: ["CNY"] },
+    ],
+  }));
+  render(<Editor {...props} operation="create" />);
+  await screen.findByRole("option", { name: "收入业务" });
+  fireEvent.change(screen.getByLabelText("业务类型"), {
+    target: { value: business },
+  });
+  expect(screen.getByLabelText("原文高级编辑")).not.toBeChecked();
+  expect(screen.getByLabelText("原文高级编辑")).toBeEnabled();
+  fireEvent.change(screen.getByLabelText("到账金额"), {
+    target: { value: "12.30" },
+  });
+  fireEvent.focus(screen.getByLabelText("收入账户"));
+  expect(
+    screen.getByRole("option", { name: "Income:Salary" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("option", { name: /Expenses:Food/ }),
+  ).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("收入账户"), {
+    target: { value: "Income:Salary" },
+  });
+  fireEvent.focus(screen.getByLabelText("到账账户"));
+  expect(
+    screen.queryByRole("option", { name: /Liabilities:Card/ }),
+  ).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("到账账户"), {
+    target: { value: "Assets:Cash" },
+  });
+  fireEvent.click(screen.getByText("预览并校验"));
+  await screen.findByText("确认保存");
+  const request = fetcher.mock.calls.find(([url]) => url === "/api/preview")!;
+  expect(JSON.parse(String(request[1]?.body))).toMatchObject({
+    business,
+    entry: {
+      amount: "12.30",
+      category: "Income:Salary",
+      payment: "Assets:Cash",
+    },
+  });
+  fireEvent.click(screen.getByText("取消预览，继续修改"));
+  fireEvent.click(screen.getByLabelText("原文高级编辑"));
+  expect(screen.getByLabelText("Beancount 原文")).toBeEnabled();
+  fireEvent.click(screen.getByLabelText("原文高级编辑"));
+  expect(screen.getByLabelText("到账金额")).toHaveValue("12.30");
+});
 
 it("自定义余额业务可录入原文并从草稿取回", async () => {
   const custom = structuredClone(config);
@@ -378,7 +439,9 @@ it("模板设置支持示例、占位符插入、重命名、字段类型和三�
     );
   }
   const read = () =>
-    JSON.parse(screen.getByTestId("value").textContent!) as RecordTemplate | null;
+    JSON.parse(
+      screen.getByTestId("value").textContent!,
+    ) as RecordTemplate | null;
   render(<Harness />);
   expect(screen.getByText(/未启用时使用内置表单/)).toBeInTheDocument();
   fireEvent.click(screen.getByLabelText("午餐使用记录模板"));
@@ -514,7 +577,9 @@ it("动态字段提供账户选择与币种候选，并说明模板生成的内�
       onChange={change}
     />,
   );
-  expect(screen.getByText(/由模板生成：商户=食堂、空备注=空文本/)).toBeInTheDocument();
+  expect(
+    screen.getByText(/由模板生成：商户=食堂、空备注=空文本/),
+  ).toBeInTheDocument();
   expect(screen.queryByLabelText("商户")).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("付款账户"), {
     target: { value: "Assets:Cash" },
@@ -633,7 +698,9 @@ it("业务配置辅助函数解析包含链、路径规则、填写示意与冲�
   expect(pathIssue("a.txt")).toContain("扩展名");
   expect(pathIssue("a/..b.bean")).toContain("空路径段");
   expect(pathIssue("gnucash/a.bean")).toContain("只读");
-  expect(pathIssue("a/{year}.bean", false)).toContain("入口路径不支持日期占位符");
+  expect(pathIssue("a/{year}.bean", false)).toContain(
+    "入口路径不支持日期占位符",
+  );
   expect(pathIssue("")).toContain("不能为空");
   expect(
     fieldIssue({ label: "", type: "text", mode: "input", value: "" }),
@@ -645,7 +712,12 @@ it("业务配置辅助函数解析包含链、路径规则、填写示意与冲�
     fieldIssue({ label: "标签", type: "token", mode: "input", value: "" }),
   ).toContain("默认值");
   expect(
-    fieldIssue({ label: "币种", type: "currency", mode: "input", value: "cny" }),
+    fieldIssue({
+      label: "币种",
+      type: "currency",
+      mode: "input",
+      value: "cny",
+    }),
   ).toContain("币种");
   expect(
     fieldIssue({ label: "账户", type: "account", mode: "input", value: "" }),
@@ -674,7 +746,9 @@ it("业务配置辅助函数解析包含链、路径规则、填写示意与冲�
   expect(
     sourceIssue({ ...template, source: '{{date}} * "午餐" {{amount}\n' }),
   ).toContain("格式");
-  expect(renderExample(template, "2026-10-01")).toContain('〈交易日期〉 * "午餐"');
+  expect(renderExample(template, "2026-10-01")).toContain(
+    '〈交易日期〉 * "午餐"',
+  );
   expect(renderExample(template, "2026-10-01")).toContain("〈金额〉");
   expect(
     renderExample(
@@ -724,13 +798,28 @@ it("业务配置辅助函数解析包含链、路径规则、填写示意与冲�
     fieldIssue({ label: "日期", type: "text", mode: "today", value: "" }),
   ).toContain("自动当天");
   expect(
-    fieldIssue({ label: "账户", type: "account", mode: "fixed", value: "Cash" }),
+    fieldIssue({
+      label: "账户",
+      type: "account",
+      mode: "fixed",
+      value: "Cash",
+    }),
   ).toContain("账户");
   expect(
-    fieldIssue({ label: "标签", type: "token", mode: "input", value: "#lunch" }),
+    fieldIssue({
+      label: "标签",
+      type: "token",
+      mode: "input",
+      value: "#lunch",
+    }),
   ).toBe("");
   expect(
-    fieldIssue({ label: "金额", type: "amount", mode: "input", value: "12.30" }),
+    fieldIssue({
+      label: "金额",
+      type: "amount",
+      mode: "input",
+      value: "12.30",
+    }),
   ).toBe("");
   expect(sourceIssue({ ...template, source: "   " })).toContain("不能为空");
   expect(
