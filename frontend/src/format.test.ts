@@ -16,6 +16,7 @@ import {
   kindMark,
   kindTone,
   magnitudes,
+  transactionTotals,
   money,
   netTotals,
   orderKindLabel,
@@ -68,6 +69,47 @@ describe("day helpers", () => {
 });
 
 describe("totals", () => {
+  it("excludes budget equity and nets discounts or refunds in transaction totals", () => {
+    const p = (account: string, amount: string, currency = "CNY") => ({
+      account,
+      amount,
+      currency,
+    });
+    expect(
+      transactionTotals("消费", [
+        p("Expenses:Games", "166"),
+        p("Assets:Cash", "-166"),
+        p("Equity:Budget", "-166"),
+        p("Equity:Opening", "166"),
+      ]),
+    ).toEqual([{ currency: "CNY", amount: "166" }]);
+    expect(
+      transactionTotals("消费", [
+        p("Expenses:Games", "6270", "JPY"),
+        p("Expenses:Games", "-939", "JPY"),
+        p("Assets:Cash", "-5331", "JPY"),
+      ]),
+    ).toEqual([{ currency: "JPY", amount: "5331" }]);
+    expect(
+      transactionTotals("消费", [
+        p("Expenses:Games", "-10"),
+        p("Assets:Cash", "10"),
+      ]),
+    ).toEqual([{ currency: "CNY", amount: "-10" }]);
+    expect(
+      transactionTotals("收入", [
+        p("Income:Salary", "-100"),
+        p("Income:Salary", "20"),
+        p("Assets:Cash", "80"),
+      ]),
+    ).toEqual([{ currency: "CNY", amount: "80" }]);
+    expect(
+      transactionTotals("转账 / 还款", [
+        p("Assets:Cash", "20"),
+        p("Assets:Bank", "-20"),
+      ]),
+    ).toEqual([{ currency: "CNY", amount: "20" }]);
+  });
   it("lists amounts by currency", () => {
     expect(byCurrency({ CNY: "25.50", USD: "5" })).toEqual([
       { currency: "CNY", amount: "25.50" },

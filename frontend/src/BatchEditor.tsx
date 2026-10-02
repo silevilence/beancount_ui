@@ -18,6 +18,8 @@ import Finance from "./Finance";
 import IncomeDays from "./IncomeDays";
 import Orders from "./Orders";
 import SplitFields from "./SplitFields";
+import PostingFields, { blankPosting } from "./PostingFields";
+import type { PostingEntry, PostingLine } from "./api";
 import Templates, { type Template } from "./Templates";
 import {
   businessLabel,
@@ -34,6 +36,7 @@ import { useToday } from "./useToday";
 export interface DraftItem {
   business: string;
   entry?: EntryFields;
+  posting_entry?: PostingEntry;
   raw?: string;
   values?: Record<string, string>;
   layout_version?: string;
@@ -63,6 +66,8 @@ interface Draft {
   orderMode?: string;
   advanced?: boolean;
   advancedRaw?: string;
+  postingMode?: boolean;
+  postingLines?: PostingLine[];
   templateValues?: Record<string, string>;
   templateVersion?: string;
   form: EntryFields;
@@ -126,7 +131,7 @@ function taskOf(item: DraftItem): TaskId {
   if (item.order) return "orders";
   if (item.business === "yuebao") return "income";
   if (item.business === "balance") return "transfer";
-  return item.raw ? "advanced" : "daily";
+  return item.raw || item.posting_entry ? "advanced" : "daily";
 }
 
 function titleOf(item: DraftItem, config?: BusinessConfig): string {
@@ -136,6 +141,10 @@ function titleOf(item: DraftItem, config?: BusinessConfig): string {
       config?.layout.routes[item.business]?.label,
     )}`;
   if (item.entry) return item.entry.payee || item.entry.narration || "一笔记录";
+  if (item.posting_entry)
+    return (
+      item.posting_entry.payee || item.posting_entry.narration || "多行分录"
+    );
   if (item.order)
     return item.order.purchase
       ? item.order.purchase.payee || item.order.purchase.narration || "一笔购物"
@@ -196,6 +205,7 @@ export default function BatchEditor({
         !value.form.note &&
         !value.form.splits?.length &&
         !value.advancedRaw &&
+        !value.postingLines?.some((p) => p.account || p.amount || p.note) &&
         !Object.values(value.templateValues || {}).some(Boolean)
       ) {
         value.form = { ...value.form, date: journal.date };
@@ -304,23 +314,40 @@ export default function BatchEditor({
                 ),
                 layout_version: businessConfig!.version,
               }
-            : next.advanced || balanceRaw
-              ? { raw: next.advancedRaw || "" }
-              : next.orderMode &&
-                  (!next.business || next.business === "ordinary")
-                ? {
-                    order: {
-                      kind: next.orderMode,
-                      purchase: next.form,
-                      date: next.form.date,
-                      amount: next.form.amount,
-                      account: next.form.payment,
-                    },
-                  }
-                : { entry: next.form }),
+            : next.advanced &&
+                next.postingMode &&
+                kind !== "balance" &&
+                !recordTemplate
+              ? {
+                  posting_entry: {
+                    date: next.form.date,
+                    payee: next.form.payee,
+                    narration: next.form.narration,
+                    note: next.form.note,
+                    postings: next.postingLines || [
+                      blankPosting(),
+                      blankPosting(),
+                    ],
+                  },
+                }
+              : next.advanced || balanceRaw
+                ? { raw: next.advancedRaw || "" }
+                : next.orderMode &&
+                    (!next.business || next.business === "ordinary")
+                  ? {
+                      order: {
+                        kind: next.orderMode,
+                        purchase: next.form,
+                        date: next.form.date,
+                        amount: next.form.amount,
+                        account: next.form.payment,
+                      },
+                    }
+                  : { entry: next.form }),
         },
       ],
       advancedRaw: "",
+      postingLines: [blankPosting(), blankPosting()],
       templateValues: carryTemplateValues(
         recordTemplate,
         next.templateValues || {},
@@ -413,10 +440,23 @@ export default function BatchEditor({
       ...draft,
       task: taskOf(item),
       business: item.business,
-      advanced: !!item.raw,
+      advanced: !!item.raw || !!item.posting_entry,
       advancedRaw: item.raw,
+      postingMode: !!item.posting_entry,
+      postingLines: item.posting_entry?.postings,
       orderMode: item.order?.kind || "",
-      form: item.entry || item.order?.purchase || draft.form,
+      form:
+        item.entry ||
+        item.order?.purchase ||
+        (item.posting_entry
+          ? {
+              ...draft.form,
+              date: item.posting_entry.date,
+              payee: item.posting_entry.payee,
+              narration: item.posting_entry.narration,
+              note: item.posting_entry.note,
+            }
+          : draft.form),
       templateValues: item.values,
       templateVersion: item.layout_version,
       items: draft.items.filter((_, position) => position !== index),
@@ -604,7 +644,7 @@ export default function BatchEditor({
   const advancedForm = (
     <>
       <div className="work-head">
-        <h3>高级分录原文</h3>
+        <h3>高级分录录入</h3>
         <p>
           一条完整交易，文件位置遵循业务配置；余额业务只接受一条
           balance。启用记录模板的业务请在「日常消费」填写。
@@ -633,22 +673,54 @@ export default function BatchEditor({
           ))}
         </select>
       </label>
-      <label className="field">
-        <span>高级 Beancount 原文</span>
-        <textarea
-          className="raw-input"
-          aria-label="高级 Beancount 原文"
-          required
-          spellCheck={false}
-          value={draft.advancedRaw || ""}
-          onChange={(e) => update({ ...draft, advancedRaw: e.target.value })}
-        />
-      </label>
-      <p className="muted small">
-        支持多分录、外币、负折扣、标签 #tag、链接 ^link、交易与 posting
-        元数据、成本 {"{}"}、价格 @ /
-        @@、省略金额和预算权益分录；未经整批完整校验不可入账。
-      </p>
+      {kind !== "balance" && !recordTemplate && (
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={!!draft.postingMode}
+            onChange={(e) =>
+              update({ ...draft, postingMode: e.target.checked })
+            }
+          />
+          多行分录表单（含预算权益）
+        </label>
+      )}
+      {draft.postingMode && kind !== "balance" && !recordTemplate ? (
+        <>
+          <div className="form-grid">
+            {field("date", "分录交易日期", "date")}
+            {field("payee", "分录商户")}
+            {field("narration", "分录摘要")}
+            {field("note", "交易备注")}
+          </div>
+          <PostingFields
+            postings={draft.postingLines || [blankPosting(), blankPosting()]}
+            accounts={accounts}
+            onChange={(postingLines) => update({ ...draft, postingLines })}
+          />
+        </>
+      ) : (
+        <>
+          <label className="field">
+            <span>高级 Beancount 原文</span>
+            <textarea
+              className="raw-input"
+              aria-label="高级 Beancount 原文"
+              required
+              spellCheck={false}
+              value={draft.advancedRaw || ""}
+              onChange={(e) =>
+                update({ ...draft, advancedRaw: e.target.value })
+              }
+            />
+          </label>
+          <p className="muted small">
+            支持多分录、外币、负折扣、标签 #tag、链接 ^link、交易与 posting
+            元数据、成本 {"{}"}、价格 @ /
+            @@、省略金额和预算权益分录；未经整批完整校验不可入账。
+          </p>
+        </>
+      )}
     </>
   );
   return (
@@ -859,7 +931,7 @@ export default function BatchEditor({
           )}
           {vague > 0 && (
             <p className="muted small">
-              另有 {vague} 笔订单 / 原文草稿，金额以预览为准。
+              另有 {vague} 笔订单 / 多行分录 / 原文草稿，金额以预览为准。
             </p>
           )}
           {draft.items.length === 0 ? (
@@ -887,8 +959,17 @@ export default function BatchEditor({
                           )
                         : labelOf(item)}
                     </Chip>
-                    {(item.entry?.date || item.order?.date) && (
-                      <Chip>{item.entry?.date || item.order?.date}</Chip>
+                    {(item.entry?.date ||
+                      item.order?.date ||
+                      item.posting_entry?.date) && (
+                      <Chip>
+                        {item.entry?.date ||
+                          item.order?.date ||
+                          item.posting_entry?.date}
+                      </Chip>
+                    )}
+                    {item.posting_entry && (
+                      <Chip>{item.posting_entry.postings.length} 行分录</Chip>
                     )}
                     {item.values && <Chip>模板 · 日期由模板生成</Chip>}
                   </div>

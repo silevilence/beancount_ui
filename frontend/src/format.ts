@@ -96,9 +96,8 @@ export function untilWhen(epochSeconds?: number, now = Date.now()): string {
 /** 千分位分组，小数至少两位、更多位保留原样；精确值不丢失。 */
 export function money(amount: string, currency = ""): string {
   const negative = amount.startsWith("-");
-  const [whole = "0", fraction = ""] = (negative
-    ? amount.slice(1)
-    : amount
+  const [whole = "0", fraction = ""] = (
+    negative ? amount.slice(1) : amount
   ).split(".");
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const text = `${grouped}.${fraction.padEnd(2, "0")}`;
@@ -112,9 +111,8 @@ function scaleOf(value: string): number {
 
 function scaled(value: string, scale: number): bigint {
   const negative = value.startsWith("-");
-  const [whole = "0", fraction = ""] = (negative
-    ? value.slice(1)
-    : value
+  const [whole = "0", fraction = ""] = (
+    negative ? value.slice(1) : value
   ).split(".");
   const digits = BigInt(`${whole}${fraction.padEnd(scale, "0")}`);
   return negative ? -digits : digits;
@@ -175,6 +173,30 @@ export function magnitudes(
       currency,
       amount: decimalSum(amounts),
     }));
+}
+
+/** 消费按费用净额、收入按收入账户净额展示，避免预算权益或负折扣重复计数。 */
+export function transactionTotals(
+  kind: string,
+  postings: { account: string; amount: string; currency: string }[],
+): AmountLine[] {
+  if (kind === "消费" || kind === "收入") {
+    const prefix = kind === "消费" ? "Expenses:" : "Income:";
+    return sumByCurrency(
+      postings
+        .filter((p) => p.account.startsWith(prefix))
+        .map((p) => ({
+          currency: p.currency,
+          amount:
+            kind === "收入"
+              ? p.amount.startsWith("-")
+                ? p.amount.slice(1)
+                : `-${p.amount}`
+              : p.amount,
+        })),
+    );
+  }
+  return magnitudes(postings.filter((p) => !p.account.startsWith("Equity:")));
 }
 
 const KIND_TONE: Record<string, "expense" | "income" | "transfer"> = {

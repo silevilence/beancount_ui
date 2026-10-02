@@ -21,6 +21,7 @@ from .layout_config import business_files, read_layout
 from .ledger import Ledger, LedgerError, digest, load_snapshot, read_files
 from .models import BatchMutation, Mutation
 from .orders import guard_order_edit, order_raw, validate_order_totals
+from .posting_form import render_form
 from .query import transactions
 from .record_template import current_day
 
@@ -170,7 +171,11 @@ class Writer:
 
     def preview(self, mutation: Mutation | BatchMutation) -> dict:
         # Preserve receipts created before template fields were introduced.
-        omit = {key for key in ("values", "layout_version") if getattr(mutation, key, None) is None}
+        omit = {
+            key
+            for key in ("values", "layout_version", "posting_entry")
+            if getattr(mutation, key, None) is None
+        }
         exclude = (
             {
                 "items": {
@@ -212,7 +217,14 @@ class Writer:
                     if (
                         operation != "delete"
                         and sum(
-                            v is not None for v in (item.entry, item.raw, item.order, item.values)
+                            v is not None
+                            for v in (
+                                item.entry,
+                                item.posting_entry,
+                                item.raw,
+                                item.order,
+                                item.values,
+                            )
                         )
                         != 1
                     ):
@@ -254,6 +266,8 @@ class Writer:
                                     basic_raw,
                                 )
                                 if item.order
+                                else render_form(item.posting_entry)
+                                if item.posting_entry
                                 else basic_raw(item.entry, kind)
                                 if item.entry
                                 else item.raw
@@ -281,7 +295,15 @@ class Writer:
                         if operation == "delete":
                             raw = ""
                         else:
-                            raw = basic_edit(row, item.entry, quote) if item.entry else item.raw
+                            if item.posting_entry and not row["posting_form"]:
+                                raise LedgerError("此记录请使用原文高级编辑")
+                            raw = (
+                                render_form(item.posting_entry, row["raw"])
+                                if item.posting_entry
+                                else basic_edit(row, item.entry, quote)
+                                if item.entry
+                                else item.raw
+                            )
                             parse_single(raw, "ordinary")
                         guard_order_edit(snapshot, row, raw)
                         if raw:

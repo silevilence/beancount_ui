@@ -1,6 +1,12 @@
 import { useState, type RefObject } from "react";
 import type { Journal as JournalView, Transaction } from "./api";
-import { kindMark, kindTone, magnitudes, money, type AmountLine } from "./format";
+import {
+  kindMark,
+  kindTone,
+  transactionTotals,
+  money,
+  type AmountLine,
+} from "./format";
 
 export interface Filters {
   payee: string;
@@ -8,12 +14,15 @@ export interface Filters {
   account: string;
 }
 
-const FILTER_FIELDS: { key: keyof Filters; label: string; placeholder: string }[] =
-  [
-    { key: "payee", label: "商户", placeholder: "筛选商户" },
-    { key: "narration", label: "摘要", placeholder: "搜索摘要" },
-    { key: "account", label: "账户", placeholder: "搜索账户" },
-  ];
+const FILTER_FIELDS: {
+  key: keyof Filters;
+  label: string;
+  placeholder: string;
+}[] = [
+  { key: "payee", label: "商户", placeholder: "筛选商户" },
+  { key: "narration", label: "摘要", placeholder: "搜索摘要" },
+  { key: "account", label: "账户", placeholder: "搜索账户" },
+];
 
 const AMOUNT_LABEL: Record<string, string> = {
   消费: "支出",
@@ -90,7 +99,9 @@ function EntryRow({
           </span>
           <span>{sync}</span>
           {row.readonly && <span className="readonly">历史导入只读</span>}
-          {!row.readonly && !row.simple && <span>复杂分录</span>}
+          {!row.readonly && !row.simple && (
+            <span>{row.posting_form ? "多行分录" : "复杂分录"}</span>
+          )}
         </div>
         <details className="raw">
           <summary>查看原文</summary>
@@ -104,8 +115,12 @@ function EntryRow({
         </details>
         {!row.readonly && (
           <div className="row-actions">
-            <button className="ghost small" disabled={!canEdit} onClick={onEdit}>
-              {row.simple ? "修改" : "高级编辑"}
+            <button
+              className="ghost small"
+              disabled={!canEdit}
+              onClick={onEdit}
+            >
+              {row.simple || row.posting_form ? "修改" : "高级编辑"}
             </button>
             <button
               className="ghost small danger"
@@ -119,7 +134,7 @@ function EntryRow({
       </div>
       <div className="entry-figure">
         <span className="figure-label">{AMOUNT_LABEL[row.kind] ?? "金额"}</span>
-        <Amounts lines={magnitudes(row.postings)} tone={tone} />
+        <Amounts lines={transactionTotals(row.kind, row.postings)} tone={tone} />
       </div>
     </article>
   );
@@ -143,9 +158,7 @@ export default function Journal({
   onDelete: (row: Transaction) => void;
 }) {
   const filtered =
-    filters.payee !== "" ||
-    filters.narration !== "" ||
-    filters.account !== "";
+    filters.payee !== "" || filters.narration !== "" || filters.account !== "";
   return (
     <section className="panel journal">
       <div className="panel-head">

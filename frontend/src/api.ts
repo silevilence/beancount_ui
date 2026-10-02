@@ -3,6 +3,20 @@ export interface Diagnostic {
   line: number;
   message: string;
 }
+export interface PostingLine {
+  account: string;
+  amount: string | null;
+  currency: string;
+  note: string;
+  source_index?: number | null;
+}
+export interface PostingEntry {
+  date: string;
+  payee: string;
+  narration: string;
+  note: string;
+  postings: PostingLine[];
+}
 export interface Transaction {
   id: string;
   date: string;
@@ -20,6 +34,7 @@ export interface Transaction {
   line: number;
   raw: string;
   simple: boolean;
+  posting_form?: PostingEntry | null;
   readonly: boolean;
   note: string;
 }

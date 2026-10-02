@@ -289,6 +289,7 @@ def test_old_request_fingerprint_remains_retryable(ledger, batch):
     for item in data["items"] if batch else [data]:
         del item["values"]
         del item["layout_version"]
+        del item["posting_entry"]
     old_fingerprint = hashlib.sha256(
         json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
     ).hexdigest()

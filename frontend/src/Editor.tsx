@@ -1,4 +1,6 @@
 import RecordFields from "./RecordFields";
+import SplitFields from "./SplitFields";
+import PostingFields, { blankPosting } from "./PostingFields";
 import {
   businessNames,
   businessKind,
@@ -10,7 +12,14 @@ import {
 } from "./businessConfig";
 import AccountSelect from "./AccountSelect";
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, type Journal, type Transaction } from "./api";
+import {
+  api,
+  ApiError,
+  type Journal,
+  type Transaction,
+  type PostingEntry,
+  type PostingLine,
+} from "./api";
 import Diff from "./Diff";
 import { expenseGroups, fundingGroups, money } from "./format";
 import { Notice } from "./ui";
@@ -46,6 +55,7 @@ interface SaveRequest {
   transaction_id?: string;
   business: string;
   entry?: EntryFields;
+  posting_entry?: PostingEntry;
   raw?: string;
   values?: Record<string, string>;
   layout_version?: string;
@@ -100,14 +110,38 @@ export default function Editor({
     payment: row?.simple ? row.postings[1].account : "",
     note: row?.note || "",
   });
-  const [fields, setFields] = useState<EntryFields>(
-    pending.current?.request.entry || defaults,
+  const [fields, setFields] = useState<EntryFields>(() => {
+    const saved = pending.current?.request.posting_entry;
+    return (
+      pending.current?.request.entry || {
+        ...defaults(),
+        ...(saved
+          ? {
+              date: saved.date,
+              payee: saved.payee,
+              narration: saved.narration,
+              note: saved.note,
+            }
+          : {}),
+      }
+    );
+  });
+  const formSupported = !!row?.posting_form;
+  const rawRequired = !!row && !row.simple && !formSupported;
+  const [multi, setMulti] = useState(
+    !!pending.current?.request.posting_entry ||
+      (!!row && !row.simple && formSupported),
+  );
+  const [postings, setPostings] = useState<PostingLine[]>(
+    pending.current?.request.posting_entry?.postings ||
+      row?.posting_form?.postings ||
+      [],
   );
   const [raw, setRaw] = useState(
     pending.current?.request.raw || row?.raw || "",
   );
   const [advanced, setAdvanced] = useState(
-    !!pending.current?.request.raw || (!!row && !row.simple),
+    !!pending.current?.request.raw || rawRequired,
   );
   const [business, setBusiness] = useState(
     pending.current?.request.business || "ordinary",
@@ -211,7 +245,17 @@ export default function Editor({
               }
             : advanced || rawOnly
               ? { raw }
-              : { entry: fields }),
+              : multi
+                ? {
+                    posting_entry: {
+                      date: fields.date,
+                      payee: fields.payee,
+                      narration: fields.narration,
+                      note: fields.note,
+                      postings,
+                    },
+                  }
+                : { entry: fields }),
       };
       persist({ request });
       const result = await api<Preview>("/preview", {
@@ -259,7 +303,11 @@ export default function Editor({
               : fields.payee || fields.narration || "一笔记录",
             amount: recordTemplate
               ? "已按模板保存"
-              : money(fields.amount, fields.currency),
+              : multi && !advanced && !rawOnly
+                ? `已保存 ${postings.length} 行分录`
+                : advanced || rawOnly
+                  ? "已按原文保存"
+                  : money(fields.amount, fields.currency),
           },
         ]);
         setFields({
@@ -268,7 +316,12 @@ export default function Editor({
           payee: "",
           narration: "",
           note: "",
+          splits: [],
         });
+        setPostings([
+          blankPosting(fields.currency),
+          blankPosting(fields.currency),
+        ]);
         setRaw("");
         setValues(carryTemplateValues(recordTemplate, values, fields.date));
         setMessage("已保存到本地账本，可以继续记下一笔。");
@@ -425,14 +478,61 @@ export default function Editor({
                 <input
                   type="checkbox"
                   checked={advanced || rawOnly}
-                  disabled={(!!row && !row.simple) || rawOnly}
+                  disabled={rawRequired || rawOnly}
                   onChange={(e) => {
                     invalidate();
                     setAdvanced(e.target.checked);
                   }}
                 />
                 原文高级编辑
-                {row && !row.simple ? "（复杂记录必须保留完整分录）" : ""}
+                {rawRequired ? "（此记录包含表单未支持的语法）" : ""}
+              </label>
+            )}
+            {!recordTemplate && !rawOnly && !advanced && !rawRequired && (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={multi}
+                  disabled={!!row && !row.simple}
+                  onChange={(e) => {
+                    invalidate();
+                    if (e.target.checked && !postings.length) {
+                      const details: PostingLine[] = fields.splits?.length
+                        ? fields.splits.map((s) => ({
+                            account: s.category,
+                            amount: s.amount,
+                            currency: fields.currency,
+                            note: s.note,
+                          }))
+                        : [
+                            {
+                              account: fields.category,
+                              amount:
+                                income && fields.amount
+                                  ? `-${fields.amount}`
+                                  : fields.amount,
+                              currency: fields.currency,
+                              note: "",
+                            },
+                          ];
+                      setPostings([
+                        ...details,
+                        {
+                          account: fields.payment,
+                          amount: fields.amount
+                            ? income
+                              ? fields.amount
+                              : `-${fields.amount}`
+                            : "",
+                          currency: fields.currency,
+                          note: "",
+                        },
+                      ]);
+                    }
+                    setMulti(e.target.checked);
+                  }}
+                />
+                多行分录表单（含预算权益）
               </label>
             )}
             {recordTemplate ? (
@@ -467,71 +567,105 @@ export default function Editor({
                   balance，不生成补差。
                 </p>
               </>
+            ) : multi ? (
+              <>
+                <div className="form-grid">
+                  {field("date", "交易日期", "date")}
+                  {field("payee", "商户")}
+                  {field("narration", "摘要")}
+                  {field("note", "备注")}
+                </div>
+                {row && (
+                  <p className="muted">
+                    保留交易标记、标签及其他元数据；移除分录会同时移除该行附属备注和元数据。
+                  </p>
+                )}
+                <PostingFields
+                  postings={postings}
+                  accounts={accounts}
+                  onChange={(next) => {
+                    invalidate();
+                    setPostings(next);
+                  }}
+                />
+              </>
             ) : (
-              <div className="form-grid">
-                {field("date", "交易日期", "date")}
-                {field("amount", income ? "到账金额" : "金额")}
-                {field("payee", "商户")}
-                {field("narration", "摘要")}
-                <label className="field">
-                  <span>币种</span>
-                  <input
-                    aria-label="币种"
-                    list="currency-options"
-                    required
-                    value={fields.currency}
-                    onChange={(e) => change("currency", e.target.value)}
+              <>
+                <div className="form-grid">
+                  {field("date", "交易日期", "date")}
+                  {field("amount", income ? "到账金额" : "金额")}
+                  {field("payee", "商户")}
+                  {field("narration", "摘要")}
+                  <label className="field">
+                    <span>币种</span>
+                    <input
+                      aria-label="币种"
+                      list="currency-options"
+                      required
+                      value={fields.currency}
+                      onChange={(e) => change("currency", e.target.value)}
+                    />
+                    <datalist id="currency-options">
+                      {currencies.map((currency) => (
+                        <option value={currency} key={currency} />
+                      ))}
+                    </datalist>
+                  </label>
+                  <label className="field">
+                    <span>{income ? "收入账户" : "支出分类"}</span>
+                    <AccountSelect
+                      label={income ? "收入账户" : "支出分类"}
+                      required
+                      value={fields.category}
+                      onChange={(value) => change("category", value)}
+                      options={
+                        income
+                          ? names
+                              .filter((name) => name.startsWith("Income:"))
+                              .map((value) => ({ value }))
+                          : expenseGroups(names).flatMap((g) =>
+                              g.items.map((name) => ({
+                                value: name,
+                                label: `${g.label} · ${name}`,
+                              })),
+                            )
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{income ? "到账账户" : "付款账户"}</span>
+                    <AccountSelect
+                      label={income ? "到账账户" : "付款账户"}
+                      required
+                      value={fields.payment}
+                      onChange={(value) => change("payment", value)}
+                      options={
+                        income
+                          ? names
+                              .filter((name) => name.startsWith("Assets:"))
+                              .map((value) => ({ value }))
+                          : fundingGroups(names).flatMap((g) =>
+                              g.items.map((name) => ({
+                                value: name,
+                                label: `${g.label} · ${name}`,
+                              })),
+                            )
+                      }
+                    />
+                  </label>
+                  {field("note", "备注")}
+                </div>
+                {!income && op === "create" && (
+                  <SplitFields
+                    fields={fields}
+                    accounts={accounts}
+                    onChange={(next) => {
+                      invalidate();
+                      setFields(next);
+                    }}
                   />
-                  <datalist id="currency-options">
-                    {currencies.map((currency) => (
-                      <option value={currency} key={currency} />
-                    ))}
-                  </datalist>
-                </label>
-                <label className="field">
-                  <span>{income ? "收入账户" : "支出分类"}</span>
-                  <AccountSelect
-                    label={income ? "收入账户" : "支出分类"}
-                    required
-                    value={fields.category}
-                    onChange={(value) => change("category", value)}
-                    options={
-                      income
-                        ? names
-                            .filter((name) => name.startsWith("Income:"))
-                            .map((value) => ({ value }))
-                        : expenseGroups(names).flatMap((g) =>
-                            g.items.map((name) => ({
-                              value: name,
-                              label: `${g.label} · ${name}`,
-                            })),
-                          )
-                    }
-                  />
-                </label>
-                <label className="field">
-                  <span>{income ? "到账账户" : "付款账户"}</span>
-                  <AccountSelect
-                    label={income ? "到账账户" : "付款账户"}
-                    required
-                    value={fields.payment}
-                    onChange={(value) => change("payment", value)}
-                    options={
-                      income
-                        ? names
-                            .filter((name) => name.startsWith("Assets:"))
-                            .map((value) => ({ value }))
-                        : fundingGroups(names).flatMap((g) =>
-                            g.items.map((name) => ({
-                              value: name,
-                              label: `${g.label} · ${name}`,
-                            })),
-                          )
-                    }
-                  />
-                </label>
-                {field("note", "备注")}
-              </div>
+                )}
+              </>
             )}
           </fieldset>
           {accountError && (

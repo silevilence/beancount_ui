@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from beancount.core import data
 
 from .ledger import Ledger, Snapshot, git_info
+from .posting_form import read_form
 
 
 def source_span(snapshot: Snapshot, entry, lines: list[str]) -> tuple[str, int, int, str]:
@@ -83,6 +84,7 @@ def transactions(snapshot: Snapshot) -> list[dict]:
                 "end": end,
                 "raw": raw,
                 "simple": simple,
+                "posting_form": read_form(raw, len(entry.postings)),
                 "readonly": name.startswith("gnucash/"),
                 "note": str(entry.meta.get("memo", "")),
             }

@@ -40,6 +40,29 @@ class EntryInput(BaseModel):
         return value
 
 
+class PostingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    account: str = Field(pattern=r"^(Assets|Liabilities|Expenses|Income|Equity):[^\s\";]+$")
+    amount: Decimal | None = Field(default=None, max_digits=24, decimal_places=8)
+    currency: str = Field(default="", pattern=r"^([A-Z][A-Z0-9._-]{0,23})?$")
+    note: str = Field(default="", max_length=2000)
+    source_index: int | None = Field(default=None, ge=0)
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def exact_amount(cls, value):
+        return None if value is None else EntryInput.exact_amount(value)
+
+
+class PostingEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    date: date
+    payee: str = Field(default="", max_length=200)
+    narration: str = Field(default="", max_length=500)
+    note: str = Field(default="", max_length=2000)
+    postings: list[PostingInput] = Field(min_length=2, max_length=100)
+
+
 class OrderInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["paid", "deferred", "settle", "refund_paid", "refund_unpaid"]
@@ -65,6 +88,7 @@ class Mutation(BaseModel):
     business: str = Field(default="ordinary", pattern=r"^[a-z][a-z0-9_-]{0,63}$")
     transaction_id: str | None = None
     entry: EntryInput | None = None
+    posting_entry: PostingEntry | None = None
     raw: str | None = Field(default=None, max_length=100000)
     order: OrderInput | None = None
     values: dict[str, str] | None = Field(default=None, max_length=100)
@@ -79,6 +103,7 @@ class BatchItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
     business: str = Field(default="ordinary", pattern=r"^[a-z][a-z0-9_-]{0,63}$")
     entry: EntryInput | None = None
+    posting_entry: PostingEntry | None = None
     raw: str | None = Field(default=None, max_length=100000)
     order: OrderInput | None = None
     values: dict[str, str] | None = Field(default=None, max_length=100)
