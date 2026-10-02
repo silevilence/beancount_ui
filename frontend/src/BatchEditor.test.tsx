@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -133,6 +134,98 @@ const fillDaily = (amount: string) => {
 /** 草稿单元格：托盘与轨道都会显示笔数，断言统一在托盘内进行。 */
 const tray = () =>
   within(screen.getByRole("complementary", { name: "待入账草稿" }));
+
+it("淘宝订单处理默认今天，不沿用零笔草稿中旧的日常录入日期", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-01T16:01:00Z"));
+  localStorage.setItem(
+    draftKey(journal),
+    JSON.stringify({
+      form: { ...base, date: "2026-10-01" },
+      items: [],
+    }),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      if (url.includes("orders"))
+        return ok([
+          {
+            id: "old-order",
+            date: "2026-09-27",
+            payee: "淘宝",
+            narration: "发带",
+            mode: "deferred",
+            total: "12",
+            unpaid: "12",
+            refunded: "0",
+            currency: "CNY",
+            account: "Liabilities:PayAfter",
+            categories: { "Expenses:Food": "12" },
+          },
+        ]);
+      if (url.includes("templates")) return ok([]);
+      return ok(journal);
+    }),
+  );
+  try {
+    expect(shanghaiToday()).toBe("2026-10-02");
+    await act(async () => {
+      render(<BatchEditor {...props} />);
+    });
+    fireEvent.click(screen.getByRole("button", { name: /淘宝订单/ }));
+    fireEvent.click(await screen.findByText("淘宝 · 发带"));
+    expect(screen.getByLabelText("本次处理日期")).toHaveValue("2026-10-02");
+    expect(
+      screen.queryByText(/当前录入日期为 2026-10-01/),
+    ).not.toBeInTheDocument();
+    const addOrder = () => {
+      fireEvent.change(screen.getByLabelText("实际付款 / 收款账户"), {
+        target: { value: "Assets:Cash" },
+      });
+      fireEvent.click(
+        screen.getByLabelText("我已确认关联交易及负债 / 付款语义"),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "将处理加入草稿" }));
+    };
+    addOrder();
+    expect(
+      JSON.parse(localStorage.getItem(draftKey(journal))!).items[0].order.date,
+    ).toBe("2026-10-02");
+    fireEvent.click(screen.getByText("淘宝 · 发带"));
+    vi.setSystemTime(new Date("2026-10-02T16:01:00Z"));
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(screen.getByLabelText("本次处理日期")).toHaveValue("2026-10-03");
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/journal?day=2026-10-03",
+      undefined,
+    );
+    fireEvent.change(screen.getByLabelText("本次处理日期"), {
+      target: { value: "2026-09-30" },
+    });
+    vi.setSystemTime(new Date("2026-10-03T16:01:00Z"));
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(screen.getByLabelText("本次处理日期")).toHaveValue("2026-09-30");
+    expect(screen.getByText(/当前录入日期为 2026-09-30/)).toBeInTheDocument();
+    addOrder();
+    expect(
+      JSON.parse(localStorage.getItem(draftKey(journal))!).items.map(
+        (item: { order: { date: string } }) => item.order.date,
+      ),
+    ).toEqual(["2026-10-02", "2026-09-30"]);
+    fireEvent.click(screen.getByRole("button", { name: "新记录改用今天" }));
+    fireEvent.click(screen.getByText("淘宝 · 发带"));
+    expect(screen.getByLabelText("本次处理日期")).toHaveValue("2026-10-04");
+    fireEvent.click(screen.getByRole("button", { name: /日常消费/ }));
+    expect(screen.getByLabelText("补记日期")).toHaveValue("2026-10-01");
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 it("重新打开已清空的补记草稿时采用当前工作台日期", () => {
   setup({

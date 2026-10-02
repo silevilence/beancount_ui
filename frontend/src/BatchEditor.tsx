@@ -230,12 +230,19 @@ export default function BatchEditor({
     !!businessConfig &&
     draft.templateVersion !== businessConfig.version;
   const [task, setTask] = useState<TaskId>(initial.value.task || "daily");
-  const accountDay = templateDay(
-    task === "daily" ? recordTemplate : null,
-    draft.templateValues || {},
-    draft.form.date,
-    businessConfig?.write_day || journal.date,
-  );
+  // 订单结算发生在处理当天，与日常补记及原订单日期独立。
+  const [selectedOrderDate, setSelectedOrderDate] = useState<string>();
+  const orderDate = selectedOrderDate ?? today;
+  const activeDate = task === "orders" ? orderDate : draft.form.date;
+  const accountDay =
+    task === "orders"
+      ? orderDate
+      : templateDay(
+          task === "daily" ? recordTemplate : null,
+          draft.templateValues || {},
+          draft.form.date,
+          businessConfig?.write_day || journal.date,
+        );
   const [error, setError] = useState(initial.error);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -740,7 +747,7 @@ export default function BatchEditor({
         </div>
         <div className="editor-side">
           <div className="item-meta">
-            <Chip tone="transfer">{draft.form.date}</Chip>
+            <Chip tone="transfer">{activeDate}</Chip>
             <Chip tone={draft.items.length ? "warn" : "muted"}>
               待入账 {draft.items.length} 笔
             </Chip>
@@ -787,15 +794,19 @@ export default function BatchEditor({
           {configError && (
             <Notice>业务配置读取失败：{configError}。请关闭后重试。</Notice>
           )}
-          {draft.form.date !== today && (
+          {activeDate !== today && (
             <Notice>
-              当前录入日期为 {draft.form.date}，今天是 {today}
+              当前录入日期为 {activeDate}，今天是 {today}
               。已有草稿日期保持不变。
               <button
                 type="button"
                 className="ghost small"
                 disabled={locked}
-                onClick={() => change("date", today)}
+                onClick={() =>
+                  task === "orders"
+                    ? setSelectedOrderDate(undefined)
+                    : change("date", today)
+                }
               >
                 新记录改用今天
               </button>
@@ -874,8 +885,8 @@ export default function BatchEditor({
           {task === "orders" && (
             <fieldset disabled={locked}>
               <Orders
-                date={draft.form.date}
-                onDateChange={(day) => change("date", day)}
+                date={orderDate}
+                onDateChange={setSelectedOrderDate}
                 accounts={accounts}
                 onAdd={(item) =>
                   update({ ...draft, items: [...draft.items, item] })
@@ -1077,7 +1088,7 @@ export default function BatchEditor({
         </section>
       )}
       <footer className="muted small">
-        最近一次核对日期 {shortDay(draft.form.date)}
+        当前录入日期 {shortDay(activeDate)}
         ；清除浏览器数据会同时清除草稿。
       </footer>
     </dialog>
