@@ -104,7 +104,7 @@ def preview_locked(writer, request):
     # Validate generated includes on an isolated copy for the requested month and
     # a year boundary. No account/transaction data is synthesized or written.
     trial = dict(files)
-    for day in {request.day, date(min(request.day.year + 1, 9999), 1, 1)}:
+    for day in (request.day, date(min(request.day.year + 1, 9999), 1, 1)):
         for business in proposed.routes:
             chain = proposed.chain(business, day, write_day)
             for name in chain:
@@ -125,6 +125,9 @@ def preview_locked(writer, request):
                 trial.setdefault(name, b"; Created by layout preview\n")
             for parent, child in zip(chain, chain[1:], strict=False):
                 ensure_include(trial, parent, child)
+        if day == request.day:
+            # Keep the selected date's diff separate from the year-boundary probe.
+            preview_files = dict(trial)
     checked = load_snapshot(trial, proposed.entry)
     if checked.errors:
         raise LedgerError("include 规则校验失败：" + checked.errors[0]["message"])
@@ -139,7 +142,7 @@ def preview_locked(writer, request):
                 tofile=name,
             )
         )
-        for name, content in trial.items()
+        for name, content in preview_files.items()
         if files.get(name) != content
     }
     token = hashlib.sha256(

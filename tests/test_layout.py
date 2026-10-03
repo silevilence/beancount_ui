@@ -45,6 +45,24 @@ def enable(writer, layout):
     return preview
 
 
+@pytest.mark.parametrize("layout", [default_layout(), custom()])
+@pytest.mark.parametrize("day", [date(2026, 10, 3), date(2027, 1, 2)])
+def test_layout_preview_diffs_only_use_selected_date(ledger, monkeypatch, layout, day):
+    monkeypatch.setattr("beancount_ui.layout_config.current_day", lambda: day)
+    writer = Writer(ledger)
+    before = read_files(writer.root)
+    request = LayoutInput(layout=layout, day=day)
+    preview = preview_layout(writer, request)
+    expected_paths = {
+        name for business in layout.routes for name in layout.chain(business, day, day)
+    }
+    assert set(preview["diffs"]) <= expected_paths
+    assert layout.chain("ordinary", day, day)[-1] in preview["diffs"]
+    assert str(day.year + 1) not in "".join(preview["diffs"].values())
+    activate_layout(writer, request.model_copy(update={"token": preview["token"]}))
+    assert read_files(writer.root) == before
+
+
 @pytest.mark.parametrize("alternate", [False, True])
 def test_same_business_requests_across_layouts_and_restore(ledger, alternate):
     writer = Writer(ledger)
@@ -52,7 +70,8 @@ def test_same_business_requests_across_layouts_and_restore(ledger, alternate):
     if alternate:
         result = enable(writer, custom())
         assert result["routes"][0]["target"] == "journal/2026-10.bean"
-        assert "indexes/2027.bean" in result["diffs"]
+        assert "indexes/2026.bean" in result["diffs"]
+        assert "indexes/2027.bean" not in result["diffs"]
         assert read_files(writer.root) == before
     items = [
         ("ordinary", '2027-01-02 * "跨年"\n  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n'),
@@ -278,7 +297,9 @@ def test_layout_api_preview_activate_restart_and_validation(ledger):
     assert isinstance(rejected.json()["detail"], str)
 
 
-@pytest.mark.parametrize("kind", ["file", "directory", "alias", "cycle", "duplicate"])
+@pytest.mark.parametrize(
+    "kind", ["file", "directory", "alias", "cycle", "duplicate", "next_year"]
+)
 def test_existing_paths_and_include_graph_conflicts(ledger, kind):
     writer = Writer(ledger)
     if kind == "file":
@@ -290,6 +311,9 @@ def test_existing_paths_and_include_graph_conflicts(ledger, kind):
     elif kind == "cycle":
         (writer.root / "indexes").mkdir()
         (writer.root / "indexes/business.bean").write_text('include "../main.beancount"\n')
+    elif kind == "next_year":
+        (writer.root / "indexes").mkdir()
+        (writer.root / "indexes/2027.bean").write_text('include "../main.beancount"\n')
     else:
         path = writer.root / "main.beancount"
         path.write_bytes(path.read_bytes() + b'\ninclude "index.bean"\n')
