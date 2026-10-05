@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, reasonOf, setAccessToken } from "./api";
+import Brand from "./Brand";
 
 /** 访问门禁：本机模式自动进入；私网模式先登录，口令只保留在页面内存。 */
 export default function AccessGate({ children }: { children: ReactNode }) {
@@ -54,13 +55,7 @@ export default function AccessGate({ children }: { children: ReactNode }) {
   return (
     <main className="access-screen">
       <section className="panel card access-card">
-        <div className="brand">
-          <span className="brand-mark">账</span>
-          <span>
-            日用账本
-            <small>THE DAILY LEDGER · 本地记账</small>
-          </span>
-        </div>
+        <Brand />
         <div>
           <h2>个人访问</h2>
           <p className="muted">

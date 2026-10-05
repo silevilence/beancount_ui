@@ -1,6 +1,10 @@
+<p><img src="frontend/public/icons/app-icon-128.png" width="80" height="80" alt="日用账本图标" /></p>
+
 # 日用账本
 
 Python / FastAPI + React / TypeScript 的本地 Beancount 记账界面。账本文本是唯一正式数据源。
+
+应用图标统一用于工作台、访问页、浏览器标签、主屏幕快捷方式和 API 文档；原图、尺寸及重建方式见[图标说明](docs/app-icon.md)。
 
 默认镜像：`ghcr.io/silevilence/beancount_ui:latest`；可通过 `BEANCOUNT_IMAGE` 固定版本或摘要。
 [容器部署、升级与恢复](docs/deployment.md) · [版本说明](changelog.md)。

@@ -182,15 +182,12 @@ pre {
 }
 
 .brand-mark {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
+  display: block;
+  flex: none;
+  width: 44px;
+  height: 44px;
   border-radius: 10px;
-  background: linear-gradient(150deg, var(--amber), #a8672a);
-  color: #1b1105;
-  font-size: 18px;
-  letter-spacing: 0;
+  object-fit: contain;
 }
 
 .brand small {

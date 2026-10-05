@@ -16,6 +16,8 @@ def test_private_requires_token_and_known_origin(ledger):
         "/api/sync",
         "/api/templates?day=2026-09-30",
         "/docs",
+        "/redoc",
+        "/openapi.json",
     ):
         assert client.get(path).status_code == 401
     for path in ("/api/preview", "/api/commit", "/api/sync/connect", "/api/sync/schedule"):
@@ -147,6 +149,31 @@ def test_static_entry_available_before_login_but_ledger_protected(ledger, tmp_pa
     client = TestClient(app)
     assert client.get("/").text == "<h1>Login</h1>"
     assert client.get("/api/ledger").status_code == 401
+
+
+def test_documentation_uses_public_app_icon_but_keeps_authentication(ledger, monkeypatch):
+    from pathlib import Path
+
+    public = Path(__file__).resolve().parents[1] / "frontend" / "public"
+    monkeypatch.setenv("BEANCOUNT_FRONTEND_DIR", str(public))
+    client = TestClient(
+        create_app(ledger.settings, Access("private", TOKEN, ("http://ledger.test:8000",)))
+    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    for path in ("/docs", "/redoc"):
+        assert client.get(path).status_code == 401
+        response = client.get(path, headers=headers)
+        assert response.status_code == 200
+        assert 'href="/favicon.ico"' in response.text
+        assert response.headers["Cache-Control"] == "no-store"
+    for path in ("/favicon.ico", "/apple-touch-icon.png", "/site.webmanifest"):
+        assert client.get(path).status_code == 200
+    for icon in client.get("/site.webmanifest").json()["icons"]:
+        assert client.get(icon["src"]).headers["Content-Type"] == "image/png"
+    assert client.get("/docs/oauth2-redirect").status_code == 200
+    schema = client.get("/openapi.json", headers=headers).json()
+    assert "/docs" not in schema["paths"]
+    assert "/api/ledger" in schema["paths"]
 
 
 @pytest.mark.parametrize("which", ["ledger", "state", "parent", "child"])

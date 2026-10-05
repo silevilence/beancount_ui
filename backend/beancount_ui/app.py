@@ -6,6 +6,11 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.docs import (
+    get_redoc_html,
+    get_swagger_ui_html,
+    get_swagger_ui_oauth2_redirect_html,
+)
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from filelock import Timeout
@@ -42,10 +47,35 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
             if app.state.scheduler:
                 app.state.scheduler.stop()
 
-    app = FastAPI(title="日用账本", version="0.2.1", lifespan=lifespan)
+    app = FastAPI(
+        title="日用账本", version="0.2.1", lifespan=lifespan, docs_url=None, redoc_url=None
+    )
     app.state.scheduler = None
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=access.hosts)
     app.middleware("http")(access.protect)
+
+    @app.get("/docs", include_in_schema=False)
+    def swagger_ui(request: Request):
+        root = request.scope.get("root_path", "").rstrip("/")
+        return get_swagger_ui_html(
+            openapi_url=f"{root}{app.openapi_url}",
+            title=f"{app.title} - Swagger UI",
+            oauth2_redirect_url=f"{root}/docs/oauth2-redirect",
+            swagger_favicon_url=f"{root}/favicon.ico",
+        )
+
+    @app.get("/docs/oauth2-redirect", include_in_schema=False)
+    def swagger_redirect():
+        return get_swagger_ui_oauth2_redirect_html()
+
+    @app.get("/redoc", include_in_schema=False)
+    def redoc_ui(request: Request):
+        root = request.scope.get("root_path", "").rstrip("/")
+        return get_redoc_html(
+            openapi_url=f"{root}{app.openapi_url}",
+            title=f"{app.title} - ReDoc",
+            redoc_favicon_url=f"{root}/favicon.ico",
+        )
 
     @app.get("/api/access")
     def access_status(request: Request):
@@ -226,9 +256,14 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     def health():
         return {"status": "ok"}
 
+    source_frontend = Path(__file__).resolve().parents[2] / "frontend"
+    default_frontend = source_frontend / "dist"
+    if not default_frontend.is_dir():
+        # Vite serves the page in development; API docs still need the shared icon.
+        default_frontend = source_frontend / "public"
     frontend = Path(
         os.environ.get(
-            "BEANCOUNT_FRONTEND_DIR", str(Path(__file__).resolve().parents[2] / "frontend" / "dist")
+            "BEANCOUNT_FRONTEND_DIR", str(default_frontend)
         )
     )
     if frontend.is_dir():

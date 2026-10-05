@@ -6,6 +6,7 @@ import {
   type Transaction,
 } from "./api";
 import BatchEditor, { draftKey } from "./BatchEditor";
+import Brand from "./Brand";
 import Editor, { readPending } from "./Editor";
 import JournalPanel, { type Filters } from "./Journal";
 import LayoutDialog from "./LayoutDialog";
@@ -220,13 +221,7 @@ export default function App() {
   return (
     <main className="app">
       <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark">账</span>
-          <span>
-            日用账本
-            <small>THE DAILY LEDGER · 本地记账</small>
-          </span>
-        </div>
+        <Brand />
         <div className="topbar-side">
           <span className={`status-chip ${ready ? "ok" : "warn"}`}>
             <span className="dot" />
