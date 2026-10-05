@@ -84,7 +84,7 @@ def transactions(snapshot: Snapshot) -> list[dict]:
                 "end": end,
                 "raw": raw,
                 "simple": simple,
-                "posting_form": read_form(raw, len(entry.postings)),
+                "posting_form": read_form(raw, len(entry.postings), validated_entry=entry),
                 "readonly": name.startswith("gnucash/"),
                 "note": str(entry.meta.get("memo", "")),
             }

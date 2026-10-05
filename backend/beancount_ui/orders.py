@@ -1,6 +1,7 @@
 """Explicitly confirmed order links and bounded settlement/refund amounts."""
 
 import json
+from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 
 from .ledger import LedgerError
@@ -13,6 +14,11 @@ def quote(value):
 
 def orders(snapshot):
     rows = transactions(snapshot)
+    events_by_ref = defaultdict(list)
+    for row in rows:
+        reference = row["metadata"].get("order-ref")
+        if reference is not None:
+            events_by_ref[reference].append(row)
     result = []
     for row in rows:
         expense = [p for p in row["postings"] if p["account"].startswith("Expenses:")]
@@ -27,7 +33,7 @@ def orders(snapshot):
         if sum(Decimal(p["amount"]) for p in expense) != total:
             continue
         key = row["metadata"].get("order-id", row["id"])
-        events = [r for r in rows if r["metadata"].get("order-ref") == key]
+        events = events_by_ref.get(key, [])
         settled = Decimal(0)
         refund_paid = Decimal(0)
         refund_unpaid = Decimal(0)

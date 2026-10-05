@@ -10,6 +10,22 @@ from pydantic import ValidationError
 from test_writer import mutation
 
 
+def test_loaded_form_matches_source_with_inherited_metadata(ledger):
+    path = ledger.settings.ledger_dir / "main.beancount"
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(
+            '\npushmeta memo: "inherited"\n'
+            '2026-10-05 * "inherited memo"\n'
+            "  Expenses:Food 1 CNY\n"
+            "  Assets:Cash\n"
+            "popmeta memo:\n"
+        )
+    snapshot = ledger.refresh()
+    assert not snapshot.errors
+    for row in transactions(snapshot):
+        assert row["posting_form"] == read_form(row["raw"], len(row["postings"]))
+
+
 def prepare(ledger):
     path = ledger.settings.ledger_dir / "main.beancount"
     with path.open("a", encoding="utf-8") as stream:
@@ -113,7 +129,7 @@ def test_source_blocks_keep_flags_comments_metadata_inference_and_no_final_newli
         '2026-09-30 ! "shop" "items" #tag ^link ; header\r\n'
         '  memo: "before" ; keep\r\n  custom: "keep"\r\n'
         '  ! Expenses:Food 1.00 CNY ; first\r\n    memo: "item" ; item-comment\r\n'
-        '    other: 7\r\n  Expenses:Food 2 CNY\r\n  Assets:Cash'
+        "    other: 7\r\n  Expenses:Food 2 CNY\r\n  Assets:Cash"
     )
     form = read_form(raw)
     assert form["postings"][-1]["amount"] is None

@@ -27,15 +27,19 @@ def quote(value):
     return json.dumps(value, ensure_ascii=False)
 
 
-def read_form(raw: str, posting_count: int | None = None) -> dict | None:
+def read_form(
+    raw: str, posting_count: int | None = None, *, validated_entry: data.Transaction | None = None
+) -> dict | None:
     """Return None if the form cannot represent the source without losing semantics."""
     lines = raw.splitlines(keepends=True)
     if not lines or not HEADER.match(lines[0]):
         return None
-    entries, errors, _ = parser.parse_string(raw)
-    if errors or len(entries) != 1 or not isinstance(entries[0], data.Transaction):
-        return None
-    entry = entries[0]
+    entry = validated_entry
+    if entry is None:
+        entries, errors, _ = parser.parse_string(raw)
+        if errors or len(entries) != 1 or not isinstance(entries[0], data.Transaction):
+            return None
+        entry = entries[0]
     matches = [(i, POSTING.fullmatch(line)) for i, line in enumerate(lines)]
     matches = [(i, m) for i, m in matches if m]
     if len(matches) != len(entry.postings) or not 2 <= len(matches) <= 100:
@@ -44,14 +48,31 @@ def read_form(raw: str, posting_count: int | None = None) -> dict | None:
         return None
     if any(p.cost is not None or p.price is not None for p in entry.postings):
         return None
+    # Booking may expand or reorder postings. Only reuse a validated entry when
+    # source rows still correspond; amounts below always come from the source,
+    # preserving omitted amounts as inference rather than loaded balances.
+    if any(m["account"] != p.account for (_, m), p in zip(matches, entry.postings, strict=True)):
+        return None
     # Multi-line or non-text memo values stay in the raw editor.
     if any(re.match(r"^\s+memo:", line) and not MEMO.fullmatch(line) for line in lines):
         return None
+    # pushmeta values are inherited by the loaded transaction, but the editing
+    # form must only expose metadata explicitly present in this source block.
+    # Unusual placement remains on the standalone parser path.
+    note = (entry.meta or {}).get("memo", "")
+    if (
+        validated_entry is not None
+        and note
+        and not any(MEMO.fullmatch(line) for line in lines[: matches[0][0]])
+    ):
+        if any(MEMO.fullmatch(line) for line in lines[matches[0][0] :]):
+            return read_form(raw, posting_count)
+        note = ""
     form = {
         "date": str(entry.date),
         "payee": entry.payee or "",
         "narration": entry.narration,
-        "note": (entry.meta or {}).get("memo", ""),
+        "note": note,
         "postings": [
             {
                 "source_index": index,

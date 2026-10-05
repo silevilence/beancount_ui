@@ -171,11 +171,15 @@ def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Sna
                         "message": error.message.replace(str(root), "."),
                     }
                 )
+            source_names = {}
             for directive in entries:
                 if directive.meta and directive.meta.get("filename"):
-                    directive.meta["filename"] = (
-                        Path(directive.meta["filename"]).resolve().relative_to(root).as_posix()
-                    )
+                    filename = directive.meta["filename"]
+                    if filename not in source_names:
+                        source_names[filename] = (
+                            Path(filename).resolve().relative_to(root).as_posix()
+                        )
+                    directive.meta["filename"] = source_names[filename]
     return Snapshot(files, digest(files), entries, errors, included, edges)
 
 

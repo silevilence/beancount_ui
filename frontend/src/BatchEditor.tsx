@@ -1,4 +1,6 @@
 import RecordFields from "./RecordFields";
+import QuickFill from "./QuickFill";
+import { captureFill } from "./fillTemplates";
 import {
   businessNames,
   businessKind,
@@ -535,6 +537,68 @@ export default function BatchEditor({
       />
     </label>
   );
+  const quickFill = businessConfig && (!balanceRaw || recordTemplate) && (
+    <QuickFill
+      key={`${journal.identity}.${business}.${JSON.stringify(recordTemplate)}`}
+      identity={journal.identity}
+      business={business}
+      schema={
+        recordTemplate
+          ? JSON.stringify(recordTemplate)
+          : `form:${salaryLike ? "income" : "expense"}`
+      }
+      capture={(amounts) =>
+        task === "advanced" && (!draft.postingMode || recordTemplate)
+          ? undefined
+          : captureFill(
+              draft.form,
+              task === "advanced"
+                ? draft.postingLines || [blankPosting(), blankPosting()]
+                : undefined,
+              recordTemplate,
+              draft.templateValues || {},
+              amounts,
+            )
+      }
+      onApply={(data) => {
+        if (data.mode === "record" && recordTemplate) {
+          const allowed = Object.fromEntries(
+            Object.entries(data.values).filter(
+              ([key]) =>
+                recordTemplate.fields[key]?.mode === "input" &&
+                recordTemplate.fields[key]?.type !== "date",
+            ),
+          );
+          if (
+            update({
+              ...draft,
+              task: "daily",
+              advanced: false,
+              templateValues: { ...draft.templateValues, ...allowed },
+              templateVersion: businessConfig.version,
+            })
+          )
+            setTask("daily");
+        } else if (data.mode !== "record" && !recordTemplate) {
+          const nextTask = data.mode === "postings" ? "advanced" : "daily";
+          if (
+            update({
+              ...draft,
+              task: nextTask,
+              advanced: data.mode === "postings",
+              postingMode: data.mode === "postings",
+              orderMode: "",
+              form: { ...draft.form, ...data.fields },
+              ...(data.mode === "postings"
+                ? { postingLines: data.postings }
+                : {}),
+            })
+          )
+            setTask(nextTask);
+        }
+      }}
+    />
+  );
   const entryForm = (
     <>
       <div className="work-head">
@@ -555,6 +619,7 @@ export default function BatchEditor({
         }
         disabled={locked}
       />
+      {quickFill}
       {templateStale && (
         <Notice>
           业务配置已变化，旧填写内容仍保留。请核对新规则后重新填写。
@@ -680,6 +745,7 @@ export default function BatchEditor({
           ))}
         </select>
       </label>
+      {quickFill}
       {kind !== "balance" && !recordTemplate && (
         <label className="check">
           <input

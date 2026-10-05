@@ -1,4 +1,6 @@
 import RecordFields from "./RecordFields";
+import QuickFill from "./QuickFill";
+import { captureFill } from "./fillTemplates";
 import SplitFields from "./SplitFields";
 import PostingFields, { blankPosting } from "./PostingFields";
 import {
@@ -473,6 +475,49 @@ export default function Editor({
                 </select>
               </label>
             )}
+            {op === "create" &&
+              businessConfig &&
+              (!rawOnly || recordTemplate) && (
+                <QuickFill
+                  key={`${journal.identity}.${business}.${JSON.stringify(recordTemplate)}`}
+                  identity={journal.identity}
+                  business={business}
+                  schema={
+                    recordTemplate
+                      ? JSON.stringify(recordTemplate)
+                      : `form:${entryMode}`
+                  }
+                  capture={(amounts) =>
+                    !recordTemplate && advanced
+                      ? undefined
+                      : captureFill(
+                          fields,
+                          multi ? postings : undefined,
+                          recordTemplate,
+                          values,
+                          amounts,
+                        )
+                  }
+                  onApply={(data) => {
+                    invalidate();
+                    if (data.mode === "record" && recordTemplate) {
+                      const allowed = Object.fromEntries(
+                        Object.entries(data.values).filter(
+                          ([key]) =>
+                            recordTemplate.fields[key]?.mode === "input" &&
+                            recordTemplate.fields[key]?.type !== "date",
+                        ),
+                      );
+                      setValues({ ...values, ...allowed });
+                    } else if (data.mode !== "record" && !recordTemplate) {
+                      setAdvanced(false);
+                      setMulti(data.mode === "postings");
+                      setFields({ ...fields, ...data.fields });
+                      if (data.mode === "postings") setPostings(data.postings);
+                    }
+                  }}
+                />
+              )}
             {!recordTemplate && (
               <label className="check">
                 <input
