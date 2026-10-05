@@ -48,7 +48,7 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
                 app.state.scheduler.stop()
 
     app = FastAPI(
-        title="日用账本", version="0.2.1", lifespan=lifespan, docs_url=None, redoc_url=None
+        title="日用账本", version="0.3.0", lifespan=lifespan, docs_url=None, redoc_url=None
     )
     app.state.scheduler = None
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=access.hosts)
