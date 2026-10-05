@@ -7,16 +7,17 @@
 
 ## 🚧 开发中 (In Progress)
 
-- [ ] **修复 V0.3.0 Release 覆盖率检查失败**（小型修复；来源阶段四发布验收）
+## ✅ 已完成 (Completed)
+
+- [x] **修复 V0.3.0 Release 覆盖率检查失败**（小型修复；来源阶段四发布验收）
     Status: ready-for-agent
     - [x] 复现前端分支覆盖率不足，补齐快速填充持久化与金额保留规则的边界测试。
-    - [ ] 验证本地覆盖率、类型检查与构建，跟踪 GitHub Actions 发布结果。
+    - [x] 验证本地覆盖率、类型检查与构建，跟踪 GitHub Actions 发布结果。
     - 依赖：已完成的快速填充模板与 Release 工作流。
     - 验收：保留 90% 覆盖率门槛，跨平台检查及 Release 全部通过。
     - 2026-10-05 诊断：Release 37269482047 的 170 项前端测试均通过，但分支覆盖率 89.97% 未达到 90%，镜像构建与发布尚未开始。
-    - 本地验证：新增 25 项快速填充边界测试，全量 195 项通过，分支覆盖率提升至 90.60%；类型检查、生产构建及差异检查通过。保持 90% 门槛与产品逻辑不变，等待远端发布验收。
-
-## ✅ 已完成 (Completed)
+    - 本地验证：新增 25 项快速填充边界测试，全量 195 项通过，分支覆盖率提升至 90.60%；类型检查、生产构建及差异检查通过。保持 90% 门槛与产品逻辑不变。
+    - 2026-10-05 发布验收：修复提交 `d013d4f`，经用户确认更新未发布的 V0.3.0 标签；[Release 37270363716](https://github.com/silevilence/beancount_ui/actions/runs/37270363716) 与 [Checks 37270351312](https://github.com/silevilence/beancount_ui/actions/runs/37270351312) 均通过。Ubuntu/Windows 检查、镜像构建、容器与 NAS 权限验证全部成功，已发布 [V0.3.0](https://github.com/silevilence/beancount_ui/releases/tag/V0.3.0) 及 GHCR 的 V0.3.0、latest 镜像。
 
 - [x] **生成并统一应用日用账本图标**（1 天）
     Status: ready-for-agent
