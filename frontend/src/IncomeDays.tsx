@@ -1,5 +1,5 @@
 import AccountSelect from "./AccountSelect";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type Journal, type Transaction } from "./api";
 import {
   money,
@@ -20,42 +20,104 @@ export interface IncomeDay {
 /** 金额一律按十进制字符串校验，非法内容不进入队列也不参与求和。 */
 const AMOUNT = /^-?\d+(\.\d+)?$/;
 
+export interface IncomeRange {
+  start: string;
+  end: string;
+}
+export interface IncomeAccounts {
+  category: string;
+  payment: string;
+}
+
+/** 只认唯一的余额宝候选；已保存但失效的账户留空，交由用户重新选择。 */
+function incomeAccount(
+  accounts: Journal["accounts"],
+  prefix: string,
+  saved?: string,
+) {
+  const candidates = accounts.filter((a) => a.name.startsWith(prefix));
+  if (saved !== undefined)
+    return candidates.some((a) => a.name === saved) ? saved : "";
+  const matches = candidates.filter((a) =>
+    /^(余额宝|余额宝收益|yuebao)$/i.test(a.name.split(":").at(-1)!),
+  );
+  return matches.length === 1 ? matches[0].name : "";
+}
+
 export default function IncomeDays({
   date,
   accounts,
   onAdd,
   onEdit,
+  range,
+  onRangeChange,
+  selectedAccounts,
+  onAccountsChange,
 }: {
   date: string;
   accounts: Journal["accounts"];
   onAdd: (items: DraftItem[]) => boolean | void;
   onEdit?: (row: Transaction) => void;
+  range?: IncomeRange;
+  onRangeChange?: (range: IncomeRange) => void;
+  selectedAccounts?: IncomeAccounts;
+  onAccountsChange?: (accounts: IncomeAccounts) => boolean | void;
 }) {
-  const [start, setStart] = useState(shiftDay(date, -6));
-  const [end, setEnd] = useState(date);
+  const [localRange, setLocalRange] = useState<IncomeRange>();
+  const selectedRange = onRangeChange ? range : localRange;
+  const { start, end } = selectedRange ?? {
+    start: shiftDay(date, -6),
+    end: date,
+  };
+  const automatic = !selectedRange;
+  const automaticDate = automatic ? date : undefined;
   const [rows, setRows] = useState<IncomeDay[]>([]);
   const [values, setValues] = useState<Record<string, string>>({});
-  const [category, setCategory] = useState("");
-  const [payment, setPayment] = useState("");
+  const [localAccounts, setLocalAccounts] = useState<IncomeAccounts>();
+  const chosen = onAccountsChange ? selectedAccounts : localAccounts;
+  const category = incomeAccount(accounts, "Income:", chosen?.category);
+  const payment = incomeAccount(accounts, "Assets:", chosen?.payment);
+  function changeAccount(field: keyof IncomeAccounts, value: string) {
+    const next = { category, payment, [field]: value };
+    if (onAccountsChange) onAccountsChange(next);
+    else setLocalAccounts(next);
+  }
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const request = useRef(0);
+  const editedRange = useRef(false);
+  function changeRange(next: IncomeRange) {
+    editedRange.current = true;
+    request.current++;
+    setRows([]);
+    setBusy(false);
+    if (onRangeChange) onRangeChange(next);
+    else setLocalRange(next);
+  }
   async function load() {
+    const id = ++request.current;
     setBusy(true);
+    setRows([]);
     try {
-      setRows(
-        await api<IncomeDay[]>(`/income/days?start=${start}&end=${end}`),
+      const result = await api<IncomeDay[]>(
+        `/income/days?start=${start}&end=${end}`,
       );
+      if (id !== request.current) return;
+      setRows(result);
       setError("");
     } catch (e) {
-      setError(String(e));
+      if (id === request.current) setError(String(e));
     } finally {
-      setBusy(false);
+      if (id === request.current) setBusy(false);
     }
   }
   useEffect(() => {
-    // 首次显示时自动核对一次；区间变化后由「核对日期」重新拉取。
-    void load();
-  }, []);
+    // 默认区间跟随当天；手选区间仍由「核对日期」拉取，金额按原日期保留。
+    if (!editedRange.current || automatic) void load();
+    return () => {
+      request.current++;
+    };
+  }, [automaticDate]);
   const blank = rows.filter((r) => !r.records.length);
   const recorded = rows.length - blank.length;
   const filled = blank.filter((r) => (values[r.date] ?? "").trim() !== "");
@@ -85,8 +147,7 @@ export default function IncomeDays({
             type="date"
             value={start}
             onChange={(e) => {
-              setStart(e.target.value);
-              setRows([]);
+              changeRange({ start: e.target.value, end });
             }}
           />
         </label>
@@ -97,8 +158,7 @@ export default function IncomeDays({
             type="date"
             value={end}
             onChange={(e) => {
-              setEnd(e.target.value);
-              setRows([]);
+              changeRange({ start, end: e.target.value });
             }}
           />
         </label>
@@ -140,8 +200,18 @@ export default function IncomeDays({
       >
         <div className="form-grid">
           {[
-            ["收益账户", category, setCategory, "Income:"],
-            ["收益到账账户", payment, setPayment, "Assets:"],
+            [
+              "收益账户",
+              category,
+              (value: string) => changeAccount("category", value),
+              "Income:",
+            ],
+            [
+              "收益到账账户",
+              payment,
+              (value: string) => changeAccount("payment", value),
+              "Assets:",
+            ],
           ].map(([label, value, set, prefix]) => (
             <label key={String(label)} className="field">
               <span>{String(label)}</span>
@@ -204,7 +274,9 @@ export default function IncomeDays({
           </div>
         ) : (
           <Empty>
-            {busy ? "正在核对区间内的收益记录……" : "尚未核对日期，请点击「核对日期」拉取区间内每一天的收益记录。"}
+            {busy
+              ? "正在核对区间内的收益记录……"
+              : "尚未核对日期，请点击「核对日期」拉取区间内每一天的收益记录。"}
           </Empty>
         )}
         <div className="split-sum">
@@ -213,7 +285,9 @@ export default function IncomeDays({
           <span className="label">合计</span>
           <span>
             {totals.length
-              ? totals.map((line) => money(line.amount, line.currency)).join(" · ")
+              ? totals
+                  .map((line) => money(line.amount, line.currency))
+                  .join(" · ")
               : "待填写有效金额"}
           </span>
         </div>

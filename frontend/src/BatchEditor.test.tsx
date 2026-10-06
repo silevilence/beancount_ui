@@ -135,6 +135,120 @@ const fillDaily = (amount: string) => {
 const tray = () =>
   within(screen.getByRole("complementary", { name: "待入账草稿" }));
 
+it("余额宝重新进入默认上海今天，独立于旧日常表单及已有草稿", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-05T16:01:00Z"));
+  try {
+    const { unmount } = setup({
+      task: "income",
+      form: { ...base, date: "2026-10-05" },
+      items: [{ business: "ordinary", entry: base }],
+    });
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/income/days?start=2026-09-30&end=2026-10-06",
+        undefined,
+      ),
+    );
+    expect(screen.getByLabelText("收益结束日")).toHaveValue("2026-10-06");
+    expect(
+      screen.queryByText(/当前录入日期为 2026-10-05/),
+    ).not.toBeInTheDocument();
+    vi.setSystemTime(new Date("2026-10-06T16:01:00Z"));
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(screen.getByLabelText("收益结束日")).toHaveValue("2026-10-07");
+    expect(screen.getByLabelText("收益起始日")).toHaveValue("2026-10-01");
+    fireEvent.change(screen.getByLabelText("收益结束日"), {
+      target: { value: "2026-10-04" },
+    });
+    vi.setSystemTime(new Date("2026-10-07T16:01:00Z"));
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(screen.getByLabelText("收益结束日")).toHaveValue("2026-10-04");
+    fireEvent.click(screen.getByRole("button", { name: "新记录改用今天" }));
+    expect(screen.getByLabelText("收益结束日")).toHaveValue("2026-10-08");
+    expect(screen.getByLabelText("收益起始日")).toHaveValue("2026-10-02");
+    fireEvent.click(screen.getByRole("button", { name: /日常消费/ }));
+    expect(screen.getByLabelText("补记日期")).toHaveValue("2026-10-05");
+    expect(
+      JSON.parse(localStorage.getItem(draftKey(journal))!).items[0].entry.date,
+    ).toBe(base.date);
+    unmount();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("余额宝账户选择按账本保存，重新打开自动恢复", async () => {
+  const incomeJournal = {
+    ...journal,
+    accounts: [
+      ...journal.accounts,
+      { name: "Income:Interest:其他利息:余额宝收益", currencies: [] },
+      { name: "Assets:Current:余额宝", currencies: [] },
+    ],
+  };
+  stubFetch();
+  vi.mocked(fetch).mockImplementation(
+    async (url) =>
+      ok(String(url).includes("journal") ? incomeJournal : []) as Response,
+  );
+  const mounted = render(<BatchEditor {...props} journal={incomeJournal} />);
+  fireEvent.click(
+    within(screen.getByRole("navigation", { name: "作业类型" })).getByRole(
+      "button",
+      { name: /余额宝收益/ },
+    ),
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("收益账户")).toHaveValue(
+      "Income:Interest:其他利息:余额宝收益",
+    ),
+  );
+  expect(screen.getByLabelText("收益到账账户")).toHaveValue(
+    "Assets:Current:余额宝",
+  );
+  fireEvent.change(screen.getByLabelText("收益账户"), {
+    target: { value: "Income:Salary" },
+  });
+  fireEvent.change(screen.getByLabelText("收益到账账户"), {
+    target: { value: "Assets:Cash" },
+  });
+  mounted.unmount();
+  const reopened = render(<BatchEditor {...props} journal={incomeJournal} />);
+  fireEvent.click(
+    within(screen.getByRole("navigation", { name: "作业类型" })).getByRole(
+      "button",
+      { name: /余额宝收益/ },
+    ),
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("收益账户")).toHaveValue("Income:Salary"),
+  );
+  expect(screen.getByLabelText("收益到账账户")).toHaveValue("Assets:Cash");
+  reopened.unmount();
+  render(
+    <BatchEditor
+      {...props}
+      journal={{ ...incomeJournal, identity: "another-ledger" }}
+    />,
+  );
+  fireEvent.click(
+    within(screen.getByRole("navigation", { name: "作业类型" })).getByRole(
+      "button",
+      { name: /余额宝收益/ },
+    ),
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("收益账户")).toHaveValue(
+      "Income:Interest:其他利息:余额宝收益",
+    ),
+  );
+});
+
 it("淘宝订单处理默认今天，不沿用零笔草稿中旧的日常录入日期", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-10-01T16:01:00Z"));
@@ -367,7 +481,12 @@ it("作业分区切换、模板快捷入口与草稿计数", async () => {
   expect(tray().getAllByText("9,000.00 CNY")).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: /转账 \/ 还款 \/ 余额/ }));
   expect(screen.getByRole("group", { name: "账户业务" })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /余额宝收益/ }));
+  fireEvent.click(
+    within(screen.getByRole("navigation", { name: "作业类型" })).getByRole(
+      "button",
+      { name: /余额宝收益/ },
+    ),
+  );
   expect(await screen.findByText("核对日期")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /淘宝订单/ }));
   expect(await screen.findByText("淘宝确认收货 / 退款")).toBeInTheDocument();

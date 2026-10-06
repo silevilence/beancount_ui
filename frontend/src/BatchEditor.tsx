@@ -17,7 +17,10 @@ import { api, ApiError, type Journal, type Transaction } from "./api";
 import Diff from "./Diff";
 import type { EntryFields } from "./Editor";
 import Finance from "./Finance";
-import IncomeDays from "./IncomeDays";
+import IncomeDays, {
+  type IncomeRange,
+  type IncomeAccounts,
+} from "./IncomeDays";
 import Orders from "./Orders";
 import SplitFields from "./SplitFields";
 import PostingFields, { blankPosting } from "./PostingFields";
@@ -63,6 +66,7 @@ interface Preview {
 }
 
 interface Draft {
+  incomeAccounts?: IncomeAccounts;
   task?: TaskId;
   business?: string;
   orderMode?: string;
@@ -235,10 +239,16 @@ export default function BatchEditor({
   // 订单结算发生在处理当天，与日常补记及原订单日期独立。
   const [selectedOrderDate, setSelectedOrderDate] = useState<string>();
   const orderDate = selectedOrderDate ?? today;
-  const activeDate = task === "orders" ? orderDate : draft.form.date;
-  const accountDay =
+  const [incomeRange, setIncomeRange] = useState<IncomeRange>();
+  const activeDate =
     task === "orders"
       ? orderDate
+      : task === "income"
+        ? (incomeRange?.end ?? today)
+        : draft.form.date;
+  const accountDay =
+    task === "orders" || task === "income"
+      ? activeDate
       : templateDay(
           task === "daily" ? recordTemplate : null,
           draft.templateValues || {},
@@ -871,7 +881,9 @@ export default function BatchEditor({
                 onClick={() =>
                   task === "orders"
                     ? setSelectedOrderDate(undefined)
-                    : change("date", today)
+                    : task === "income"
+                      ? setIncomeRange(undefined)
+                      : change("date", today)
                 }
               >
                 新记录改用今天
@@ -939,7 +951,13 @@ export default function BatchEditor({
           {task === "income" && (
             <fieldset disabled={locked}>
               <IncomeDays
-                date={draft.form.date}
+                date={today}
+                range={incomeRange}
+                onRangeChange={setIncomeRange}
+                selectedAccounts={draft.incomeAccounts}
+                onAccountsChange={(incomeAccounts) =>
+                  update({ ...draft, incomeAccounts })
+                }
                 accounts={accounts}
                 onAdd={(items) =>
                   update({ ...draft, items: [...draft.items, ...items] })
