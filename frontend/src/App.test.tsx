@@ -104,6 +104,63 @@ function routing(handler: (url: URL) => Reply, backup: Payload = sync()) {
   });
 }
 
+it("侧栏进入统计页，账本版本变化刷新统计，返回工作台保留记账日期", async () => {
+  let revision = "r1";
+  const fetcher = routing((url) => {
+    if (url.pathname === "/api/ledger") return ok(status({ revision }));
+    if (url.pathname === "/api/statistics")
+      return ok({
+        start: url.searchParams.get("start"),
+        end: url.searchParams.get("end"),
+        grain: "day",
+        currency: "CNY",
+        currencies: ["CNY"],
+        revision,
+        view_revision: revision,
+        stale: false,
+        available: true,
+        errors: [],
+        count: 0,
+        totals: { income: "0", expenses: "0", net: "0" },
+        categories: { income: [], expenses: [] },
+        buckets: [
+          {
+            start: "2026-10-01",
+            end: "2026-10-01",
+            count: 0,
+            income: "0",
+            expenses: "0",
+            net: "0",
+          },
+        ],
+      });
+    return ok(view(url.searchParams.get("day")!, { revision }));
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<App />);
+  await screen.findByText("本地账本已连接");
+  fireEvent.change(screen.getByLabelText("记账日期"), {
+    target: { value: "2026-09-29" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "统计图表" }));
+  await screen.findByRole("region", { name: "区间收支" });
+  expect(screen.queryByLabelText("记账日期")).not.toBeInTheDocument();
+  const count = fetcher.mock.calls.filter(([url]) =>
+    String(url).startsWith("/api/statistics?"),
+  ).length;
+  revision = "r2";
+  fireEvent.keyDown(window, { key: "r" });
+  await waitFor(() =>
+    expect(
+      fetcher.mock.calls.filter(([url]) =>
+        String(url).startsWith("/api/statistics?"),
+      ).length,
+    ).toBeGreaterThan(count),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "记账工作台" }));
+  expect(screen.getByLabelText("记账日期")).toHaveValue("2026-09-29");
+});
+
 it("跨上海零点后今日视图随当天更新，历史日期保持选择", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-01T15:59:50Z"));

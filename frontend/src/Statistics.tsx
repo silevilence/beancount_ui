@@ -98,17 +98,19 @@ function Trend({
                 y2={y(value)}
                 className={value === 0 ? "stats-zero" : "stats-grid"}
               />
-              <text
-                x="48"
-                y={y(value) - 5}
-                textAnchor="end"
-                className="stats-axis"
-              >
-                {value.toLocaleString("zh-CN", {
-                  maximumFractionDigits: 1,
-                  notation: "compact",
-                })}
-              </text>
+              {(value === 0 || Math.abs(y(value) - y(0)) >= 18) && (
+                <text
+                  x="48"
+                  y={y(value) - 5}
+                  textAnchor="end"
+                  className="stats-axis"
+                >
+                  {value.toLocaleString("zh-CN", {
+                    maximumFractionDigits: 1,
+                    notation: "compact",
+                  })}
+                </text>
+              )}
             </g>
           ))}
           {report.buckets.map((bucket, index) => {
