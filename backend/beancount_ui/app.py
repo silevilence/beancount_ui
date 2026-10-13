@@ -28,6 +28,7 @@ from .models import BatchMutation, CommitInput, Mutation
 from .orders import orders
 from .query import daily_view
 from .scheduler import ScheduleInput, Scheduler, configure
+from .statistics import Granularity, statistics, statistics_details
 from .sync import BackupInput, ConnectInput, Sync
 from .templates import recommendations
 from .writer import Writer
@@ -216,6 +217,16 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
             result = daily_view(get_ledger(), day, payee, narration, account)
             result["sync"] = get_sync().status().get("sync", "已保存 · 尚未接入")
             return result
+
+    @app.get("/api/statistics")
+    def report(start: date, end: date, grain: Granularity = "day", currency: str = ""):
+        with get_writer().guard():
+            return statistics(get_ledger(), start, end, grain, currency)
+
+    @app.get("/api/statistics/details")
+    def report_details(start: date, end: date, currency: str, revision: str, account: str = ""):
+        with get_writer().guard():
+            return statistics_details(get_ledger(), start, end, currency, revision, account)
 
     @app.post("/api/finance/compose")
     def finance(request: FinanceInput):

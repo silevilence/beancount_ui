@@ -89,12 +89,14 @@ class Snapshot:
     edges: dict[str, list[str]]
     records: list[dict] | None = None
     business_files: dict[str, list[str]] = field(default_factory=default_business_files)
+    operating_currencies: list[str] = field(default_factory=list)
 
 
 def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Snapshot:
     """Validate in isolation, including routing candidates with new include files."""
     errors = []
     edges = {}
+    operating_currencies = []
     with tempfile.TemporaryDirectory(prefix="beancount-ui-") as folder:
         # Windows temporary directories may use 8.3 aliases while Beancount
         # source paths resolve to long names. Compare canonical paths throughout.
@@ -154,6 +156,7 @@ def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Sna
         included = sorted(visited)
         if not errors:
             entries, load_errors, options = loader.load_file(str(root / entry))
+            operating_currencies = options.get("operating_currency", [])
             included = sorted(
                 Path(p).resolve().relative_to(root).as_posix() for p in options["include"]
             )
@@ -180,7 +183,10 @@ def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Sna
                             Path(filename).resolve().relative_to(root).as_posix()
                         )
                     directive.meta["filename"] = source_names[filename]
-    return Snapshot(files, digest(files), entries, errors, included, edges)
+    return Snapshot(
+        files, digest(files), entries, errors, included, edges,
+        operating_currencies=operating_currencies,
+    )
 
 
 class Ledger:
