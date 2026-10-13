@@ -12,6 +12,7 @@ import JournalPanel, { type Filters } from "./Journal";
 import LayoutDialog from "./LayoutDialog";
 import SyncDialog from "./SyncDialog";
 import SyncPanel from "./SyncPanel";
+import Statistics from "./Statistics";
 import {
   syncDetail,
   syncLabel,
@@ -115,6 +116,7 @@ function countDraft(journal: JournalView): number {
 }
 
 export default function App() {
+  const [page, setPage] = useState("journal");
   const [batch, setBatch] = useState(false);
   const [ledger, setLedger] = useState<LedgerStatus>();
   const [journal, setJournal] = useState<JournalView>();
@@ -246,284 +248,331 @@ export default function App() {
           </span>
         </div>
       </header>
-      <section className="daybar">
-        <div className="day-nav">
+      <div className="app-body">
+        <nav className="page-nav" aria-label="页面导航">
           <button
-            className="ghost square"
-            aria-label="前一天"
-            onClick={() => setDay(shiftDay(day, -1))}
+            className="ghost"
+            aria-current={page === "journal" ? "page" : undefined}
+            onClick={() => setPage("journal")}
           >
-            ‹
-          </button>
-          <div className="day-title">
-            <strong>{dayFull(day)}</strong>
-            <small>
-              {relative && <span className="rel">{relative}</span>}
-              {day} · Asia/Shanghai
-            </small>
-          </div>
-          <button
-            className="ghost square"
-            aria-label="后一天"
-            onClick={() => setDay(shiftDay(day, 1))}
-          >
-            ›
+            记账工作台
           </button>
           <button
             className="ghost"
-            disabled={day === shanghaiToday()}
-            onClick={() => setDay(shanghaiToday())}
+            aria-current={page === "statistics" ? "page" : undefined}
+            onClick={() => setPage("statistics")}
           >
-            今天
+            统计图表
           </button>
-          <label className="field inline">
-            <span>记账日期</span>
-            <input
-              aria-label="记账日期"
-              type="date"
-              value={day}
-              onChange={(e) => {
-                if (e.target.value) setDay(e.target.value);
-              }}
-            />
-          </label>
-        </div>
-        <div className="day-actions">
-          <button className="ghost" onClick={() => void refresh()}>
-            刷新
-          </button>
-          <button
-            className="ghost"
-            disabled={!canEditRow}
-            title="集中补记、业务面板与模板"
-            onClick={() => setBatch(true)}
-          >
-            补记工作台
-            {drafts > 0 && <Chip tone="warn">{drafts} 笔草稿</Chip>}
-          </button>
-          <button className="cta" disabled={!canCreate} onClick={openCreate}>
-            ＋ 记一笔
-          </button>
-        </div>
-      </section>
-      {error && (
-        <Notice
-          tone="error"
-          action={
-            <button className="ghost small" onClick={() => void refresh()}>
-              重新加载
-            </button>
-          }
-        >
-          {error}
-          {journal && "。当前为上一次有效视图，无法确认最新状态。"}
-        </Notice>
-      )}
-      {journal?.stale && (
-        <Notice tone="warn">
-          账本校验失败，以下保留上一次有效视图，已暂停写入。
-        </Notice>
-      )}
-      {sync.status?.blocked && (
-        <Notice
-          tone="error"
-          action={
-            <button
-              className="ghost small"
-              onClick={() => setBackupOpen({ auto: false })}
-            >
-              打开备份中心
-            </button>
-          }
-        >
-          备份已暂停：
-          {trimReason(sync.status.error || "仓库存在未完成的合并或冲突")}
-          。已保存的记录仍在本地，人工解决后重新同步即可恢复。
-        </Notice>
-      )}
-      {sync.status?.connected && sync.status.error && !sync.status.blocked && (
-        <Notice
-          tone="warn"
-          action={
-            <button
-              className="ghost small"
-              onClick={() => setBackupOpen({ auto: true })}
-            >
-              打开备份中心
-            </button>
-          }
-        >
-          备份未完成：{trimReason(sync.status.error)}
-          。已保存的记录仍在本地，无需重复录入。
-        </Notice>
-      )}
-      {!!ledger?.errors.length && (
-        <Notice tone="error">
-          {ledger.errors.map((item, index) => (
-            <span className="diag" key={index}>
-              {item.file}:{item.line} · {item.message}
-            </span>
-          ))}
-        </Notice>
-      )}
-      {hasPending && journal && (
-        <Notice
-          action={
-            <button
-              className="ghost small"
-              onClick={() => setEditor({ operation: "create" })}
-            >
-              恢复原请求
-            </button>
-          }
-        >
-          有一笔待确认的保存请求，重试不会重复入账。
-        </Notice>
-      )}
-      <section className="summary" aria-label="当日收支">
-        <Stat
-          label="当日消费"
-          lines={byCurrency(visible?.expenses)}
-          note="不含转账与还款 · 分币种统计"
-        />
-        <Stat
-          label="当日收入"
-          lines={byCurrency(visible?.income)}
-          note="涵盖工资与专项收益"
-        />
-        <Stat
-          label="当日净额"
-          lines={netTotals(visible?.expenses, visible?.income)}
-          note="收入 − 支出，逐币种计算"
-          signed
-        />
-        <Stat
-          label="当日记录"
-          lines={[]}
-          value={visible ? `${visible.transactions.length} 笔` : "—"}
-          note={`${dayFull(day)} · 来源含全部包含文件`}
-        />
-      </section>
-      <div className="workspace">
-        <JournalPanel
-          journal={visible}
-          filters={draftFilters}
-          onFilter={setDraftFilters}
-          searchRef={search}
-          canEdit={canEditRow}
-          onEdit={(row) => setEditor({ row, operation: "edit" })}
-          onDelete={(row) => setEditor({ row, operation: "delete" })}
-        />
-        <aside className="rail">
-          <SyncPanel onOpen={(auto) => setBackupOpen({ auto: !!auto })} />
-          <section className="panel card">
-            <div className="panel-head">
-              <h2>待记便笺</h2>
-              <span className="panel-meta">仅本页会话</span>
-            </div>
-            <p className="muted">临时记下消费或待核对内容，不计入收支。</p>
-            <textarea
-              aria-label="待记便笺"
-              placeholder="先记下商户、金额或待核对的内容…"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-            />
-            {draft && (
-              <div className="draft">
-                <span className="badge">草稿 · 不计入收支</span>
-                <p>{draft}</p>
-                <button className="ghost small" onClick={() => setDraft("")}>
-                  清除便笺
-                </button>
-              </div>
-            )}
-          </section>
-          <section className="panel card">
-            <div className="panel-head">
-              <h2>账本</h2>
-              <button
-                className="ghost small"
-                title="文件布局与业务记录模板"
-                onClick={() => setLayoutOpen(true)}
-              >
-                布局与模板
-              </button>
-              <span className="panel-meta">
-                {ledger ? `Beancount ${ledger.version}` : "未连接"}
-              </span>
-            </div>
-            {ledger ? (
-              <>
-                <dl className="facts">
-                  <div>
-                    <dt>入口</dt>
-                    <dd>{ledger.entry}</dd>
+        </nav>
+        <div className="app-content">
+          {page === "statistics" ? (
+            <Statistics revision={journal?.revision} />
+          ) : (
+            <>
+              <section className="daybar">
+                <div className="day-nav">
+                  <button
+                    className="ghost square"
+                    aria-label="前一天"
+                    onClick={() => setDay(shiftDay(day, -1))}
+                  >
+                    ‹
+                  </button>
+                  <div className="day-title">
+                    <strong>{dayFull(day)}</strong>
+                    <small>
+                      {relative && <span className="rel">{relative}</span>}
+                      {day} · Asia/Shanghai
+                    </small>
                   </div>
-                  <div>
-                    <dt>文件</dt>
-                    <dd>
-                      {ledger.files.length} 个 · {ledger.entry_count} 条指令
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>版本</dt>
-                    <dd>
-                      {ledger.git.branch || "无 Git 仓库"} ·{" "}
-                      {ledger.git.commit?.slice(0, 7) || "无提交"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>本地 Git</dt>
-                    <dd>{ledger.git.sync}</dd>
-                  </div>
-                </dl>
-                {!!ledger.git.changes?.length && (
-                  <pre className="changes">{ledger.git.changes.join("\n")}</pre>
-                )}
-                <details className="tree">
-                  <summary>包含关系</summary>
-                  <ul>
-                    <IncludeTree
-                      name={ledger.entry}
-                      graph={ledger.include_graph}
+                  <button
+                    className="ghost square"
+                    aria-label="后一天"
+                    onClick={() => setDay(shiftDay(day, 1))}
+                  >
+                    ›
+                  </button>
+                  <button
+                    className="ghost"
+                    disabled={day === shanghaiToday()}
+                    onClick={() => setDay(shanghaiToday())}
+                  >
+                    今天
+                  </button>
+                  <label className="field inline">
+                    <span>记账日期</span>
+                    <input
+                      aria-label="记账日期"
+                      type="date"
+                      value={day}
+                      onChange={(e) => {
+                        if (e.target.value) setDay(e.target.value);
+                      }}
                     />
-                  </ul>
-                </details>
-                <p className="muted small">
-                  未纳入文件：{ledger.unreferenced.join("、") || "无"}
-                </p>
-              </>
-            ) : (
-              <p className="muted">正在读取账本信息…</p>
-            )}
-          </section>
-          <section className="panel card">
-            <div className="panel-head">
-              <h2>快捷键</h2>
-              <span className="panel-meta">键盘优先</span>
-            </div>
-            <ul className="shortcuts">
-              <li>
-                <kbd>n</kbd> 记一笔
-              </li>
-              <li>
-                <kbd>b</kbd> 补记工作台
-              </li>
-              <li>
-                <kbd>s</kbd> 备份中心
-              </li>
-              <li>
-                <kbd>/</kbd> 聚焦搜索
-              </li>
-              <li>
-                <kbd>r</kbd> 刷新账本
-              </li>
-              <li>
-                <kbd>esc</kbd> 关闭对话框
-              </li>
-            </ul>
-          </section>
-        </aside>
+                  </label>
+                </div>
+                <div className="day-actions">
+                  <button className="ghost" onClick={() => void refresh()}>
+                    刷新
+                  </button>
+                  <button
+                    className="ghost"
+                    disabled={!canEditRow}
+                    title="集中补记、业务面板与模板"
+                    onClick={() => setBatch(true)}
+                  >
+                    补记工作台
+                    {drafts > 0 && <Chip tone="warn">{drafts} 笔草稿</Chip>}
+                  </button>
+                  <button
+                    className="cta"
+                    disabled={!canCreate}
+                    onClick={openCreate}
+                  >
+                    ＋ 记一笔
+                  </button>
+                </div>
+              </section>
+              {error && (
+                <Notice
+                  tone="error"
+                  action={
+                    <button
+                      className="ghost small"
+                      onClick={() => void refresh()}
+                    >
+                      重新加载
+                    </button>
+                  }
+                >
+                  {error}
+                  {journal && "。当前为上一次有效视图，无法确认最新状态。"}
+                </Notice>
+              )}
+              {journal?.stale && (
+                <Notice tone="warn">
+                  账本校验失败，以下保留上一次有效视图，已暂停写入。
+                </Notice>
+              )}
+              {sync.status?.blocked && (
+                <Notice
+                  tone="error"
+                  action={
+                    <button
+                      className="ghost small"
+                      onClick={() => setBackupOpen({ auto: false })}
+                    >
+                      打开备份中心
+                    </button>
+                  }
+                >
+                  备份已暂停：
+                  {trimReason(
+                    sync.status.error || "仓库存在未完成的合并或冲突",
+                  )}
+                  。已保存的记录仍在本地，人工解决后重新同步即可恢复。
+                </Notice>
+              )}
+              {sync.status?.connected &&
+                sync.status.error &&
+                !sync.status.blocked && (
+                  <Notice
+                    tone="warn"
+                    action={
+                      <button
+                        className="ghost small"
+                        onClick={() => setBackupOpen({ auto: true })}
+                      >
+                        打开备份中心
+                      </button>
+                    }
+                  >
+                    备份未完成：{trimReason(sync.status.error)}
+                    。已保存的记录仍在本地，无需重复录入。
+                  </Notice>
+                )}
+              {!!ledger?.errors.length && (
+                <Notice tone="error">
+                  {ledger.errors.map((item, index) => (
+                    <span className="diag" key={index}>
+                      {item.file}:{item.line} · {item.message}
+                    </span>
+                  ))}
+                </Notice>
+              )}
+              {hasPending && journal && (
+                <Notice
+                  action={
+                    <button
+                      className="ghost small"
+                      onClick={() => setEditor({ operation: "create" })}
+                    >
+                      恢复原请求
+                    </button>
+                  }
+                >
+                  有一笔待确认的保存请求，重试不会重复入账。
+                </Notice>
+              )}
+              <section className="summary" aria-label="当日收支">
+                <Stat
+                  label="当日消费"
+                  lines={byCurrency(visible?.expenses)}
+                  note="不含转账与还款 · 分币种统计"
+                />
+                <Stat
+                  label="当日收入"
+                  lines={byCurrency(visible?.income)}
+                  note="涵盖工资与专项收益"
+                />
+                <Stat
+                  label="当日净额"
+                  lines={netTotals(visible?.expenses, visible?.income)}
+                  note="收入 − 支出，逐币种计算"
+                  signed
+                />
+                <Stat
+                  label="当日记录"
+                  lines={[]}
+                  value={visible ? `${visible.transactions.length} 笔` : "—"}
+                  note={`${dayFull(day)} · 来源含全部包含文件`}
+                />
+              </section>
+              <div className="workspace">
+                <JournalPanel
+                  journal={visible}
+                  filters={draftFilters}
+                  onFilter={setDraftFilters}
+                  searchRef={search}
+                  canEdit={canEditRow}
+                  onEdit={(row) => setEditor({ row, operation: "edit" })}
+                  onDelete={(row) => setEditor({ row, operation: "delete" })}
+                />
+                <aside className="rail">
+                  <SyncPanel
+                    onOpen={(auto) => setBackupOpen({ auto: !!auto })}
+                  />
+                  <section className="panel card">
+                    <div className="panel-head">
+                      <h2>待记便笺</h2>
+                      <span className="panel-meta">仅本页会话</span>
+                    </div>
+                    <p className="muted">
+                      临时记下消费或待核对内容，不计入收支。
+                    </p>
+                    <textarea
+                      aria-label="待记便笺"
+                      placeholder="先记下商户、金额或待核对的内容…"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                    />
+                    {draft && (
+                      <div className="draft">
+                        <span className="badge">草稿 · 不计入收支</span>
+                        <p>{draft}</p>
+                        <button
+                          className="ghost small"
+                          onClick={() => setDraft("")}
+                        >
+                          清除便笺
+                        </button>
+                      </div>
+                    )}
+                  </section>
+                  <section className="panel card">
+                    <div className="panel-head">
+                      <h2>账本</h2>
+                      <button
+                        className="ghost small"
+                        title="文件布局与业务记录模板"
+                        onClick={() => setLayoutOpen(true)}
+                      >
+                        布局与模板
+                      </button>
+                      <span className="panel-meta">
+                        {ledger ? `Beancount ${ledger.version}` : "未连接"}
+                      </span>
+                    </div>
+                    {ledger ? (
+                      <>
+                        <dl className="facts">
+                          <div>
+                            <dt>入口</dt>
+                            <dd>{ledger.entry}</dd>
+                          </div>
+                          <div>
+                            <dt>文件</dt>
+                            <dd>
+                              {ledger.files.length} 个 · {ledger.entry_count}{" "}
+                              条指令
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>版本</dt>
+                            <dd>
+                              {ledger.git.branch || "无 Git 仓库"} ·{" "}
+                              {ledger.git.commit?.slice(0, 7) || "无提交"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>本地 Git</dt>
+                            <dd>{ledger.git.sync}</dd>
+                          </div>
+                        </dl>
+                        {!!ledger.git.changes?.length && (
+                          <pre className="changes">
+                            {ledger.git.changes.join("\n")}
+                          </pre>
+                        )}
+                        <details className="tree">
+                          <summary>包含关系</summary>
+                          <ul>
+                            <IncludeTree
+                              name={ledger.entry}
+                              graph={ledger.include_graph}
+                            />
+                          </ul>
+                        </details>
+                        <p className="muted small">
+                          未纳入文件：{ledger.unreferenced.join("、") || "无"}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="muted">正在读取账本信息…</p>
+                    )}
+                  </section>
+                  <section className="panel card">
+                    <div className="panel-head">
+                      <h2>快捷键</h2>
+                      <span className="panel-meta">键盘优先</span>
+                    </div>
+                    <ul className="shortcuts">
+                      <li>
+                        <kbd>n</kbd> 记一笔
+                      </li>
+                      <li>
+                        <kbd>b</kbd> 补记工作台
+                      </li>
+                      <li>
+                        <kbd>s</kbd> 备份中心
+                      </li>
+                      <li>
+                        <kbd>/</kbd> 聚焦搜索
+                      </li>
+                      <li>
+                        <kbd>r</kbd> 刷新账本
+                      </li>
+                      <li>
+                        <kbd>esc</kbd> 关闭对话框
+                      </li>
+                    </ul>
+                  </section>
+                </aside>
+              </div>
+            </>
+          )}
+        </div>
       </div>
       <footer className="page-footer">
         日用账本 / 本地记账，日常有据。<span>Asia/Shanghai</span>

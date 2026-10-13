@@ -1,0 +1,288 @@
+/* 收支观察室：延续夜间账房，以细刻度和零轴呈现正负金额。 */
+.app-body {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 22px;
+}
+.app-content {
+  min-width: 0;
+}
+.page-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding-top: 28px;
+}
+.page-nav button {
+  text-align: left;
+  font-size: 13px;
+  padding: 12px;
+}
+.page-nav button[aria-current="page"] {
+  color: var(--amber);
+  background: #ffb45412;
+  border-color: var(--amber-soft);
+}
+.statistics {
+  padding-top: 28px;
+}
+.stats-heading,
+.stats-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+}
+.stats-heading {
+  margin-bottom: 24px;
+}
+.stats-heading h1 {
+  font-family: var(--serif);
+  font-size: 32px;
+  letter-spacing: 0.1em;
+  margin: 8px 0;
+}
+.stats-heading p {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+.stats-eyebrow {
+  color: var(--amber);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+.stats-filters {
+  padding: 20px;
+}
+.stats-filter-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 14px;
+  margin-top: 18px;
+  align-items: end;
+}
+.stats-filter-fields label,
+.stats-field-label {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.stats-filter-fields input,
+.stats-filter-fields select,
+.stats-field-label {
+  margin-top: 7px;
+}
+.stats-field-label {
+  margin-bottom: 7px;
+}
+.stats-filter-fields input,
+.stats-filter-fields select {
+  min-width: 0;
+}
+.stats-range-caption {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  margin: 24px 0 12px;
+}
+.stats-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.stats-summary .stat {
+  border-top: 2px solid currentColor;
+}
+.stats-summary .stat-value {
+  font-size: clamp(18px, 2.2vw, 30px);
+  overflow-wrap: anywhere;
+}
+.stats-summary .stat-value small {
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 8px;
+}
+.statistics .income {
+  color: var(--income);
+}
+.statistics .expenses {
+  color: var(--expense);
+}
+.statistics .net {
+  color: var(--amber);
+}
+.stats-trend,
+.stats-details {
+  padding: 24px;
+  margin-top: 20px;
+}
+.stats-panel-head h2 {
+  font-family: var(--serif);
+  margin: 7px 0 0;
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+.stats-panel-head p {
+  font-size: 12px;
+}
+.stats-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 22px 0 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.stats-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: currentColor;
+  margin-right: 6px;
+}
+.stats-chart-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+  scrollbar-color: var(--line) transparent;
+}
+.stats-chart-scroll svg {
+  display: block;
+  min-width: 100%;
+}
+.stats-grid {
+  stroke: var(--line-soft);
+  stroke-dasharray: 3 5;
+}
+.stats-zero {
+  stroke: var(--ink-2);
+  stroke-opacity: 0.6;
+}
+.stats-axis {
+  fill: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.stats-bar.income {
+  fill: var(--income);
+}
+.stats-bar.expenses {
+  fill: var(--expense);
+}
+.stats-bar.net {
+  fill: var(--amber);
+}
+.stats-period {
+  cursor: pointer;
+  outline: none;
+}
+.stats-period:hover .stats-hit,
+.stats-period:focus .stats-hit {
+  fill: #ffb45410;
+  stroke: var(--amber-soft);
+  stroke-width: 1px;
+}
+.stats-readout {
+  min-height: 34px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--ink-2);
+  border-top: 1px solid var(--line-soft);
+  padding-top: 12px;
+  margin-bottom: 0;
+}
+.stats-transaction {
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+.stats-transaction:first-of-type {
+  margin-top: 18px;
+}
+.stats-transaction-title {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.stats-transaction time {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.stats-transaction ul {
+  list-style: none;
+  padding: 0;
+  font-size: 12px;
+}
+.stats-transaction li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.stats-transaction li strong {
+  font-family: var(--mono);
+  flex-shrink: 0;
+  font-weight: 500;
+}
+.stats-transaction pre {
+  margin-top: 10px;
+}
+.stats-footnote {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.9;
+  margin-top: 22px;
+}
+@media (max-width: 1100px) {
+  .app-body {
+    grid-template-columns: 108px minmax(0, 1fr);
+    gap: 16px;
+  }
+  .stats-filter-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .app-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .page-nav {
+    flex-direction: row;
+    padding-top: 16px;
+  }
+  .stats-heading h1 {
+    font-size: 27px;
+  }
+  .stats-summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .stats-summary .stat-value {
+    font-size: 28px;
+  }
+  .stats-heading,
+  .stats-panel-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .stats-filters,
+  .stats-trend,
+  .stats-details {
+    padding: 16px;
+  }
+  .stats-transaction li {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+}
