@@ -1,4 +1,111 @@
 /* 收支观察室：延续夜间账房，以细刻度和零轴呈现正负金额。 */
+.stats-rankings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
+.stats-ranking {
+  padding: 24px;
+  min-width: 0;
+}
+.stats-ranking h2 {
+  color: var(--ink);
+}
+.stats-rank-count,
+.stats-ranking-hint {
+  color: var(--muted);
+  font-size: 11px;
+}
+.stats-ranking-hint {
+  margin: 18px 0;
+}
+.stats-ranking ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.stats-rank-item {
+  display: block;
+  width: 100%;
+  padding: 12px 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  border-bottom: 1px solid var(--line-soft);
+}
+.stats-rank-label {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 12px;
+}
+.stats-rank-label small {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.stats-rank-label > span {
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+}
+.stats-rank-label strong {
+  grid-column: 2;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.stats-rank-track {
+  position: relative;
+  display: block;
+  height: 12px;
+  margin: 10px 0 0 28px;
+  background: #ffffff04;
+}
+.stats-rank-track::after {
+  content: "";
+  position: absolute;
+  height: 16px;
+  top: -2px;
+  left: 50%;
+  border-left: 1px solid var(--muted);
+}
+.stats-rank-track i {
+  position: absolute;
+  height: 8px;
+  top: 2px;
+  background: currentColor;
+  border-radius: 2px;
+  opacity: 0.85;
+}
+.stats-rank-total {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  font-size: 12px;
+  padding-top: 18px;
+}
+.stats-rank-total span {
+  color: var(--muted);
+}
+.stats-rank-total strong {
+  font-family: var(--mono);
+  font-weight: 500;
+}
+.stats-details h2:focus {
+  outline: none;
+  color: var(--amber);
+}
+@media (max-width: 760px) {
+  .stats-rankings {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .stats-ranking {
+    padding: 16px;
+  }
+}
 .app-body {
   display: grid;
   grid-template-columns: 132px minmax(0, 1fr);

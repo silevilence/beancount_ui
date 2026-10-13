@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { money } from "./format";
 import { Empty, Notice, Segmented } from "./ui";
 import { useToday } from "./useToday";
+import StatisticsRanking from "./StatisticsRanking";
 import {
   presetRange,
   useReportResource,
@@ -212,12 +213,18 @@ function Details({
     `/statistics/details?${params}`,
     report.revision,
   );
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
   return (
     <section className="panel stats-details" aria-label="统计流水">
       <div className="stats-panel-head">
         <div>
           <span className="stats-eyebrow">核对每一笔</span>
-          <h2>{selected.account || "时段流水"}</h2>
+          <h2 ref={heading} tabIndex={-1}>
+            {selected.account || "时段流水"}
+          </h2>
           <p className="muted">
             {periodLabel(selected)} · {report.currency}
           </p>
@@ -470,6 +477,12 @@ export default function Statistics({ revision = "" }: { revision?: string }) {
             <Empty>该区间没有所选币种的收支记录，所有时段按零展示。</Empty>
           )}
           <Trend report={report} onSelect={select} />
+          <StatisticsRanking
+            report={report}
+            onSelect={(account) =>
+              select({ start: report.start, end: report.end, account })
+            }
+          />
           {selected && (
             <Details
               key={`${key}:${selected.start}:${selected.end}:${selected.account || ""}`}

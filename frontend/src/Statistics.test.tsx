@@ -12,6 +12,10 @@ import { presetRange, type Report, type ReportDetails } from "./statisticsData";
 
 export function report(over: Partial<Report> = {}): Report {
   return {
+    categories: {
+      expenses: [{ account: "Expenses:Food", amount: "-20" }],
+      income: [{ account: "Income:Salary", amount: "1000.123456789" }],
+    },
     start: "2026-10-01",
     end: "2026-10-31",
     grain: "day",
@@ -84,6 +88,44 @@ const fail = (detail: string) => ({
   ok: false,
   status: 409,
   json: async () => ({ detail }),
+});
+
+it("分类排行展示正负净额、空态与分类精确流水查询", async () => {
+  let empty = false;
+  const fetcher = routing((url) =>
+    url.pathname.endsWith("details")
+      ? ok(details)
+      : ok(
+          report({
+            categories: empty
+              ? { income: [], expenses: [] }
+              : {
+                  expenses: [
+                    { account: "Expenses:Food:Lunch", amount: "12" },
+                    { account: "Expenses:Food", amount: "-20" },
+                  ],
+                  income: [
+                    { account: "Income:Salary", amount: "1000.123456789" },
+                  ],
+                },
+          }),
+        ),
+  );
+  render(<Statistics />);
+  const ranking = await screen.findByRole("region", { name: "支出分类" });
+  expect(ranking).toHaveTextContent("-20.00 CNY");
+  fireEvent.click(
+    within(ranking).getByRole("button", { name: /Expenses:Food -20.00 CNY/ }),
+  );
+  await screen.findByText("测试商户");
+  expect(fetcher.mock.calls.at(-1)?.[0]).toContain("account=Expenses%3AFood");
+  expect(screen.getByRole("heading", { name: "Expenses:Food" })).toHaveFocus();
+  fireEvent.click(screen.getByRole("button", { name: "返回图表" }));
+  expect(screen.getByRole("region", { name: "支出分类" })).toBeInTheDocument();
+  empty = true;
+  fireEvent.click(screen.getByRole("button", { name: "刷新统计" }));
+  await screen.findByText("该区间暂无支出分类。");
+  expect(screen.getByText("该区间暂无收入来源。")).toBeInTheDocument();
 });
 function routing(handler?: (url: URL) => unknown) {
   const fetcher = vi.fn(async (input: string) => {

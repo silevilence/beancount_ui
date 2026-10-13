@@ -22,6 +22,10 @@ export interface ReportStatus {
   errors: Diagnostic[];
 }
 export interface Report extends ReportStatus {
+  categories: Record<
+    "income" | "expenses",
+    { account: string; amount: string }[]
+  >;
   start: string;
   end: string;
   grain: Grain;

@@ -88,6 +88,7 @@ def statistics(ledger: Ledger, start: date, end: date, grain: Granularity, curre
         key: {"start": first, "end": last, "income": Decimal(0), "expenses": Decimal(0), "count": 0}
         for key, first, last in intervals
     }
+    categories = {"income": {}, "expenses": {}}
     for entry in entries:
         if not start <= entry.date <= end:
             continue
@@ -98,6 +99,9 @@ def statistics(ledger: Ledger, start: date, end: date, grain: Granularity, curre
             if kind and posting.units.currency == currency:
                 amount = posting.units.number * (-1 if kind == "income" else 1)
                 bucket[kind] += amount
+                categories[kind][posting.account] = (
+                    categories[kind].get(posting.account, Decimal(0)) + amount
+                )
                 matched = True
         bucket["count"] += int(matched)
     values = list(buckets.values())
@@ -113,6 +117,13 @@ def statistics(ledger: Ledger, start: date, end: date, grain: Granularity, curre
             sum((b["expenses"] for b in values), Decimal(0)),
         ),
         "count": sum(b["count"] for b in values),
+        "categories": {
+            kind: [
+                {"account": account, "amount": format(amount, "f")}
+                for account, amount in sorted(accounts.items(), key=lambda row: (-row[1], row[0]))
+            ]
+            for kind, accounts in categories.items()
+        },
         "buckets": [{**b, **totals(b["income"], b["expenses"])} for b in values],
     }
 

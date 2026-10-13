@@ -202,3 +202,60 @@ def test_empty_ledger_and_missing_operating_currency(report_ledger):
     path.write_text("", encoding="utf-8")
     report = statistics(report_ledger, date(2026, 1, 1), date(2026, 1, 1), "day")
     assert report["available"] and report["currency"] == "" and report["currencies"] == []
+
+
+def test_category_totals_order_and_exact_account_details(report_ledger):
+    report = statistics(report_ledger, date(2026, 1, 1), date(2026, 1, 31), "month")
+    assert report["categories"]["expenses"] == [
+        {"account": "Expenses:Food:Lunch", "amount": "8"},
+        {"account": "Expenses:Fee", "amount": "2"},
+        {"account": "Expenses:Discount", "amount": "-3"},
+        {"account": "Expenses:Food", "amount": "-5"},
+    ]
+    for kind, categories in report["categories"].items():
+        assert sum(Decimal(row["amount"]) for row in categories) == Decimal(report["totals"][kind])
+        for category in categories:
+            details = statistics_details(
+                report_ledger,
+                date(2026, 1, 1),
+                date(2026, 1, 31),
+                "CNY",
+                report["view_revision"],
+                category["account"],
+            )["transactions"]
+            assert all(
+                p["account"] == category["account"] for row in details for p in row["contributions"]
+            )
+            assert sum(Decimal(row[kind]) for row in details) == Decimal(category["amount"])
+    foreign = statistics(report_ledger, date(2026, 1, 1), date(2026, 1, 31), "day", "JPY")
+    assert foreign["categories"] == {
+        "income": [],
+        "expenses": [{"account": "Expenses:Food", "amount": "100"}],
+    }
+    empty = statistics(report_ledger, date(2026, 3, 1), date(2026, 3, 31), "day")
+    assert empty["categories"] == {"income": [], "expenses": []}
+
+
+def test_category_api_and_zero_net_category_kept(report_ledger):
+    path = report_ledger.settings.ledger_dir / "reports.bean"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("""
+2026-01-10 * "手续费退还"
+  Expenses:Fee -2 CNY
+  Assets:Cash 2 CNY
+""")
+    client = TestClient(create_app(report_ledger.settings))
+    query = {"start": "2026-01-01", "end": "2026-01-31"}
+    report = client.get("/api/statistics", params=query).json()
+    assert {"account": "Expenses:Fee", "amount": "0"} in report["categories"]["expenses"]
+    detail_query = {
+        **query,
+        "currency": "CNY",
+        "revision": report["view_revision"],
+        "account": "Expenses:Food",
+    }
+    details = client.get("/api/statistics/details", params=detail_query).json()
+    assert len(details["transactions"]) == 2
+    assert sum(Decimal(r["expenses"]) for r in details["transactions"]) == -5
+    detail_query["start"] = "2027-01-01"
+    assert client.get("/api/statistics/details", params=detail_query).status_code == 422
