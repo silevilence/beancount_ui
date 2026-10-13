@@ -57,6 +57,9 @@ export default function StatisticsRanking({
                           style={{
                             left: `${value < 0 ? 50 - width : 50}%`,
                             width: `${width}%`,
+                            // 负值从零轴向左生长，正值向右。
+                            transformOrigin:
+                              value < 0 ? "right center" : "left center",
                           }}
                         />
                       </span>

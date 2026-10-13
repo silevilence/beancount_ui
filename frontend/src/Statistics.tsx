@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { money } from "./format";
 import { Empty, Notice, Segmented } from "./ui";
 import { useToday } from "./useToday";
@@ -30,6 +30,60 @@ function periodLabel(bucket: { start: string; end: string }) {
     : `${bucket.start} 至 ${bucket.end}`;
 }
 
+const kindIcons: Record<keyof Totals, ReactNode> = {
+  income: <path d="M7 2.2v6.6M4.2 6l2.8 2.8L9.8 6M2.8 11.8h8.4" />,
+  expenses: <path d="M7 11.8V5.2M4.2 8L7 5.2 9.8 8M2.8 2.2h8.4" />,
+  net: (
+    <path d="M2.5 4.6h8m0 0-1.8-1.8m1.8 1.8-1.8 1.8M11.5 9.4h-8m0 0 1.8-1.8m-1.8 1.8 1.8 1.8" />
+  ),
+};
+
+function KindIcon({ kind }: { kind: keyof Totals }) {
+  return (
+    <span className="stat-icon" aria-hidden="true">
+      <svg
+        viewBox="0 0 14 14"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {kindIcons[kind]}
+      </svg>
+    </span>
+  );
+}
+
+function SkeletonLine({ width, chart }: { width: string; chart?: boolean }) {
+  return (
+    <span className={`skel-line${chart ? " chart" : ""}`} style={{ width }} />
+  );
+}
+
+/** 首次加载骨架：与真实汇总卡、趋势图同构，避免数据到达时跳版。 */
+function ReportSkeleton() {
+  return (
+    <div role="status" aria-label="正在汇总账本收支">
+      <div className="stats-summary" aria-hidden="true">
+        {(["income", "expenses", "net"] as const).map((name) => (
+          <div className={`stat skel-card ${name}`} key={name}>
+            <SkeletonLine width="42%" />
+            <SkeletonLine width="64%" />
+            <SkeletonLine width="50%" />
+          </div>
+        ))}
+      </div>
+      <section className="panel stats-trend" aria-hidden="true">
+        <div className="stats-panel-head">
+          <SkeletonLine width="140px" />
+        </div>
+        <SkeletonLine width="100%" chart />
+      </section>
+    </div>
+  );
+}
+
 function Trend({
   report,
   onSelect,
@@ -50,6 +104,8 @@ function Trend({
   const y = (value: number) => 24 + ((max - value) / (max - min)) * 190;
   const width = Math.max(720, report.buckets.length * 66 + 64);
   const step = (width - 64) / report.buckets.length;
+  // Wider slots (few periods) get proportionally wider bars; dense views stay readable.
+  const barWidth = Math.min(16, Math.max(7, Math.round(step * 0.4)));
   const current =
     hovered && report.buckets.find((b) => b.start === hovered.start);
   return (
@@ -89,30 +145,38 @@ function Trend({
           viewBox={`0 0 ${width} 270`}
           aria-label="收支金额图"
         >
-          {[max, 0, ...(min < 0 ? [min] : [])].map((value, index) => (
-            <g key={index}>
-              <line
-                x1="54"
-                x2={width}
-                y1={y(value)}
-                y2={y(value)}
-                className={value === 0 ? "stats-zero" : "stats-grid"}
-              />
-              {(value === 0 || Math.abs(y(value) - y(0)) >= 18) && (
-                <text
-                  x="48"
-                  y={y(value) - 5}
-                  textAnchor="end"
-                  className="stats-axis"
-                >
-                  {value.toLocaleString("zh-CN", {
-                    maximumFractionDigits: 1,
-                    notation: "compact",
-                  })}
-                </text>
-              )}
-            </g>
-          ))}
+          {(() => {
+            // 在最大值与零轴之间补四分位刻度，让稀疏区间也有可读的账本网格。
+            const ticks = [max, 0, ...(min < 0 ? [min] : [])];
+            for (let quarter = 1; quarter <= 3; quarter += 1) {
+              if (max > 0) ticks.push((max * quarter) / 4);
+              if (min < 0) ticks.push((min * quarter) / 4);
+            }
+            return ticks.map((value, index) => (
+              <g key={index}>
+                <line
+                  x1="54"
+                  x2={width}
+                  y1={y(value)}
+                  y2={y(value)}
+                  className={value === 0 ? "stats-zero" : "stats-grid"}
+                />
+                {(value === 0 || Math.abs(y(value) - y(0)) >= 18) && (
+                  <text
+                    x="48"
+                    y={y(value) - 5}
+                    textAnchor="end"
+                    className="stats-axis"
+                  >
+                    {value.toLocaleString("zh-CN", {
+                      maximumFractionDigits: 0,
+                      notation: "compact",
+                    })}
+                  </text>
+                )}
+              </g>
+            ));
+          })()}
           {report.buckets.map((bucket, index) => {
             const x = 64 + index * step + step / 2;
             const title = `${periodLabel(bucket)}，${keys.map((key) => `${labels[key]} ${money(bucket[key], report.currency)}`).join("，")}`;
@@ -144,19 +208,27 @@ function Trend({
                 />
                 {keys.map((key, i) => {
                   const value = Number(bucket[key]);
-                  const barX = x + (keys.length === 2 ? i * 17 - 16 : -7);
+                  const barX =
+                    keys.length === 2
+                      ? x + (i === 0 ? -barWidth - 1 : 1)
+                      : x - barWidth / 2;
                   return (
                     <rect
                       key={key}
                       x={barX}
                       y={Math.min(y(0), y(value))}
-                      width="14"
+                      width={barWidth}
                       height={Math.max(
                         value === 0 ? 1 : 2,
                         Math.abs(y(value) - y(0)),
                       )}
                       rx="2"
                       className={`stats-bar ${key}`}
+                      style={{
+                        // Bars always grow away from the zero line.
+                        transformOrigin: value < 0 ? "top" : "bottom",
+                        animationDelay: `${Math.min(index * 4, 280)}ms`,
+                      }}
                     />
                   );
                 })}
@@ -254,7 +326,19 @@ function Details({
           {resource.data && "。当前明细为上一次有效视图。"}
         </Notice>
       )}
-      {!resource.data && !resource.error && <p role="status">正在读取流水…</p>}
+      {!resource.data && !resource.error && (
+        <div className="stats-skel" role="status" aria-label="正在读取流水">
+          <div aria-hidden="true">
+            <SkeletonLine width="38%" />
+          </div>
+          <div aria-hidden="true">
+            <SkeletonLine width="86%" />
+          </div>
+          <div aria-hidden="true">
+            <SkeletonLine width="64%" />
+          </div>
+        </div>
+      )}
       {resource.data?.stale && (
         <Notice tone="warn">账本校验失败，明细来自上一次有效视图。</Notice>
       )}
@@ -432,11 +516,7 @@ export default function Statistics({ revision = "" }: { revision?: string }) {
           {report && "。当前为上一次有效视图，无法确认最新状态。"}
         </Notice>
       )}
-      {!invalid && !report && !resource.error && (
-        <p className="empty" role="status">
-          正在汇总账本收支…
-        </p>
-      )}
+      {!invalid && !report && !resource.error && <ReportSkeleton />}
       {report?.stale && (
         <Notice tone="warn">
           {report.available
@@ -460,7 +540,10 @@ export default function Statistics({ revision = "" }: { revision?: string }) {
           <section className="stats-summary" aria-label="区间收支">
             {(["income", "expenses", "net"] as const).map((name) => (
               <div className={`stat ${name}`} key={name}>
-                <span className="stat-label">区间{labels[name]}</span>
+                <span className="stat-head">
+                  <KindIcon kind={name} />
+                  <span className="stat-label">区间{labels[name]}</span>
+                </span>
                 <strong className="stat-value">
                   {money(report.totals[name])}
                   <small>{report.currency}</small>
