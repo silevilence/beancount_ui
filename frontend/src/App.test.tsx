@@ -619,6 +619,7 @@ it("原文可复制，剪贴板不可用时保持原提示", async () => {
 });
 
 it("从工作台完成一笔录入并刷新当日视图", async () => {
+  vi.stubGlobal("confirm", vi.fn(() => true));
   const requests: Record<string, unknown>[] = [];
   let journalCalls = 0;
   const fetcher = vi.fn(async (path: string, options?: RequestInit) => {
@@ -642,6 +643,7 @@ it("从工作台完成一笔录入并刷新当日视图", async () => {
     return ok({
       request_id: body.request_id,
       target: "txs/2026/09.bean",
+      items: [{ raw: '2026-09-30 * "消费"\n  Expenses:Food 12.30 CNY\n  Assets:Cash -12.30 CNY\n' }],
       diffs: { "txs/2026/09.bean": "+  Expenses:Food 12.30 CNY" },
       status: "committed",
       revision: "b".repeat(64),

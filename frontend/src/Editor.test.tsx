@@ -6,9 +6,11 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import Editor, { PENDING_KEY } from "./Editor";
 import type { Journal, Transaction } from "./api";
+
+beforeEach(() => vi.stubGlobal("confirm", vi.fn(() => true)));
 
 type Reply = { ok: boolean; status?: number; json: () => Promise<unknown> };
 
@@ -83,6 +85,7 @@ function setup(
       return ok({
         request_id: body.request_id,
         target: "txs/2026/09.bean",
+        items: [{ raw: '2026-09-30 * "超市"\n  Expenses:Food 12.30 CNY\n  Assets:Cash -12.30 CNY\n' }],
         diffs:
           mode === "empty"
             ? {}

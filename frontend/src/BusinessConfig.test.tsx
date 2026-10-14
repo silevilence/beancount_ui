@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import Editor from "./Editor";
 import BatchEditor, { draftKey } from "./BatchEditor";
 import RecordFields from "./RecordFields";
@@ -25,6 +25,8 @@ import {
   type RecordTemplate,
 } from "./businessConfig";
 import type { Journal } from "./api";
+
+beforeEach(() => vi.stubGlobal("confirm", vi.fn(() => true)));
 
 const journal: Journal = {
   date: "2026-09-30",
@@ -88,7 +90,7 @@ function mockApi(
         revision: journal.revision,
         target: "a.bean",
         diffs: { "a.bean": "+记录" },
-        items: [{ item: 1, target: "a.bean", raw: "预览原文" }],
+        items: [{ item: 1, target: "a.bean", raw: '2026-09-30 * "预览原文"\n  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n' }],
       });
     return ok({ status: "done", revision: journal.revision });
   });
@@ -126,7 +128,7 @@ it.each(["salary", "yuebao"])(
     });
     fireEvent.click(screen.getByRole("button", { name: "加入草稿" }));
     fireEvent.click(screen.getByRole("button", { name: /整批预览/ }));
-    await screen.findByText("预览原文");
+    await screen.findByText(/预览原文/);
     const request = fetcher.mock.calls.find(
       ([url]) => url === "/api/batch/preview",
     )!;
@@ -378,7 +380,7 @@ it("批量模板草稿可恢复、改回表单，并将同一字段约束提交�
   expect(screen.getByLabelText("午餐金额")).toHaveValue("15");
   fireEvent.click(screen.getByRole("button", { name: "加入草稿" }));
   fireEvent.click(screen.getByRole("button", { name: /整批预览/ }));
-  await screen.findByText("预览原文");
+  await screen.findByText(/预览原文/);
   const sent = JSON.parse(
     String(
       fetcher.mock.calls.find(([url]) => url === "/api/batch/preview")?.[1]

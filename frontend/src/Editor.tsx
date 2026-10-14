@@ -26,6 +26,7 @@ import Diff from "./Diff";
 import { expenseGroups, fundingGroups, money } from "./format";
 import { Notice } from "./ui";
 import { requestId } from "./requestId";
+import { confirmEntryDates } from "./confirmEntryDates";
 
 export const PENDING_KEY = "beancount-ui.pending-save.v1";
 
@@ -42,6 +43,7 @@ export interface EntryFields {
 }
 
 interface Preview {
+  items: { raw: string }[];
   warnings?: string[];
   request_id: string;
   target: string;
@@ -280,6 +282,12 @@ export default function Editor({
     setBusy(true);
     setError("");
     try {
+      if (
+        op === "create" &&
+        !pending.current.uncertain &&
+        !confirmEntryDates(preview.items)
+      )
+        return;
       persist({ ...pending.current, uncertain: true });
       setUncertain(true);
       const saved = await api<Preview>("/commit", {
@@ -337,7 +345,12 @@ export default function Editor({
         persist({ ...pending.current!, uncertain: false });
         setUncertain(false);
         setError(`${e.message}。请关闭编辑、取消旧预览后重新打开记录。`);
-      } else setError(`${String(e)} 请使用原请求重试保存；不要重新录入。`);
+      } else
+        setError(
+          pending.current?.uncertain
+            ? `${String(e)} 请使用原请求重试保存；不要重新录入。`
+            : String(e),
+        );
     } finally {
       busyRef.current = false;
       setBusy(false);

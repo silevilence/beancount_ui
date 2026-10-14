@@ -57,6 +57,7 @@ const row: Transaction = {
 };
 
 function setup() {
+  vi.stubGlobal("confirm", vi.fn(() => true));
   const requests: { url: string; body: Record<string, unknown> }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -76,7 +77,7 @@ function setup() {
           request_id: body.request_id,
           revision: journal.revision,
           diffs: { "test.bean": "+new" },
-          items: [],
+          items: [{ item: 1, target: "test.bean", raw: row.raw }],
           status: "preview",
         };
       if (url.includes("commit"))

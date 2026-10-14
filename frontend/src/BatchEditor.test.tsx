@@ -6,10 +6,12 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import BatchEditor, { draftKey } from "./BatchEditor";
 import type { Journal } from "./api";
 import { shanghaiToday } from "./format";
+
+beforeEach(() => vi.stubGlobal("confirm", vi.fn(() => true)));
 
 const journal: Journal = {
   date: "2026-09-29",
@@ -36,7 +38,7 @@ const bad = (detail: string) => ({
 const preview = (requestId: string) => ({
   request_id: requestId,
   revision: journal.revision,
-  items: [{ item: 1, target: "txs/2026/09.bean", raw: "预览原文" }],
+  items: [{ item: 1, target: "txs/2026/09.bean", raw: '2026-09-29 * "预览原文"\n  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n' }],
   diffs: { "txs/2026/09.bean": "+new" },
   warnings: ["第 1 笔含零金额"],
 });

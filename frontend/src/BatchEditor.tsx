@@ -37,6 +37,7 @@ import {
 import { Chip, Empty, Notice, Segmented, Toolbar } from "./ui";
 import { requestId } from "./requestId";
 import { useToday } from "./useToday";
+import { confirmEntryDates } from "./confirmEntryDates";
 
 export interface DraftItem {
   business: string;
@@ -412,8 +413,15 @@ export default function BatchEditor({
     setBusy(true);
     setError("");
     const pending = { ...draft.pending, uncertain: true };
+    let attempted = false;
     try {
+      if (
+        !draft.pending.uncertain &&
+        !confirmEntryDates(draft.pending.preview.items)
+      )
+        return;
       persist({ ...draft, pending });
+      attempted = true;
       await api("/commit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -429,7 +437,7 @@ export default function BatchEditor({
         e.message.includes("预览后")
       )
         persist({ ...draft, pending: { ...pending, uncertain: false } });
-      setError(`${String(e)} 请重试原请求核对结果。`);
+      setError(attempted ? `${String(e)} 请重试原请求核对结果。` : String(e));
     } finally {
       running.current = false;
       setBusy(false);
