@@ -85,7 +85,9 @@ function setup(
       return ok({
         request_id: body.request_id,
         target: "txs/2026/09.bean",
-        items: [{ raw: '2026-09-30 * "超市"\n  Expenses:Food 12.30 CNY\n  Assets:Cash -12.30 CNY\n' }],
+        items: [
+          { raw: '2026-09-30 * "超市"\n  Expenses:Food 12.30 CNY\n  Assets:Cash -12.30 CNY\n' },
+        ],
         diffs:
           mode === "empty"
             ? {}

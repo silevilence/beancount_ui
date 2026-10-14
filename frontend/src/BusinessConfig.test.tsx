@@ -90,7 +90,11 @@ function mockApi(
         revision: journal.revision,
         target: "a.bean",
         diffs: { "a.bean": "+记录" },
-        items: [{ item: 1, target: "a.bean", raw: '2026-09-30 * "预览原文"\n  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n' }],
+        items: [{
+          item: 1,
+          target: "a.bean",
+          raw: '2026-09-30 * "预览原文"\n  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n',
+        }],
       });
     return ok({ status: "done", revision: journal.revision });
   });

@@ -178,15 +178,20 @@ it("单笔的未来日期原文与表单今日不同时，以实际预览日期�
   expect(commits).toEqual([]);
 });
 
-it.each(["single", "batch"] as const)("%s 缺失日期的预览阻止保存且不标记为结果未知", async (mode) => {
-  const { save, key, commits } = setup(mode, []);
-  const before = localStorage.getItem(key);
-  save();
-  expect(await screen.findByRole("alert")).toHaveTextContent("预览缺少条目日期");
-  expect(screen.getByRole("alert")).not.toHaveTextContent("重试原请求");
-  expect(localStorage.getItem(key)).toBe(before);
-  expect(commits).toEqual([]);
-});
+it.each(["single", "batch"] as const)(
+  "%s 缺失日期的预览阻止保存且不标记为结果未知",
+  async (mode) => {
+    const { save, key, commits } = setup(mode, []);
+    const before = localStorage.getItem(key);
+    save();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "预览缺少条目日期",
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent("重试原请求");
+    expect(localStorage.getItem(key)).toBe(before);
+    expect(commits).toEqual([]);
+  },
+);
 
 it("整批混合日期统一弹一次，按各日期统计笔数", () => {
   const { save, commits } = setup("batch", [

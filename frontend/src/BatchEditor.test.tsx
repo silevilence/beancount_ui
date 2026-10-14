@@ -38,7 +38,11 @@ const bad = (detail: string) => ({
 const preview = (requestId: string) => ({
   request_id: requestId,
   revision: journal.revision,
-  items: [{ item: 1, target: "txs/2026/09.bean", raw: '2026-09-29 * "预览原文"\n  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n' }],
+  items: [{
+    item: 1,
+    target: "txs/2026/09.bean",
+    raw: '2026-09-29 * "预览原文"\n  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n',
+  }],
   diffs: { "txs/2026/09.bean": "+new" },
   warnings: ["第 1 笔含零金额"],
 });
