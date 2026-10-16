@@ -107,7 +107,7 @@ def start(data):
 
 
 def main():
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import expect, sync_playwright
 
     # No mounted ledger is present in the image itself, and it runs without root.
     assert docker("image", "inspect", "--format", "{{.Config.User}}", IMAGE) == "10001:10001"
@@ -188,11 +188,14 @@ def main():
                     start(data)
                     recover_request(client, request)
                     page.reload()
-                    page.locator('input[type="password"]').fill(TOKEN)
-                    page.get_by_role("button", name="登录", exact=True).click()
+                    # The same tab restores its authenticated session after a reload.
+                    page.get_by_text("个人访问已认证", exact=False).wait_for()
+                    expect(page.locator('input[type="password"]')).to_have_count(0)
                     page.get_by_role("button", name="补记工作台", exact=False).first.click()
                     page.get_by_text("draft retained", exact=False).first.wait_for()
-                    assert json.loads(page.evaluate("key => localStorage.getItem(key)", key))
+                    assert (
+                        json.loads(page.evaluate("key => localStorage.getItem(key)", key)) == draft
+                    )
                     page.screenshot(path=str(EVIDENCE / "draft-after-recreation.png"))
                     browser.close()
                 view = api(client, "/api/journal?day=2026-09-30")
@@ -206,6 +209,7 @@ def main():
                         {
                             "health": "healthy",
                             "auth": "passed",
+                            "session_restore": "passed",
                             "frontend": "passed",
                             "sync": "passed",
                             "recreation": "passed",
