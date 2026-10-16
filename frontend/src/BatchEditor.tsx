@@ -427,7 +427,23 @@ export default function BatchEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ request_id: pending.request_id }),
       });
-      persist({ ...draft, pending: undefined, items: [] });
+      persist({
+        ...draft,
+        pending: undefined,
+        items: [],
+        form: {
+          ...draft.form,
+          payee: "",
+          narration: "",
+          amount: "",
+          note: "",
+          splits: [],
+        },
+        advancedRaw: "",
+        postingLines: [blankPosting(), blankPosting()],
+        templateValues: {},
+        templateVersion: undefined,
+      });
       setMessage("整批已入账，等待备份；草稿已清空。可继续补记。");
       await onSaved();
     } catch (e) {

@@ -376,6 +376,80 @@ it("恢复未完成内容和待入账记录时保留原日期并明确提示", (
   expect(saved.form.amount).toBe(base.amount);
 });
 
+it.each([false, true])(
+  "整批入账清空录入内容，次日重新打开采用工作台日期（先断网：%s）",
+  async (offline) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-29T12:00:00+08:00"));
+    try {
+      const seed = {
+        form: {
+          ...base,
+          splits: [{ category: "Expenses:Food", amount: "1", note: "明细" }],
+        },
+        items: [{ business: "ordinary", entry: base }],
+        advancedRaw: '2026-09-29 * "原文"',
+        postingLines: [
+          {
+            account: "Assets:Cash",
+            amount: "1",
+            currency: "CNY",
+            note: "分录",
+          },
+        ],
+        templateValues: { payee: "店", amount: "1" },
+        incomeAccounts: { payment: "Assets:Cash", category: "Income:Salary" },
+      };
+      const failures = { offline };
+      const mounted = setup(seed, failures);
+      fireEvent.click(screen.getByText("整批预览并校验"));
+      await screen.findByText("第 1 笔含零金额");
+      fireEvent.click(screen.getByText("确认整批入账"));
+      if (offline) {
+        await screen.findByText(/offline/);
+        expect(
+          JSON.parse(localStorage.getItem(draftKey(journal))!),
+        ).toMatchObject(seed);
+        failures.offline = false;
+        fireEvent.click(screen.getByText("重试原批次保存"));
+      }
+      await screen.findByText(/整批已入账/);
+      const saved = JSON.parse(localStorage.getItem(draftKey(journal))!);
+      expect(saved.form).toEqual({
+        ...base,
+        payee: "",
+        narration: "",
+        amount: "",
+        note: "",
+        splits: [],
+      });
+      expect(saved.items).toEqual([]);
+      expect(saved.pending).toBeUndefined();
+      expect(saved.advancedRaw).toBe("");
+      expect(
+        saved.postingLines.some(
+          (line: { account: string; amount: string; note: string }) =>
+            line.account || line.amount || line.note,
+        ),
+      ).toBe(false);
+      expect(saved.templateValues).toEqual({});
+      expect(saved.incomeAccounts).toEqual(seed.incomeAccounts);
+      mounted.unmount();
+
+      vi.setSystemTime(new Date("2026-09-30T12:00:00+08:00"));
+      render(
+        <BatchEditor {...props} journal={{ ...journal, date: "2026-09-30" }} />,
+      );
+      expect(screen.getByLabelText("补记日期")).toHaveValue("2026-09-30");
+      expect(
+        screen.queryByRole("button", { name: "新记录改用今天" }),
+      ).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
 it("十笔草稿恢复、固定日期、整批请求重试保持身份", async () => {
   vi.stubGlobal("crypto", {
     getRandomValues: crypto.getRandomValues.bind(crypto),
