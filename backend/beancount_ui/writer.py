@@ -16,6 +16,7 @@ from beancount.parser import parser
 from filelock import FileLock
 
 from .editing import basic_edit, locate, replace_record
+from .fulfillment import committed, guard_edit, initialize, order_document
 from .layout import insert_new, matches_business_file
 from .layout_config import business_files, read_layout
 from .ledger import Ledger, LedgerError, digest, load_snapshot, read_files
@@ -120,6 +121,7 @@ class Writer:
             db.execute("""CREATE TABLE IF NOT EXISTS requests (
                 id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, revision TEXT NOT NULL,
                 changes TEXT NOT NULL, status TEXT NOT NULL, result TEXT NOT NULL)""")
+            initialize(db)
 
     @contextmanager
     def database(self):
@@ -155,6 +157,7 @@ class Writer:
             for name, change in changes.items():
                 self.write_part(name, decode(change["before"]), decode(change["after"]))
             with self.database() as db:
+                committed(db, json.loads(request["result"]))
                 db.execute("UPDATE requests SET status='done' WHERE id=?", (request["id"],))
             self.ledger.latest = None
 
@@ -173,18 +176,20 @@ class Writer:
         # Preserve receipts created before template fields were introduced.
         omit = {
             key
-            for key in ("values", "layout_version", "posting_entry")
+            for key in ("values", "layout_version", "posting_entry", "claim_order", "claim_items")
             if getattr(mutation, key, None) is None
         }
+
+        def excluded(item):
+            result = {k: True for k in omit if getattr(item, k, None) is None}
+            if item.order and not item.order.items:
+                result["order"] = {"items": True}
+            return result
+
         exclude = (
-            {
-                "items": {
-                    i: {k for k in omit if getattr(item, k) is None}
-                    for i, item in enumerate(mutation.items)
-                }
-            }
+            {"items": {i: excluded(item) for i, item in enumerate(mutation.items)}}
             if isinstance(mutation, BatchMutation)
-            else omit
+            else excluded(mutation)
         )
         fingerprint = hashlib.sha256(mutation.model_dump_json(exclude=exclude).encode()).hexdigest()
         request_id = str(mutation.request_id)
@@ -206,6 +211,7 @@ class Writer:
                 raise LedgerError("账本已变化，请重新加载并预览")
             files = dict(snapshot.files)
             targets = []
+            fulfillment = []
             warnings = []
             items = mutation.items if isinstance(mutation, BatchMutation) else [mutation]
             for index, item in enumerate(items, 1):
@@ -304,14 +310,36 @@ class Writer:
                                 if item.entry
                                 else item.raw
                             )
-                            parse_single(raw, "ordinary")
-                        guard_order_edit(snapshot, row, raw)
+                            if not getattr(item, "claim_order", None):
+                                parse_single(raw, "ordinary")
+                        claim = getattr(item, "claim_order", None)
+                        if claim:
+                            from .orders import orders
+
+                            source = next(
+                                (r for r in orders(snapshot) if r["id"] == row["id"]), None
+                            )
+                            if not source or source["identified"] or operation != "edit":
+                                raise LedgerError("只能明确认领未管理的历史消费")
+                            if source["mode"] != "historical" and source["mode"] != claim:
+                                raise LedgerError("历史账务与认领付款方式不一致")
+                            head, body = row["raw"].split("\n", 1)
+                            raw = (
+                                head
+                                + f"\n  order-id: {quote(source['key'])}"
+                                + f"\n  order-action: {quote(claim)}\n"
+                                + body
+                            )
+                        else:
+                            guard_order_edit(snapshot, row, raw)
+                        with self.database() as db:
+                            guard_edit(db, row, raw)
                         if raw:
                             edited = parse_single(raw, "ordinary")
                             metadata = {
                                 k: str(v) for k, v in edited.meta.items() if k.startswith("order-")
                             }
-                            if metadata != row["metadata"]:
+                            if not claim and metadata != row["metadata"]:
                                 raise LedgerError("不能修改订单关联元数据")
                         if matches_business_file(target, known_files["yuebao"]) and raw:
                             edited = parse_single(raw, "ordinary")
@@ -350,6 +378,16 @@ class Writer:
                         )
                         raise LedgerError(f"候选账本校验失败：\n{message}")
                     validate_order_totals(candidate)
+                    if (item.order and item.order.purchase) or getattr(item, "claim_order", None):
+                        from .orders import orders
+
+                        key = f"{request_id}-{index}" if item.order else source["key"]
+                        order_source = next(r for r in orders(candidate) if r["key"] == key)
+                        fulfillment.append(
+                            order_document(
+                                order_source, item.order.items if item.order else item.claim_items
+                            )
+                        )
                     targets.append({"item": index, "target": target, "raw": raw})
                 except LedgerError as exc:
                     if isinstance(mutation, BatchMutation):
@@ -383,6 +421,7 @@ class Writer:
                 "diffs": diffs,
                 "revision": candidate.revision,
                 "status": "preview",
+                "fulfillment": fulfillment,
             }
             with self.database() as db:
                 db.execute(
@@ -414,6 +453,29 @@ class Writer:
                 raise LedgerError("预览后布局已变化，请重新预览后保存（使用新的请求标识）")
             if digest(read_files(self.root)) != request["revision"]:
                 raise LedgerError("预览后账本已被修改，请重新加载并预览")
+            with self.database() as db:
+                managed = db.execute("SELECT payload FROM fulfillment_orders").fetchall()
+            if managed:
+                from .orders import orders
+
+                candidate_files = read_files(self.root)
+                candidate_files.update(
+                    {
+                        name: decode(change["after"])
+                        for name, change in json.loads(request["changes"]).items()
+                    }
+                )
+                candidates = {
+                    r["key"]: r
+                    for r in orders(
+                        load_snapshot(candidate_files, read_layout(self.ledger.settings)[0].entry)
+                    )
+                }
+                current = {r["key"]: r for r in orders(self.ledger.refresh())}
+                for row in managed:
+                    key = json.loads(row["payload"])["id"]
+                    if current.get(key, {}).get("raw") != candidates.get(key, {}).get("raw"):
+                        raise LedgerError("预览后订单已关联商品或收货，请在订单页显式处理")
             with self.database() as db:
                 db.execute("UPDATE requests SET status='applying' WHERE id=?", (request_id,))
             self.recover()

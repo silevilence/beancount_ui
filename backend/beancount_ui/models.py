@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .fulfillment_models import ItemInput
+
 
 class SplitInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -73,6 +75,7 @@ class OrderInput(BaseModel):
     account: str = Field(pattern=r"^(Assets|Liabilities):[^\s\";]+$")
     category: str = ""
     note: str = Field(default="", max_length=2000)
+    items: list[ItemInput] = Field(default_factory=list, max_length=100)
 
     @field_validator("amount", mode="before")
     @classmethod
@@ -93,6 +96,8 @@ class Mutation(BaseModel):
     order: OrderInput | None = None
     values: dict[str, str] | None = Field(default=None, max_length=100)
     layout_version: str | None = None
+    claim_order: Literal["paid", "deferred"] | None = None
+    claim_items: list[ItemInput] | None = None
 
 
 class CommitInput(BaseModel):

@@ -19,6 +19,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .access import Access
 from .config import Settings
 from .finance import FinanceInput, compose_finance
+from .fulfillment import Fulfillment
+from .fulfillment_models import ClaimInput, ReceiptInput
 from .git_network import ProxyInput
 from .github_auth import GithubAuthInput
 from .grocy import Grocy, GrocyInput
@@ -124,6 +126,28 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     @app.get("/api/grocy/products/{product_id}")
     def grocy_product(product_id: int):
         return get_grocy().product(product_id)
+
+    @app.get("/api/fulfillment/orders")
+    def fulfillment_orders():
+        return Fulfillment(get_writer()).list()
+
+    @app.post("/api/fulfillment/claim/preview")
+    def fulfillment_claim(request: ClaimInput):
+        return get_writer().preview(
+            Mutation(
+                request_id=request.request_id,
+                revision=request.revision,
+                operation="edit",
+                transaction_id=request.source_id,
+                raw="",
+                claim_order=request.mode,
+                claim_items=request.items,
+            )
+        )
+
+    @app.post("/api/fulfillment/receive")
+    def fulfillment_receive(request: ReceiptInput):
+        return Fulfillment(get_writer()).receive(request)
 
     @app.get("/api/layout")
     def layout_config():
