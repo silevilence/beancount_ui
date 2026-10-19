@@ -14,7 +14,7 @@ from .grocy import Grocy, GrocyError
 from .ledger import LedgerError
 
 
-def enqueue(db, document):
+def enqueue(db, document, status="pending"):
     identity = document["id"]
     existing = db.execute(
         "SELECT document FROM inventory_operations WHERE id=?", (identity,)
@@ -25,7 +25,7 @@ def enqueue(db, document):
         return identity
     db.execute(
         "INSERT INTO inventory_operations(id,receipt_id,document,status) VALUES (?,?,?,?)",
-        (identity, document.get("receipt_id", ""), json.dumps(document), "pending"),
+        (identity, document.get("receipt_id", ""), json.dumps(document), status),
     )
     return identity
 
@@ -111,6 +111,13 @@ class StockOperations:
                         (identity,),
                     )
                 try:
+                    if op.get("manual"):
+                        from .manual_stock import validate_operation
+
+                        try:
+                            validate_operation(self.grocy, op)
+                        except (ValueError, OSError) as exc:
+                            return self.record(identity, "failed", {"unsent": True}, str(exc), 300)
                     if op.get("item"):
                         # The immutable unit/currency snapshot must still describe this product.
                         try:
@@ -165,13 +172,7 @@ class StockOperations:
             return op
         try:
             if op["action"] != "add":
-                return self.record(
-                    identity,
-                    "unknown",
-                    evidence,
-                    "此操作没有可可靠查询的客户端编号，请人工核对远端日志",
-                    delay,
-                )
+                return self._reconcile_movement(op, evidence, delay)
             found = self.logs("note", op["payload"]["note"], instance)
             # Grocy propagates a stock note to subsequent consumes and transfers.
             matches = [
@@ -318,6 +319,62 @@ class StockOperations:
         except Timeout as exc:
             raise LedgerError("该库存操作正在处理，请稍后核对") from exc
         return self.send(identity)
+
+    def _reconcile_movement(self, op, evidence, delay):
+        response = evidence.get("response")
+        if not isinstance(response, list) or not response:
+            return self.record(
+                op["id"],
+                "unknown",
+                evidence,
+                "此操作未获得可靠的远端事务编号，请人工核对，不自动重发",
+                delay,
+            )
+        transactions = {str(r["transaction_id"]) for r in response}
+        if len(transactions) != 1:
+            return self.record(op["id"], "conflict", evidence, "响应对应多个事务，请核对", delay)
+        rows = self.grocy.request(
+            "stock/transactions/" + quote(next(iter(transactions)), safe=""),
+            instance_id=op["instance_id"],
+        )
+        evidence["transaction"] = rows
+        if {str(r["id"]) for r in rows} != {str(r["id"]) for r in response}:
+            return self.record(op["id"], "conflict", evidence, "事务与原响应日志不一致", delay)
+        expected = op["payload"]
+        totals = defaultdict(Decimal)
+        for row in rows:
+            if str(row["product_id"]) != str(op["product_id"]) or (
+                expected.get("stock_entry_id") and row["stock_id"] != expected["stock_entry_id"]
+            ):
+                return self.record(op["id"], "conflict", evidence, "产品或批次不匹配", delay)
+            totals[(row["transaction_type"], str(row["location_id"]))] += Decimal(
+                str(row["amount"])
+            )
+        amount = Decimal(expected["amount"])
+        if op["action"] == "transfer":
+            valid = totals == {
+                ("transfer_from", str(expected["location_id_from"])): -amount,
+                ("transfer_to", str(expected["location_id_to"])): amount,
+            }
+        else:
+            kind = "consume" if op["action"] == "consume" else "product-opened"
+            valid = all(k[0] == kind for k in totals) and sum(totals.values()) == (
+                -amount if kind == "consume" else amount
+            )
+        if not valid:
+            return self.record(op["id"], "conflict", evidence, "动作或数量不匹配", delay)
+        undone = [str(r.get("undone", 0)) in ("1", "True", "true") for r in rows]
+        if any(undone):
+            return self.record(
+                op["id"],
+                "undone" if all(undone) else "conflict",
+                evidence,
+                "远端已全部或部分撤销，不会自动重做",
+            )
+        evidence["entries"] = self.grocy.request(
+            f"stock/products/{op['product_id']}/entries", instance_id=op["instance_id"]
+        )
+        return self.record(op["id"], "success", evidence)
 
     def tick(self):
         for op in self.list():

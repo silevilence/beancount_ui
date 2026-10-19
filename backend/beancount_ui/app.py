@@ -29,6 +29,7 @@ from .grocy_master import EntityChange, MasterData
 from .income import income_days
 from .layout_config import LayoutInput, activate_layout, configuration, preview_layout
 from .ledger import Ledger, LedgerError
+from .manual_stock import ManualStock, StockAction
 from .models import BatchMutation, CommitInput, Mutation
 from .orders import orders
 from .query import daily_view
@@ -149,6 +150,14 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     @app.post("/api/grocy/master")
     def grocy_master(request: EntityChange):
         return MasterData(get_writer()).change(request)
+
+    @app.post("/api/grocy/manual/preview")
+    def manual_stock_preview(request: StockAction):
+        return ManualStock(get_writer()).preview(request)
+
+    @app.post("/api/grocy/manual/commit")
+    def manual_stock_commit(request: CommitInput):
+        return ManualStock(get_writer()).commit(str(request.request_id))
 
     @app.get("/api/fulfillment/orders")
     def fulfillment_orders():

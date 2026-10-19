@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { api, reasonOf } from "./api";
 import { Chip, Notice } from "./ui";
 import MasterData from "./MasterData";
+import StockActionEditor from "./StockActionEditor";
+import OperationStatus, { type StockOperation } from "./OperationStatus";
 
 export interface Product {
   id: number;
@@ -48,7 +50,7 @@ export interface InventoryData {
     { id?: number; product_id?: number; product?: Product }[]
   >;
 }
-interface Entry {
+export interface StockEntry {
   id: number;
   stock_id: string;
   amount: string;
@@ -60,7 +62,7 @@ interface Entry {
 }
 interface ProductView {
   details: Record<string, unknown>;
-  entries: Entry[];
+  entries: StockEntry[];
   updated_at: string;
 }
 export function nameOf(rows: Named[], id: number) {
@@ -81,12 +83,15 @@ export default function Inventory({
   const [detailError, setDetailError] = useState("");
   const [busy, setBusy] = useState(false);
   const [manage, setManage] = useState(false);
+  const [operations, setOperations] = useState<StockOperation[]>([]);
   const sequence = useRef(0);
   async function refresh() {
     setBusy(true);
     setError("");
     try {
       setData(await api<InventoryData>("/grocy/inventory"));
+      const ops = await api<StockOperation[]>("/grocy/operations");
+      setOperations(Array.isArray(ops) ? ops : []);
     } catch (e) {
       setError(reasonOf(e));
     } finally {
@@ -254,6 +259,27 @@ export default function Inventory({
             {selected && !detail && !detailError && <p>正在读取批次…</p>}
             {detail && (
               <>
+                {selected && !error && !detailError && (
+                  <StockActionEditor
+                    key={selected.id}
+                    product={selected}
+                    data={data}
+                    entries={detail.entries}
+                    onChanged={async () => {
+                      await refresh();
+                      await pick(selected);
+                    }}
+                  />
+                )}
+                <OperationStatus
+                  operations={operations.filter(
+                    (o) => String(o.product_id) === String(selected?.id),
+                  )}
+                  onChanged={async () => {
+                    await refresh();
+                    if (selected) await pick(selected);
+                  }}
+                />
                 {!detail.entries.length && (
                   <p className="muted">当前无库存批次。</p>
                 )}
