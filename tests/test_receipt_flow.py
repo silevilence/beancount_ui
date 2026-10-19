@@ -96,6 +96,9 @@ def test_linked_receipt_keeps_physical_fact_when_remote_response_lost(
     assert len(posts) == 1
     restored = Fulfillment(Writer(ledger)).list()[0]
     assert restored["items"][0]["remaining"] == "1" and len(restored["receipts"]) == 1
+    quantities = Fulfillment(writer).purchase_quantities(order["items"][0]["instance_id"])
+    assert quantities["1"]["pending"] == "12"
+    assert quantities["1"]["received_unsynced"] == "12"
 
 
 def test_two_previews_cannot_over_receive(ledger):

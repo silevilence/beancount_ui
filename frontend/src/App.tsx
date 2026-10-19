@@ -17,6 +17,7 @@ import Settings from "./Settings";
 import GrocySettings from "./GrocySettings";
 import Inventory from "./Inventory";
 import OrderPage from "./OrderPage";
+import { linkedItem, type PurchaseItem } from "./PurchaseItems";
 import {
   syncDetail,
   syncLabel,
@@ -121,6 +122,7 @@ function countDraft(journal: JournalView): number {
 
 export default function App() {
   const [page, setPage] = useState("journal");
+  const [selectedOrder, setSelectedOrder] = useState<string>();
   const [batch, setBatch] = useState(false);
   const [ledger, setLedger] = useState<LedgerStatus>();
   const [journal, setJournal] = useState<JournalView>();
@@ -143,6 +145,7 @@ export default function App() {
   const [editor, setEditor] = useState<{
     row?: Transaction;
     operation: "create" | "edit" | "delete";
+    initialPurchase?: PurchaseItem;
   }>();
   const [hasPending, setHasPending] = useState(() => !!readPending());
   const [drafts, setDrafts] = useState(0);
@@ -292,9 +295,37 @@ export default function App() {
         </nav>
         <div className="app-content">
           {page === "orders" && journal ? (
-            <OrderPage journal={journal} onChanged={refresh} />
+            <OrderPage
+              journal={journal}
+              onChanged={refresh}
+              initialOrder={selectedOrder}
+            />
           ) : page === "inventory" ? (
-            <Inventory />
+            <Inventory
+              onOrder={(id) => {
+                setSelectedOrder(id);
+                setPage("orders");
+              }}
+              onPurchase={(product, inventory) => {
+                const item = linkedItem(product, inventory);
+                const stock = inventory.stock.find(
+                  (s) =>
+                    String(s.product_id ?? s.product?.id) ===
+                    String(product.id),
+                );
+                item.quantity = String(
+                  Math.max(
+                    1,
+                    Math.ceil(
+                      (Number(product.min_stock_amount) -
+                        Number(stock?.amount ?? 0)) /
+                        (Number(item.factor) || 1),
+                    ),
+                  ),
+                );
+                setEditor({ operation: "create", initialPurchase: item });
+              }}
+            />
           ) : page === "settings" ? (
             <Settings onChanged={refresh} grocy={<GrocySettings />} />
           ) : page === "statistics" ? (
@@ -641,6 +672,7 @@ export default function App() {
           journal={journal}
           row={editor.row}
           operation={editor.operation}
+          initialPurchase={editor.initialPurchase}
           onSaved={async () => {
             setHasPending(false);
             await refresh();

@@ -190,6 +190,7 @@ class Fulfillment:
         from .stock_operations import StockOperations
 
         result = {}
+        operations = StockOperations(self.writer).list()
         for order in self.list():
             if order["source_changed"]:
                 continue
@@ -204,7 +205,7 @@ class Fulfillment:
                 if order["id"] not in line["order_ids"]:
                     line["order_ids"].append(order["id"])
             receipts = {r["request_id"] for r in order["receipts"] if not r.get("voided")}
-            for op in StockOperations(self.writer).list():
+            for op in operations:
                 key = str(op["product_id"])
                 if (
                     op["receipt_id"] in receipts

@@ -17,6 +17,10 @@ export interface Named {
   name: string;
 }
 export interface InventoryData {
+  purchase_quantities?: Record<
+    string,
+    { pending: string; received_unsynced: string; order_ids: string[] }
+  >;
   currency: string;
   instance_id: string;
   updated_at: string;
@@ -63,8 +67,10 @@ export function nameOf(rows: Named[], id: number) {
 }
 export default function Inventory({
   onPurchase,
+  onOrder,
 }: {
   onPurchase?: (product: Product, inventory: InventoryData) => void;
+  onOrder?: (id: string) => void;
 }) {
   const [data, setData] = useState<InventoryData>();
   const [selected, setSelected] = useState<Product>();
@@ -174,6 +180,30 @@ export default function Inventory({
                       已开封 {stock?.amount_opened ?? "0"} ·{" "}
                       {nameOf(data.locations, p.location_id)}
                     </small>
+                    {data.purchase_quantities?.[String(p.id)] && (
+                      <div className="muted small">
+                        <p>
+                          已购买待收货{" "}
+                          {data.purchase_quantities[String(p.id)].pending}{" "}
+                          {nameOf(data.units, p.qu_id_stock)} · 已收货未入库确认{" "}
+                          {
+                            data.purchase_quantities[String(p.id)]
+                              .received_unsynced
+                          }
+                        </p>
+                        {data.purchase_quantities[String(p.id)].order_ids.map(
+                          (id) => (
+                            <button
+                              key={id}
+                              className="ghost small"
+                              onClick={() => onOrder?.(id)}
+                            >
+                              查看订单 {id.slice(0, 8)}
+                            </button>
+                          ),
+                        )}
+                      </div>
+                    )}
                     <div className="inventory-alerts">
                       {has("missing_products", p.id) && (
                         <>

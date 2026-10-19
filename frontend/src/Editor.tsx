@@ -25,7 +25,7 @@ import {
   type PostingLine,
 } from "./api";
 import Diff from "./Diff";
-import { expenseGroups, fundingGroups, money } from "./format";
+import { expenseGroups, fundingGroups, money, shanghaiToday } from "./format";
 import { Notice } from "./ui";
 import { requestId } from "./requestId";
 import { confirmEntryDates } from "./confirmEntryDates";
@@ -97,20 +97,22 @@ export default function Editor({
   operation,
   onClose,
   onSaved,
+  initialPurchase,
 }: {
   journal: Journal;
   row?: Transaction;
   operation: "create" | "edit" | "delete";
   onClose: () => void;
   onSaved: () => Promise<void>;
+  initialPurchase?: PurchaseItem;
 }) {
   const pending = useRef(readPending());
   const restored = useRef(!!pending.current);
   const baseRevision = useRef(journal.revision);
   const defaults = (): EntryFields => ({
-    date: row?.date || journal.date,
+    date: row?.date || (initialPurchase ? shanghaiToday() : journal.date),
     payee: row?.payee || "",
-    narration: row?.narration || "",
+    narration: row?.narration || initialPurchase?.name || "",
     amount: row?.simple ? row.postings[0].amount : "",
     currency: row?.postings[0]?.currency || "CNY",
     category: row?.simple ? row.postings[0].account : "",
@@ -135,10 +137,11 @@ export default function Editor({
     );
   });
   const [orderMode, setOrderMode] = useState(
-    pending.current?.request.order?.kind || "",
+    pending.current?.request.order?.kind || (initialPurchase ? "paid" : ""),
   );
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>(
-    pending.current?.request.order?.items || [],
+    pending.current?.request.order?.items ||
+      (initialPurchase ? [initialPurchase] : []),
   );
   const formSupported = !!row?.posting_form;
   const rawRequired = !!row && !row.simple && !formSupported;
