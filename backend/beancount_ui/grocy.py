@@ -146,6 +146,14 @@ class Grocy:
                 403: ("permission", "Grocy 权限不足"),
                 404: ("incompatible", "Grocy 地址或接口不兼容"),
             }.get(exc.code, ("remote_error", f"Grocy 返回 HTTP {exc.code}，请核对远端结果"))
+            if exc.code == 400:
+                try:
+                    detail = str(json.loads(exc.read(4096)).get("error_message", ""))
+                    detail = detail.replace(saved["api_key"], "***")[:300]
+                    if detail:
+                        message += "：" + detail
+                except (ValueError, OSError, AttributeError):
+                    pass
             # Even an HTTP error is not evidence a mutation had no side effect.
             raise GrocyError(code, message) from None
         except TimeoutError:

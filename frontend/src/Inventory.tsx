@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, reasonOf } from "./api";
 import { Chip, Notice } from "./ui";
+import MasterData from "./MasterData";
 
 export interface Product {
   id: number;
@@ -79,6 +80,7 @@ export default function Inventory({
   const [error, setError] = useState("");
   const [detailError, setDetailError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [manage, setManage] = useState(false);
   const sequence = useRef(0);
   async function refresh() {
     setBusy(true);
@@ -140,6 +142,12 @@ export default function Inventory({
           {error}
           {data && "。以下是旧数据，无法确认最新库存。"}
         </Notice>
+      )}
+      <button className="ghost" onClick={() => setManage(!manage)}>
+        {manage ? "返回库存浏览" : "管理产品与基础资料"}
+      </button>
+      {manage && data && !error && (
+        <MasterData data={data} onChanged={refresh} />
       )}
       <label className="field">
         搜索产品

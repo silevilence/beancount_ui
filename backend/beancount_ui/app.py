@@ -25,6 +25,7 @@ from .fulfillment_models import ClaimInput, ReceiptInput
 from .git_network import ProxyInput
 from .github_auth import GithubAuthInput
 from .grocy import Grocy, GrocyInput
+from .grocy_master import EntityChange, MasterData
 from .income import income_days
 from .layout_config import LayoutInput, activate_layout, configuration, preview_layout
 from .ledger import Ledger, LedgerError
@@ -144,6 +145,10 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     @app.get("/api/grocy/products/{product_id}")
     def grocy_product(product_id: int):
         return get_grocy().product(product_id)
+
+    @app.post("/api/grocy/master")
+    def grocy_master(request: EntityChange):
+        return MasterData(get_writer()).change(request)
 
     @app.get("/api/fulfillment/orders")
     def fulfillment_orders():
