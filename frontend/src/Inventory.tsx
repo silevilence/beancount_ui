@@ -17,6 +17,7 @@ export interface Named {
   name: string;
 }
 export interface InventoryData {
+  currency: string;
   instance_id: string;
   updated_at: string;
   products: Product[];

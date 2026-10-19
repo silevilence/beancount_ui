@@ -398,6 +398,9 @@ class Writer:
                 for name, content in files.items()
                 if content != snapshot.files.get(name)
             }
+            from .grocy import Grocy
+
+            Grocy(self.state).validate_items(fulfillment)
             diffs = {
                 name: "".join(
                     difflib.unified_diff(
@@ -438,7 +441,10 @@ class Writer:
             return result
 
     def commit(self, request_id: str) -> dict:
-        with self.guard():
+        from .grocy import Grocy
+
+        grocy = Grocy(self.state)
+        with self.guard(), grocy.lock:
             with self.database() as db:
                 request = db.execute("SELECT * FROM requests WHERE id=?", (request_id,)).fetchone()
             if not request:
@@ -453,6 +459,7 @@ class Writer:
                 raise LedgerError("预览后布局已变化，请重新预览后保存（使用新的请求标识）")
             if digest(read_files(self.root)) != request["revision"]:
                 raise LedgerError("预览后账本已被修改，请重新加载并预览")
+            grocy.validate_items(json.loads(request["result"]).get("fulfillment", []), bind=True)
             with self.database() as db:
                 managed = db.execute("SELECT payload FROM fulfillment_orders").fetchall()
             if managed:

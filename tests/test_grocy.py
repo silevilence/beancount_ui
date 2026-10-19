@@ -118,7 +118,7 @@ def test_inventory_reads_fresh_and_failure_is_not_empty(grocy, monkeypatch):
 
     def request(path):
         calls.append(path)
-        return []
+        return {"CURRENCY": "CNY"} if path == "system/config" else []
 
     monkeypatch.setattr(grocy, "request", request)
     assert grocy.inventory()["instance_id"] == grocy.status()["instance_id"]

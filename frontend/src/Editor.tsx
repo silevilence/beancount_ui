@@ -1,4 +1,6 @@
 import RecordFields from "./RecordFields";
+import PurchaseItems, { type PurchaseItem } from "./PurchaseItems";
+import type { DraftItem } from "./BatchEditor";
 import QuickFill from "./QuickFill";
 import { captureFill } from "./fillTemplates";
 import SplitFields from "./SplitFields";
@@ -53,6 +55,7 @@ interface Preview {
 }
 
 interface SaveRequest {
+  order?: DraftItem["order"];
   request_id: string;
   revision: string;
   operation: string;
@@ -117,6 +120,7 @@ export default function Editor({
   const [fields, setFields] = useState<EntryFields>(() => {
     const saved = pending.current?.request.posting_entry;
     return (
+      pending.current?.request.order?.purchase ||
       pending.current?.request.entry || {
         ...defaults(),
         ...(saved
@@ -130,6 +134,12 @@ export default function Editor({
       }
     );
   });
+  const [orderMode, setOrderMode] = useState(
+    pending.current?.request.order?.kind || "",
+  );
+  const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>(
+    pending.current?.request.order?.items || [],
+  );
   const formSupported = !!row?.posting_form;
   const rawRequired = !!row && !row.simple && !formSupported;
   const [multi, setMulti] = useState(
@@ -259,7 +269,18 @@ export default function Editor({
                       postings,
                     },
                   }
-                : { entry: fields }),
+                : orderMode && op === "create" && business === "ordinary"
+                  ? {
+                      order: {
+                        kind: orderMode,
+                        purchase: fields,
+                        date: fields.date,
+                        amount: fields.amount,
+                        account: fields.payment,
+                        items: purchaseItems,
+                      },
+                    }
+                  : { entry: fields }),
       };
       persist({ request });
       const result = await api<Preview>("/preview", {
@@ -333,6 +354,7 @@ export default function Editor({
           blankPosting(fields.currency),
         ]);
         setRaw("");
+        setPurchaseItems([]);
         setValues(carryTemplateValues(recordTemplate, values, fields.date));
         setMessage("已保存到本地账本，可以继续记下一笔。");
       } else onClose();
@@ -649,6 +671,22 @@ export default function Editor({
               </>
             ) : (
               <>
+                {op === "create" && business === "ordinary" && (
+                  <label className="field">
+                    购物付款方式
+                    <select
+                      value={orderMode}
+                      onChange={(e) => {
+                        invalidate();
+                        setOrderMode(e.target.value);
+                      }}
+                    >
+                      <option value="">普通消费</option>
+                      <option value="paid">直接付款购买</option>
+                      <option value="deferred">先用后付购买</option>
+                    </select>
+                  </label>
+                )}
                 <div className="form-grid">
                   {field("date", "交易日期", "date")}
                   {field("amount", income ? "到账金额" : "金额")}
@@ -721,6 +759,17 @@ export default function Editor({
                       invalidate();
                       setFields(next);
                     }}
+                  />
+                )}
+                {op === "create" && business === "ordinary" && orderMode && (
+                  <PurchaseItems
+                    items={purchaseItems}
+                    onChange={(items) => {
+                      invalidate();
+                      setPurchaseItems(items);
+                    }}
+                    amount={fields.amount}
+                    currency={fields.currency}
                   />
                 )}
               </>

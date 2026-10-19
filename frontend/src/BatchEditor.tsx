@@ -22,6 +22,7 @@ import IncomeDays, {
   type IncomeAccounts,
 } from "./IncomeDays";
 import Orders from "./Orders";
+import PurchaseItems, { type PurchaseItem } from "./PurchaseItems";
 import SplitFields from "./SplitFields";
 import PostingFields, { blankPosting } from "./PostingFields";
 import type { PostingEntry, PostingLine } from "./api";
@@ -55,6 +56,7 @@ export interface DraftItem {
     account: string;
     category?: string;
     note?: string;
+    items?: PurchaseItem[];
   };
 }
 
@@ -67,6 +69,7 @@ interface Preview {
 }
 
 interface Draft {
+  purchaseItems?: PurchaseItem[];
   incomeAccounts?: IncomeAccounts;
   task?: TaskId;
   business?: string;
@@ -361,12 +364,14 @@ export default function BatchEditor({
                         date: next.form.date,
                         amount: next.form.amount,
                         account: next.form.payment,
+                        items: next.purchaseItems || [],
                       },
                     }
                   : { entry: next.form }),
         },
       ],
       advancedRaw: "",
+      purchaseItems: [],
       postingLines: [blankPosting(), blankPosting()],
       templateValues: carryTemplateValues(
         recordTemplate,
@@ -488,6 +493,7 @@ export default function BatchEditor({
       postingMode: !!item.posting_entry,
       postingLines: item.posting_entry?.postings,
       orderMode: item.order?.kind || "",
+      purchaseItems: item.order?.items || [],
       form:
         item.entry ||
         item.order?.purchase ||
@@ -741,6 +747,14 @@ export default function BatchEditor({
               fields={draft.form}
               accounts={accounts}
               onChange={(form) => update({ ...draft, form })}
+            />
+          )}
+          {business === "ordinary" && draft.orderMode && (
+            <PurchaseItems
+              items={draft.purchaseItems || []}
+              onChange={(purchaseItems) => update({ ...draft, purchaseItems })}
+              amount={draft.form.amount}
+              currency={draft.form.currency}
             />
           )}
         </>

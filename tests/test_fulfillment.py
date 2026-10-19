@@ -58,7 +58,10 @@ def test_history_claim_preview_then_durable_metadata(ledger):
         transaction_id=source["id"],
         raw="",
         claim_order="paid",
-        claim_items=[ItemInput(name="食品", quantity="2"), ItemInput(name="其他", quantity="1")],
+        claim_items=[
+            ItemInput(id=uuid4(), name="食品", quantity="2"),
+            ItemInput(id=uuid4(), name="其他", quantity="1"),
+        ],
     )
     preview = writer.preview(request)
     assert not Fulfillment(writer).list()

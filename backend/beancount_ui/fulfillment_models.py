@@ -3,14 +3,14 @@
 from datetime import date
 from decimal import Decimal
 from typing import Literal
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ItemInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: UUID = Field(default_factory=uuid4)
+    id: UUID
     name: str = Field(min_length=1, max_length=200)
     quantity: Decimal = Field(gt=0, max_digits=20, decimal_places=8)
     unit: str = Field(default="件", min_length=1, max_length=50)

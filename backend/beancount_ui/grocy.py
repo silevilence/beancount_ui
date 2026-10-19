@@ -4,6 +4,7 @@ import json
 import re
 import socket
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
@@ -196,6 +197,7 @@ class Grocy:
                 "shopping_locations": "objects/shopping_locations",
             }
             result = {key: self.request(path) for key, path in paths.items()}
+            result["currency"] = self.request("system/config").get("CURRENCY", "")
             return result | {
                 "instance_id": self.read()["instance_id"],
                 "updated_at": datetime.now(UTC).isoformat(),
@@ -208,3 +210,38 @@ class Grocy:
                 "entries": self.request(f"stock/products/{product_id}/entries"),
                 "updated_at": datetime.now(UTC).isoformat(),
             }
+
+    def validate_items(self, documents, *, bind=False):
+        linked = [item for doc in documents for item in doc["items"] if item["product_id"]]
+        if not linked:
+            return
+        with self.lock:
+            data = self.inventory()
+            for item in linked:
+                product = next(
+                    (p for p in data["products"] if str(p["id"]) == str(item["product_id"])), None
+                )
+                if not product or item["instance_id"] != data["instance_id"]:
+                    raise LedgerError("关联产品已失效或实例变化，请重新选择")
+                if int(product.get("enable_tare_weight_handling", 0)):
+                    raise LedgerError("首版暂不支持皮重产品，请在 Grocy 核对操作")
+                stock_unit = int(product["qu_id_stock"])
+                factor = Decimal(1) if stock_unit == item["purchase_unit_id"] else None
+                conversions = [
+                    c
+                    for c in data["conversions"]
+                    if str(c["from_qu_id"]) == str(item["purchase_unit_id"])
+                    and int(c["to_qu_id"]) == stock_unit
+                    and str(c.get("product_id")) in ("None", "", "0", str(product["id"]))
+                ]
+                specific = [
+                    c for c in conversions if str(c.get("product_id")) == str(product["id"])
+                ]
+                if specific or conversions:
+                    factor = Decimal(str((specific or conversions)[0]["factor"]))
+                if item["stock_unit_id"] != stock_unit or factor != Decimal(item["factor"]):
+                    raise LedgerError("产品单位换算已变化或不支持，请重新核对")
+                if item["currency"] != data["currency"] or not item["price_confirmed"]:
+                    raise LedgerError("请确认 Grocy 币种下的每库存单位价格")
+            if bind:
+                self.bind(data["instance_id"])
