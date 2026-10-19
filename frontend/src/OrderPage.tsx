@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, reasonOf, type Journal } from "./api";
 import Orders, { type Order } from "./Orders";
+import OperationStatus from "./OperationStatus";
 import type { DraftItem } from "./BatchEditor";
 import PurchaseItems, { blankItem, type PurchaseItem } from "./PurchaseItems";
 import { post } from "./GrocySettings";
@@ -430,6 +431,7 @@ export default function OrderPage({
                       </article>
                     ))}
                     <h3>收货历史</h3>
+                    <OperationStatus operations={detail.operations || []} />
                     {detail.receipts.length ? (
                       detail.receipts.map((r) => (
                         <p key={r.request_id}>

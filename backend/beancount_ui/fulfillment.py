@@ -13,6 +13,11 @@ def initialize(db):
     db.execute("CREATE TABLE IF NOT EXISTS fulfillment_orders (id TEXT PRIMARY KEY, payload TEXT)")
     db.execute("""CREATE TABLE IF NOT EXISTS receipts (
         id TEXT PRIMARY KEY, order_id TEXT NOT NULL, payload TEXT NOT NULL)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS inventory_operations (
+        id TEXT PRIMARY KEY, receipt_id TEXT NOT NULL, document TEXT NOT NULL,
+        status TEXT NOT NULL, evidence TEXT NOT NULL DEFAULT '{}',
+        error TEXT NOT NULL DEFAULT '', attempts INTEGER NOT NULL DEFAULT 0,
+        next_check REAL NOT NULL DEFAULT 0)""")
 
 
 def committed(db, result):
@@ -99,6 +104,19 @@ class Fulfillment:
                     else ("cancelled" if cancelled and not received else "received")
                 )
                 source = live or doc["source"]
+                operations = [
+                    {
+                        "id": o["id"],
+                        "status": o["status"],
+                        "error": o["error"],
+                        "evidence": json.loads(o["evidence"]),
+                    }
+                    for o in db.execute(
+                        "SELECT o.* FROM inventory_operations o JOIN receipts r ON o.receipt_id=r.id "
+                        "WHERE r.order_id=?",
+                        (doc["id"],),
+                    )
+                ]
                 payment = (
                     "paid"
                     if source["mode"] == "paid" or Decimal(source["unpaid"]) == 0
@@ -113,6 +131,7 @@ class Fulfillment:
                         "receipt_state": state,
                         "payment_state": payment,
                         "source_changed": not live or live["raw"] != doc["source"]["raw"],
+                        "operations": operations,
                     }
                 )
             return result
