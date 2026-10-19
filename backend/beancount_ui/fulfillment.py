@@ -18,6 +18,9 @@ def initialize(db):
         status TEXT NOT NULL, evidence TEXT NOT NULL DEFAULT '{}',
         error TEXT NOT NULL DEFAULT '', attempts INTEGER NOT NULL DEFAULT 0,
         next_check REAL NOT NULL DEFAULT 0)""")
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS inventory_audit (operation_id TEXT, event TEXT, at REAL)"
+    )
 
 
 def committed(db, result):
@@ -112,7 +115,8 @@ class Fulfillment:
                         "evidence": json.loads(o["evidence"]),
                     }
                     for o in db.execute(
-                        "SELECT o.* FROM inventory_operations o JOIN receipts r ON o.receipt_id=r.id "
+                        "SELECT o.* FROM inventory_operations o "
+                        "JOIN receipts r ON o.receipt_id=r.id "
                         "WHERE r.order_id=?",
                         (doc["id"],),
                     )

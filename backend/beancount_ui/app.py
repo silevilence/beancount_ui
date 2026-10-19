@@ -14,6 +14,7 @@ from fastapi.openapi.docs import (
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from filelock import Timeout
+from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .access import Access
@@ -32,9 +33,16 @@ from .orders import orders
 from .query import daily_view
 from .scheduler import ScheduleInput, Scheduler, configure
 from .statistics import Granularity, statistics, statistics_details
+from .stock_operations import StockOperations, StockReconciler
 from .sync import BackupInput, ConnectInput, Sync
 from .templates import recommendations
 from .writer import Writer
+
+
+class RetryStockInput(BaseModel):
+    reason: str = Field(min_length=10, max_length=2000)
+    original_stopped: bool
+    no_effect: bool
 
 
 def create_app(settings: Settings | None = None, access: Access | None = None):
@@ -45,16 +53,21 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
         if settings or os.environ.get("BEANCOUNT_LEDGER_DIR"):
             app.state.scheduler = Scheduler(get_sync())
             app.state.scheduler.start()
+            app.state.stock_reconciler = StockReconciler(get_writer())
+            app.state.stock_reconciler.start()
         try:
             yield
         finally:
             if app.state.scheduler:
                 app.state.scheduler.stop()
+            if app.state.stock_reconciler:
+                app.state.stock_reconciler.stop()
 
     app = FastAPI(
         title="日用账本", version="0.5.0", lifespan=lifespan, docs_url=None, redoc_url=None
     )
     app.state.scheduler = None
+    app.state.stock_reconciler = None
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=access.hosts)
     app.middleware("http")(access.protect)
 
@@ -148,6 +161,20 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     @app.post("/api/fulfillment/receive")
     def fulfillment_receive(request: ReceiptInput):
         return Fulfillment(get_writer()).receive(request)
+
+    @app.get("/api/grocy/operations")
+    def stock_operations():
+        return StockOperations(get_writer()).list()
+
+    @app.post("/api/grocy/operations/{identity}/check")
+    def check_stock_operation(identity: str):
+        return StockOperations(get_writer()).reconcile(identity)
+
+    @app.post("/api/grocy/operations/{identity}/retry")
+    def retry_stock_operation(identity: str, request: RetryStockInput):
+        return StockOperations(get_writer()).manual_retry(
+            identity, request.reason, request.original_stopped, request.no_effect
+        )
 
     @app.get("/api/layout")
     def layout_config():

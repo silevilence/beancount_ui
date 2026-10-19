@@ -431,7 +431,10 @@ export default function OrderPage({
                       </article>
                     ))}
                     <h3>收货历史</h3>
-                    <OperationStatus operations={detail.operations || []} />
+                    <OperationStatus
+                      operations={detail.operations || []}
+                      onChanged={refresh}
+                    />
                     {detail.receipts.length ? (
                       detail.receipts.map((r) => (
                         <p key={r.request_id}>
