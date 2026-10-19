@@ -319,7 +319,7 @@ export const ORDER_KIND: Record<string, { label: string; hint: string }> = {
     hint: "生成消费，由待付款负债账户承担本金",
   },
   settle: {
-    label: "确认收货 / 部分结算",
+    label: "付款 / 部分结算",
     hint: "只把负债结转到实际付款账户，不再生成消费",
   },
   refund_paid: {

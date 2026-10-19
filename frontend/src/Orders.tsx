@@ -172,9 +172,9 @@ export default function Orders({
   return (
     <section className="file-card">
       <div className="work-head">
-        <h3>淘宝确认收货 / 退款</h3>
+        <h3>订单结算 / 退款</h3>
         <p>
-          先从历史订单里认领这一笔，再确认收货、退款或冲回负债。金额与账户始终由你核对，历史匹配不会自动入账。
+          先从历史订单里认领这一笔，再结算付款、退款或冲回负债。金额与账户始终由你核对，历史匹配不会自动入账。
         </p>
       </div>
       <div className="form-grid order-filters" aria-label="订单筛选">

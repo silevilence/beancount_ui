@@ -569,7 +569,7 @@ it("作业分区切换、模板快捷入口与草稿计数", async () => {
   );
   expect(await screen.findByText("核对日期")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /淘宝订单/ }));
-  expect(await screen.findByText("淘宝确认收货 / 退款")).toBeInTheDocument();
+  expect(await screen.findByText("订单结算 / 退款")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /模板与推荐/ }));
   expect(screen.getByText("将当前组合固定为模板")).toBeInTheDocument();
   expect(requests.some((call) => call.url.includes("/templates"))).toBe(true);

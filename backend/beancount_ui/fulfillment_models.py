@@ -23,6 +23,8 @@ class ItemInput(BaseModel):
     unit_price: Decimal | None = Field(default=None, ge=0, max_digits=20, decimal_places=8)
     currency: str = Field(default="", max_length=20)
     price_confirmed: bool = False
+    default_location_id: int | None = Field(default=None, gt=0)
+    default_best_before_days: int | None = Field(default=None, ge=-1, le=36500)
 
     @field_validator("quantity", "factor", "unit_price", mode="before")
     @classmethod
@@ -59,8 +61,21 @@ class ReceiptLine(BaseModel):
     quantity: Decimal = Field(gt=0, max_digits=20, decimal_places=8)
     location_id: int | None = Field(default=None, gt=0)
     best_before_date: date | None = None
+    unit_price: Decimal | None = Field(default=None, ge=0, max_digits=20, decimal_places=8)
 
-    @field_validator("quantity", mode="before")
+    @field_validator("quantity", "unit_price", mode="before")
+    @classmethod
+    def exact(cls, value):
+        return ItemInput.exact(value)
+
+
+class SettlementInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    date: date
+    amount: Decimal = Field(gt=0, max_digits=24, decimal_places=8)
+    account: str = Field(pattern=r"^(Assets|Liabilities):[^\s\";]+$")
+
+    @field_validator("amount", mode="before")
     @classmethod
     def exact(cls, value):
         return ItemInput.exact(value)
@@ -72,3 +87,4 @@ class ReceiptInput(BaseModel):
     order_id: str
     received_date: date
     lines: list[ReceiptLine] = Field(min_length=1, max_length=100)
+    settlement: SettlementInput | None = None

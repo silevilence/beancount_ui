@@ -103,7 +103,7 @@ const TASKS: { id: TaskId; label: string; hint: string }[] = [
     hint: "资产负债移动与余额断言",
   },
   { id: "income", label: "余额宝收益", hint: "逐日补录实际收益" },
-  { id: "orders", label: "淘宝订单", hint: "确认收货、部分结算与退款" },
+  { id: "orders", label: "淘宝订单", hint: "独立收货、结算与退款页面" },
   { id: "advanced", label: "高级分录", hint: "多分录、外币与元数据原文" },
   { id: "templates", label: "模板与推荐", hint: "快捷入口、固定与停用" },
 ];

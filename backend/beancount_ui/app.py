@@ -31,6 +31,7 @@ from .ledger import Ledger, LedgerError
 from .models import BatchMutation, CommitInput, Mutation
 from .orders import orders
 from .query import daily_view
+from .receipt_flow import ReceiptFlow
 from .scheduler import ScheduleInput, Scheduler, configure
 from .statistics import Granularity, statistics, statistics_details
 from .stock_operations import StockOperations, StockReconciler
@@ -134,7 +135,11 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
 
     @app.get("/api/grocy/inventory")
     def grocy_inventory():
-        return get_grocy().inventory()
+        result = get_grocy().inventory()
+        result["purchase_quantities"] = Fulfillment(get_writer()).purchase_quantities(
+            result["instance_id"]
+        )
+        return result
 
     @app.get("/api/grocy/products/{product_id}")
     def grocy_product(product_id: int):
@@ -158,9 +163,13 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
             )
         )
 
-    @app.post("/api/fulfillment/receive")
-    def fulfillment_receive(request: ReceiptInput):
-        return Fulfillment(get_writer()).receive(request)
+    @app.post("/api/fulfillment/receipt/preview")
+    def receipt_preview(request: ReceiptInput):
+        return ReceiptFlow(get_writer()).preview(request)
+
+    @app.post("/api/fulfillment/receipt/commit")
+    def receipt_commit(request: CommitInput):
+        return ReceiptFlow(get_writer()).commit(str(request.request_id))
 
     @app.get("/api/grocy/operations")
     def stock_operations():

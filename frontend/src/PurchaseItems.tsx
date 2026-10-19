@@ -18,6 +18,8 @@ export interface PurchaseItem {
   unit_price: string | null;
   currency: string;
   price_confirmed: boolean;
+  default_location_id?: number | null;
+  default_best_before_days?: number | null;
 }
 export const blankItem = (): PurchaseItem => ({
   id: requestId(),
@@ -63,6 +65,8 @@ export function linkedItem(
     unit_price: null,
     currency: data.currency,
     price_confirmed: false,
+    default_location_id: Number(p.location_id) || null,
+    default_best_before_days: p.default_best_before_days ?? null,
   };
 }
 export default function PurchaseItems({

@@ -111,6 +111,12 @@ class StockOperations:
                         (identity,),
                     )
                 try:
+                    if op.get("item"):
+                        # The immutable unit/currency snapshot must still describe this product.
+                        try:
+                            self.grocy.validate_items([{"items": [op["item"]]}])
+                        except (ValueError, OSError) as exc:
+                            return self.record(identity, "failed", {"unsent": True}, str(exc), 300)
                     result = self.grocy.request(
                         f"stock/products/{op['product_id']}/{op['action']}",
                         "POST",

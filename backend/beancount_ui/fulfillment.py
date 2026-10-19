@@ -11,6 +11,10 @@ from .orders import orders
 
 def initialize(db):
     db.execute("CREATE TABLE IF NOT EXISTS fulfillment_orders (id TEXT PRIMARY KEY, payload TEXT)")
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS receipt_previews "
+        "(id TEXT PRIMARY KEY, request TEXT, prepared TEXT, result TEXT)"
+    )
     db.execute("""CREATE TABLE IF NOT EXISTS receipts (
         id TEXT PRIMARY KEY, order_id TEXT NOT NULL, payload TEXT NOT NULL)""")
     db.execute("""CREATE TABLE IF NOT EXISTS inventory_operations (
@@ -140,7 +144,7 @@ class Fulfillment:
                 )
             return result
 
-    def receive(self, request: ReceiptInput):
+    def receive(self, request: ReceiptInput, *, prepared=False):
         with self.writer.guard(), self.writer.database() as db:
             identity = str(request.request_id)
             payload = request.model_dump(mode="json")
@@ -162,9 +166,58 @@ class Fulfillment:
                 if not item or line.quantity > Decimal(item["remaining"]):
                     raise LedgerError("收货数量超过剩余待收数量")
                 if item["product_id"]:
-                    raise LedgerError("关联商品需通过核对后的入库流程收货")
+                    if not prepared:
+                        raise LedgerError("关联商品需通过核对后的入库流程收货")
+                    from .stock_operations import enqueue, receipt_operation
+
+                    stock_item = item | {"unit_price": str(line.unit_price)}
+                    enqueue(
+                        db,
+                        receipt_operation(
+                            identity,
+                            stock_item,
+                            line.model_dump(mode="json"),
+                            str(request.received_date),
+                        ),
+                    )
             db.execute(
                 "INSERT INTO receipts VALUES (?,?,?)",
                 (identity, request.order_id, json.dumps(payload)),
             )
             return payload
+
+    def purchase_quantities(self, instance_id):
+        from .stock_operations import StockOperations
+
+        result = {}
+        for order in self.list():
+            if order["source_changed"]:
+                continue
+            for item in order["items"]:
+                if not item["product_id"] or item["instance_id"] != instance_id:
+                    continue
+                key = str(item["product_id"])
+                line = result.setdefault(
+                    key, {"pending": Decimal(0), "received_unsynced": Decimal(0), "order_ids": []}
+                )
+                line["pending"] += Decimal(item["remaining"]) * Decimal(item["factor"])
+                if order["id"] not in line["order_ids"]:
+                    line["order_ids"].append(order["id"])
+            receipts = {r["request_id"] for r in order["receipts"] if not r.get("voided")}
+            for op in StockOperations(self.writer).list():
+                key = str(op["product_id"])
+                if (
+                    op["receipt_id"] in receipts
+                    and key in result
+                    and op["instance_id"] == instance_id
+                    and op["status"] not in ("success", "cancelled")
+                ):
+                    result[key]["received_unsynced"] += Decimal(op["payload"]["amount"])
+        return {
+            key: value
+            | {
+                "pending": str(value["pending"]),
+                "received_unsynced": str(value["received_unsynced"]),
+            }
+            for key, value in result.items()
+        }

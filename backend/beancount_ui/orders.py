@@ -166,7 +166,7 @@ def order_raw(action, snapshot, identity, basic_raw):
             raise LedgerError("退款超过已付款金额；未结算部分请选择负债冲回")
     currency, amount = source["currency"], action.amount
     labels = {
-        "settle": "确认收货结算",
+        "settle": "订单付款结算",
         "refund_paid": "已付款退款",
         "refund_unpaid": "未结算负债冲回",
     }

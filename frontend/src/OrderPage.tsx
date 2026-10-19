@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, reasonOf, type Journal } from "./api";
 import Orders, { type Order } from "./Orders";
 import OperationStatus from "./OperationStatus";
+import ReceiptEditor from "./ReceiptEditor";
 import type { DraftItem } from "./BatchEditor";
 import PurchaseItems, { blankItem, type PurchaseItem } from "./PurchaseItems";
 import { post } from "./GrocySettings";
@@ -52,9 +53,11 @@ export const receiptLabel: Record<string, string> = {
 export default function OrderPage({
   journal,
   onChanged,
+  initialOrder,
 }: {
   journal: Journal;
   onChanged: () => Promise<void>;
+  initialOrder?: string;
 }) {
   const key = `beancount-ui.orders.pending.${journal.identity ?? "default"}`;
   const [pending, setPending] = useState<Pending>(() => {
@@ -66,9 +69,9 @@ export default function OrderPage({
   });
   const [rows, setRows] = useState<ManagedOrder[]>([]);
   const [candidates, setCandidates] = useState<Order[]>([]);
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState(initialOrder || "");
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("pending");
+  const [filter, setFilter] = useState(initialOrder ? "all" : "pending");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [tab, setTab] = useState("receipts");
@@ -431,6 +434,15 @@ export default function OrderPage({
                       </article>
                     ))}
                     <h3>收货历史</h3>
+                    <ReceiptEditor
+                      key={detail.id}
+                      order={detail}
+                      journal={journal}
+                      onChanged={async () => {
+                        await refresh();
+                        await onChanged();
+                      }}
+                    />
                     <OperationStatus
                       operations={detail.operations || []}
                       onChanged={refresh}
