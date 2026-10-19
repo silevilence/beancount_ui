@@ -74,7 +74,7 @@ def orders(snapshot):
                 "narration": row["narration"],
                 "note": "\n".join(
                     ([row["note"]] if row["note"] else [])
-                    + [f'{p["account"]}：{p["note"]}' for p in row["postings"] if p["note"]]
+                    + [f"{p['account']}：{p['note']}" for p in row["postings"] if p["note"]]
                 ),
                 "file": row["file"],
                 "line": row["line"],
@@ -94,6 +94,15 @@ def orders(snapshot):
                     k: str(v - refunded.get(k, Decimal(0))) for k, v in categories.items()
                 },
                 "latest_date": max([row["date"]] + [r["date"] for r in events]),
+                "events": [
+                    {
+                        "id": r["id"],
+                        "date": r["date"],
+                        "raw": r["raw"],
+                        "action": r["metadata"].get("order-action"),
+                    }
+                    for r in events
+                ],
             }
         )
     return result

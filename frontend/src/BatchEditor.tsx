@@ -182,11 +182,13 @@ function labelOf(item: DraftItem): string {
 export default function BatchEditor({
   journal,
   onClose,
+  onOpenOrders,
   onSaved,
   onEdit,
 }: {
   journal: Journal;
   onClose: () => void;
+  onOpenOrders?: () => void;
   onSaved: () => Promise<void>;
   onEdit?: (row: Transaction) => void;
 }) {
@@ -1006,14 +1008,25 @@ export default function BatchEditor({
           )}
           {task === "orders" && (
             <fieldset disabled={locked}>
-              <Orders
-                date={orderDate}
-                onDateChange={setSelectedOrderDate}
-                accounts={accounts}
-                onAdd={(item) =>
-                  update({ ...draft, items: [...draft.items, item] })
-                }
-              />
+              {onOpenOrders ? (
+                <>
+                  <p>
+                    结算、退款与实物收货已迁入独立页面。已有订单处理草稿仍可在下方预览保存。
+                  </p>
+                  <button type="button" onClick={onOpenOrders}>
+                    打开订单与收货
+                  </button>
+                </>
+              ) : (
+                <Orders
+                  date={orderDate}
+                  onDateChange={setSelectedOrderDate}
+                  accounts={accounts}
+                  onAdd={(item) =>
+                    update({ ...draft, items: [...draft.items, item] })
+                  }
+                />
+              )}
             </fieldset>
           )}
           {task === "advanced" && (

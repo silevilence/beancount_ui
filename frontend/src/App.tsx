@@ -16,6 +16,7 @@ import Statistics from "./Statistics";
 import Settings from "./Settings";
 import GrocySettings from "./GrocySettings";
 import Inventory from "./Inventory";
+import OrderPage from "./OrderPage";
 import {
   syncDetail,
   syncLabel,
@@ -281,9 +282,18 @@ export default function App() {
           >
             库存管理
           </button>
+          <button
+            className="ghost"
+            aria-current={page === "orders" ? "page" : undefined}
+            onClick={() => setPage("orders")}
+          >
+            订单与收货
+          </button>
         </nav>
         <div className="app-content">
-          {page === "inventory" ? (
+          {page === "orders" && journal ? (
+            <OrderPage journal={journal} onChanged={refresh} />
+          ) : page === "inventory" ? (
             <Inventory />
           ) : page === "settings" ? (
             <Settings onChanged={refresh} grocy={<GrocySettings />} />
@@ -614,6 +624,10 @@ export default function App() {
       {batch && journal && (
         <BatchEditor
           journal={journal}
+          onOpenOrders={() => {
+            setBatch(false);
+            setPage("orders");
+          }}
           onClose={() => setBatch(false)}
           onSaved={refresh}
           onEdit={(row) => {

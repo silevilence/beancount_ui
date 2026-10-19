@@ -2568,3 +2568,9 @@ kbd {
 .inventory-row > button { text-align: left; justify-self: start; }
 .inventory-alerts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 @media (max-width: 760px) { .inventory-grid { grid-template-columns: minmax(0, 1fr); } }
+.order-work { border: 0; padding: 0; min-width: 0; }
+.order-filters { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px; }
+.order-filters label { display: grid; gap: 5px; font-size: 12px; }
+.purchase-items { margin: 18px 0; }
+.orders-page .toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 760px) { .order-filters { grid-template-columns: minmax(0, 1fr); } }

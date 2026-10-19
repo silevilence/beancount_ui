@@ -319,8 +319,13 @@ class Writer:
                             source = next(
                                 (r for r in orders(snapshot) if r["id"] == row["id"]), None
                             )
-                            if not source or source["identified"] or operation != "edit":
+                            if not source or operation != "edit":
                                 raise LedgerError("只能明确认领未管理的历史消费")
+                            with self.database() as db:
+                                if db.execute(
+                                    "SELECT 1 FROM fulfillment_orders WHERE id=?", (source["key"],)
+                                ).fetchone():
+                                    raise LedgerError("订单已经纳入收货管理")
                             if source["mode"] != "historical" and source["mode"] != claim:
                                 raise LedgerError("历史账务与认领付款方式不一致")
                             head, body = row["raw"].split("\n", 1)
@@ -330,6 +335,8 @@ class Writer:
                                 + f"\n  order-action: {quote(claim)}\n"
                                 + body
                             )
+                            if source["identified"]:
+                                raw = row["raw"]
                         else:
                             guard_order_edit(snapshot, row, raw)
                         with self.database() as db:

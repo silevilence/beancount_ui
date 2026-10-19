@@ -5,7 +5,7 @@ import { Chip, Empty, Notice, Segmented, Toolbar } from "./ui";
 import { money, ORDER_KIND } from "./format";
 import type { DraftItem } from "./BatchEditor";
 
-interface Order {
+export interface Order {
   id: string;
   date: string;
   payee: string;
@@ -24,6 +24,7 @@ interface Order {
   key?: string;
   tags?: string[];
   identified?: boolean;
+  events?: { id: string; date: string; raw: string; action: string }[];
 }
 
 const KIND_ORDER = ["settle", "refund_paid", "refund_unpaid"];
@@ -46,11 +47,13 @@ export default function Orders({
   onDateChange,
   accounts,
   onAdd,
+  actionLabel = "将处理加入草稿",
 }: {
   date: string;
   onDateChange: (day: string) => void;
   accounts: Journal["accounts"];
   onAdd: (item: DraftItem) => boolean | void;
+  actionLabel?: string;
 }) {
   const [rows, setRows] = useState<Order[]>([]);
   const [source, setSource] = useState("");
@@ -476,7 +479,7 @@ export default function Orders({
         )}
         <Toolbar>
           <button className="cta" disabled={!row || !confirmed}>
-            将处理加入草稿
+            {actionLabel}
           </button>
           <button
             type="button"
