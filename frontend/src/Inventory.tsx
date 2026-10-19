@@ -147,7 +147,16 @@ export default function Inventory({
           {data && "。以下是旧数据，无法确认最新库存。"}
         </Notice>
       )}
-      <button className="ghost" onClick={() => setManage(!manage)}>
+      <button
+        className="ghost"
+        disabled={!data || !!error}
+        title={
+          data && !error
+            ? undefined
+            : "需要先成功读取 Grocy 库存，才能管理产品与基础资料"
+        }
+        onClick={() => setManage(!manage)}
+      >
         {manage ? "返回库存浏览" : "管理产品与基础资料"}
       </button>
       {manage && data && !error && (

@@ -124,151 +124,163 @@ export default function ReceiptEditor({
         <OperationStatus operations={result.operations} onChanged={onChanged} />
       )}
       {!pending && order.items.some((i) => Number(i.remaining) > 0) && (
-        <fieldset
-          disabled={busy || order.source_changed}
-          className="grocy-form"
-        >
-          <label>
-            实际到货日期
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </label>
-          <p className="muted small">
-            填写本次实际数量，未到货商品填
-            0。位置和保质期留空时，预览会展示明确的默认值。
-          </p>
-          {lines.map((line, index) => {
-            const item = order.items.find((i) => i.id === line.item_id)!;
-            function change(field: string, value: string) {
-              setLines(
-                lines.map((l, i) =>
-                  i === index ? { ...l, [field]: value } : l,
-                ),
-              );
-            }
-            return (
-              <div className="grocy-form" key={line.item_id}>
-                <label>
-                  {item.name} · 本次实收（{item.unit}）
-                  <input
-                    inputMode="decimal"
-                    value={line.quantity}
-                    onChange={(e) => change("quantity", e.target.value)}
-                  />
-                </label>
-                {item.product_id && (
-                  <>
-                    <small>
-                      Grocy #{item.product_id} · 1 {item.unit} = {item.factor}{" "}
-                      {item.stock_unit}
-                    </small>
-                    <label>
-                      入库位置 ID
-                      <input
-                        type="number"
-                        min="1"
-                        value={line.location_id}
-                        onChange={(e) => change("location_id", e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      保质期日期
-                      <input
-                        type="date"
-                        value={line.best_before_date}
-                        onChange={(e) =>
-                          change("best_before_date", e.target.value)
-                        }
-                      />
-                    </label>
-                    <label>
-                      每{item.stock_unit}价格（{item.currency}）
-                      <input
-                        inputMode="decimal"
-                        value={line.unit_price}
-                        onChange={(e) => change("unit_price", e.target.value)}
-                      />
-                    </label>
-                  </>
-                )}
-              </div>
-            );
-          })}
-          {order.source.mode === "deferred" &&
-            Number(order.source.unpaid) > 0 && (
-              <>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={settle}
-                    onChange={(e) => setSettle(e.target.checked)}
-                  />
-                  同时结算待付款金额
-                </label>
-                {settle && (
-                  <>
-                    <label>
-                      结算日期
-                      <input
-                        type="date"
-                        value={settleDate}
-                        onChange={(e) => setSettleDate(e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      结算金额
-                      <input
-                        value={amount}
-                        inputMode="decimal"
-                        onChange={(e) => setAmount(e.target.value)}
-                      />
-                    </label>
-                    <AccountSelect
-                      label="结算付款账户"
-                      value={account}
-                      options={journal.accounts
-                        .filter((a) => /^(Assets|Liabilities):/.test(a.name))
-                        .map((a) => ({ value: a.name }))}
-                      onChange={setAccount}
-                    />
-                  </>
-                )}
-              </>
-            )}
-          <button
-            onClick={() =>
-              void work(async () => {
-                const body = {
-                  request_id: requestId(),
-                  order_id: order.id,
-                  received_date: date,
-                  lines: lines
-                    .filter((l) => l.quantity !== "0")
-                    .map((l) => ({
-                      ...l,
-                      location_id: l.location_id ? Number(l.location_id) : null,
-                      best_before_date: l.best_before_date || null,
-                      unit_price: l.unit_price || null,
-                    })),
-                  settlement: settle
-                    ? { date: settleDate, amount, account }
-                    : null,
-                };
-                persist({ body });
-                const p = await post<ReceiptPreview>(
-                  "/fulfillment/receipt/preview",
-                  body,
-                );
-                persist({ body, preview: p });
-              })
-            }
+        <>
+          {order.source_changed && (
+            <Notice tone="warn">
+              原购买记录已变化，收货操作已暂停；请先核对账本，再决定是否继续收货。
+            </Notice>
+          )}
+          <fieldset
+            disabled={busy || order.source_changed}
+            className="grocy-form"
           >
-            预览本次收货
-          </button>
-        </fieldset>
+            <label>
+              实际到货日期
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </label>
+            <p className="muted small">
+              填写本次实际数量，未到货商品填
+              0。位置和保质期留空时，预览会展示明确的默认值；位置编号可在库存管理
+              → 管理产品与基础资料中查看。
+            </p>
+            {lines.map((line, index) => {
+              const item = order.items.find((i) => i.id === line.item_id)!;
+              function change(field: string, value: string) {
+                setLines(
+                  lines.map((l, i) =>
+                    i === index ? { ...l, [field]: value } : l,
+                  ),
+                );
+              }
+              return (
+                <div className="grocy-form" key={line.item_id}>
+                  <label>
+                    {item.name} · 本次实收（{item.unit}）
+                    <input
+                      inputMode="decimal"
+                      value={line.quantity}
+                      onChange={(e) => change("quantity", e.target.value)}
+                    />
+                  </label>
+                  {item.product_id && (
+                    <>
+                      <small>
+                        Grocy #{item.product_id} · 1 {item.unit} = {item.factor}{" "}
+                        {item.stock_unit}
+                      </small>
+                      <label>
+                        入库位置 ID
+                        <input
+                          type="number"
+                          min="1"
+                          value={line.location_id}
+                          onChange={(e) =>
+                            change("location_id", e.target.value)
+                          }
+                        />
+                      </label>
+                      <label>
+                        保质期日期
+                        <input
+                          type="date"
+                          value={line.best_before_date}
+                          onChange={(e) =>
+                            change("best_before_date", e.target.value)
+                          }
+                        />
+                      </label>
+                      <label>
+                        每{item.stock_unit}价格（{item.currency}）
+                        <input
+                          inputMode="decimal"
+                          value={line.unit_price}
+                          onChange={(e) => change("unit_price", e.target.value)}
+                        />
+                      </label>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+            {order.source.mode === "deferred" &&
+              Number(order.source.unpaid) > 0 && (
+                <>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={settle}
+                      onChange={(e) => setSettle(e.target.checked)}
+                    />
+                    同时结算待付款金额
+                  </label>
+                  {settle && (
+                    <>
+                      <label>
+                        结算日期
+                        <input
+                          type="date"
+                          value={settleDate}
+                          onChange={(e) => setSettleDate(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        结算金额
+                        <input
+                          value={amount}
+                          inputMode="decimal"
+                          onChange={(e) => setAmount(e.target.value)}
+                        />
+                      </label>
+                      <AccountSelect
+                        label="结算付款账户"
+                        value={account}
+                        options={journal.accounts
+                          .filter((a) => /^(Assets|Liabilities):/.test(a.name))
+                          .map((a) => ({ value: a.name }))}
+                        onChange={setAccount}
+                      />
+                    </>
+                  )}
+                </>
+              )}
+            <button
+              onClick={() =>
+                void work(async () => {
+                  const body = {
+                    request_id: requestId(),
+                    order_id: order.id,
+                    received_date: date,
+                    lines: lines
+                      .filter((l) => l.quantity !== "0")
+                      .map((l) => ({
+                        ...l,
+                        location_id: l.location_id
+                          ? Number(l.location_id)
+                          : null,
+                        best_before_date: l.best_before_date || null,
+                        unit_price: l.unit_price || null,
+                      })),
+                    settlement: settle
+                      ? { date: settleDate, amount, account }
+                      : null,
+                  };
+                  persist({ body });
+                  const p = await post<ReceiptPreview>(
+                    "/fulfillment/receipt/preview",
+                    body,
+                  );
+                  persist({ body, preview: p });
+                })
+              }
+            >
+              预览本次收货
+            </button>
+          </fieldset>
+        </>
       )}
       {pending && (
         <>

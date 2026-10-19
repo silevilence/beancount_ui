@@ -14,7 +14,7 @@ import { requestId } from "./requestId";
 import { shanghaiToday } from "./format";
 import { confirmEntryDates } from "./confirmEntryDates";
 import Diff from "./Diff";
-import { Chip, Notice } from "./ui";
+import { Chip, Empty, Notice, Segmented } from "./ui";
 
 export interface Receipt {
   request_id: string;
@@ -56,6 +56,11 @@ export const receiptLabel: Record<string, string> = {
   received: "已收货",
   cancelled: "已取消",
 };
+const paymentLabel: Record<string, string> = {
+  paid: "已付款",
+  partial: "部分结算",
+  unpaid: "待结算",
+};
 export default function OrderPage({
   journal,
   onChanged,
@@ -89,8 +94,21 @@ export default function OrderPage({
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
+  const pendingRef = useRef<HTMLElement>(null);
   const detail = rows.find((r) => r.id === selected);
   const candidate = candidates.find((c) => c.id === claim);
+  const visibleOrders = rows.filter(
+    (r) =>
+      (!from || r.source.date >= from) &&
+      (!to || r.source.date <= to) &&
+      `${r.source.payee} ${r.source.narration} ${r.id}`.includes(query) &&
+      (filter === "all" ||
+        (filter === "pending"
+          ? ["pending", "partial"].includes(r.receipt_state)
+          : filter === "sync"
+            ? r.operations?.some((o) => needsSyncReview(o.status))
+            : r.receipt_state === filter)),
+  );
   function persist(p: Pending | null) {
     if (p) localStorage.setItem(key, JSON.stringify(p));
     else localStorage.removeItem(key);
@@ -146,6 +164,16 @@ export default function OrderPage({
     void preview("/preview", { ...item, operation: "create" });
     return false;
   }
+  // 预览面板固定在页首，而触发按钮在下方表单里；预览完成后滚回面板给出反馈。
+  useEffect(() => {
+    if (pending?.preview && pendingRef.current)
+      pendingRef.current.scrollIntoView?.({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+        block: "start",
+      });
+  }, [pending?.preview]);
   return (
     <section className="settings-page orders-page">
       <header className="page-heading">
@@ -155,6 +183,16 @@ export default function OrderPage({
           付款、实物到货和库存同步分别记录。结算或退款不会自动改变库存。
         </p>
         <div className="toolbar">
+          <Segmented
+            label="订单页区块"
+            value={tab}
+            options={[
+              { value: "receipts", label: "收货进度" },
+              { value: "finance", label: "结算与退款" },
+              { value: "claim", label: "认领历史购买" },
+            ]}
+            onChange={setTab}
+          />
           <button
             className="ghost"
             disabled={busy}
@@ -162,26 +200,12 @@ export default function OrderPage({
           >
             刷新订单
           </button>
-          {[
-            ["receipts", "收货进度"],
-            ["finance", "结算与退款"],
-            ["claim", "认领历史购买"],
-          ].map(([value, label]) => (
-            <button
-              className="ghost"
-              key={value}
-              aria-pressed={tab === value}
-              onClick={() => setTab(value)}
-            >
-              {label}
-            </button>
-          ))}
         </div>
       </header>
       {error && <Notice tone="error">{error}</Notice>}
       {message && <Notice>{message}</Notice>}
       {pending && (
-        <section className="panel card">
+        <section className="panel card" ref={pendingRef}>
           <h2>确认账务处理</h2>
           {pending.preview ? (
             <>
@@ -233,6 +257,7 @@ export default function OrderPage({
             )}
             <button
               disabled={busy}
+              className="ghost"
               onClick={() => void preview(pending.path, pending.body)}
             >
               恢复 / 重新读取预览
@@ -363,13 +388,17 @@ export default function OrderPage({
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                 >
-                  <option value="all">全部</option>
-                  {Object.entries(receiptLabel).map(([v, l]) => (
-                    <option value={v} key={v}>
-                      {l}
-                    </option>
-                  ))}
-                  <option value="sync">同步异常</option>
+                  <optgroup label="收货状态">
+                    <option value="all">全部</option>
+                    {Object.entries(receiptLabel).map(([v, l]) => (
+                      <option value={v} key={v}>
+                        {l}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="库存同步">
+                    <option value="sync">同步异常</option>
+                  </optgroup>
                 </select>
               </label>
               <label>
@@ -389,35 +418,37 @@ export default function OrderPage({
                 />
               </label>
             </div>
+            <div className="toolbar">
+              <button
+                className="ghost small"
+                onClick={() => {
+                  setQuery("");
+                  setFilter(initialOrder ? "all" : "pending");
+                  setFrom("");
+                  setTo("");
+                }}
+              >
+                重置筛选
+              </button>
+              <span className="muted small">
+                匹配 {visibleOrders.length} / {rows.length} 个订单
+              </span>
+            </div>
             <div className="inventory-grid">
               <section className="panel card">
                 <h2>订单列表</h2>
-                {!rows.length && (
-                  <p className="muted">
-                    尚无收货订单。新建购物订单或明确认领历史购买。
-                  </p>
-                )}
-                {rows
-                  .filter(
-                    (r) =>
-                      (!from || r.source.date >= from) &&
-                      (!to || r.source.date <= to) &&
-                      `${r.source.payee} ${r.source.narration} ${r.id}`.includes(
-                        query,
-                      ) &&
-                      (filter === "all" ||
-                        (filter === "pending"
-                          ? ["pending", "partial"].includes(r.receipt_state)
-                          : filter === "sync"
-                            ? r.operations?.some((o) =>
-                                needsSyncReview(o.status),
-                              )
-                            : r.receipt_state === filter)),
-                  )
-                  .map((r) => (
+                {!rows.length ? (
+                  <Empty>
+                    尚无收货订单。新建购物订单，或在「认领历史购买」中明确认领。
+                  </Empty>
+                ) : !visibleOrders.length ? (
+                  <p className="muted">没有匹配筛选条件的订单，可重置筛选。</p>
+                ) : (
+                  visibleOrders.map((r) => (
                     <article className="inventory-row" key={r.id}>
                       <button
                         className="ghost"
+                        aria-pressed={selected === r.id}
                         onClick={() => setSelected(r.id)}
                       >
                         {r.source.payee || "购买"} · {r.source.narration}
@@ -428,17 +459,7 @@ export default function OrderPage({
                       <div className="inventory-alerts">
                         <Chip>{receiptLabel[r.receipt_state]}</Chip>
                         <Chip>{orderSyncLabel(r.operations)}</Chip>
-                        <Chip>
-                          {
-                            (
-                              {
-                                paid: "已付款",
-                                partial: "部分结算",
-                                unpaid: "待结算",
-                              } as Record<string, string>
-                            )[r.payment_state]
-                          }
-                        </Chip>
+                        <Chip>{paymentLabel[r.payment_state]}</Chip>
                       </div>
                       {r.source_changed && (
                         <Notice tone="warn">
@@ -446,7 +467,8 @@ export default function OrderPage({
                         </Notice>
                       )}
                     </article>
-                  ))}
+                  ))
+                )}
               </section>
               <section className="panel card">
                 <h2>订单详情</h2>
@@ -454,7 +476,10 @@ export default function OrderPage({
                   <p className="muted">选择订单查看商品、实收数量和历史。</p>
                 ) : (
                   <>
-                    <pre className="changes">{detail.source.raw}</pre>
+                    <details>
+                      <summary>查看原始购买记录</summary>
+                      <pre className="changes">{detail.source.raw}</pre>
+                    </details>
                     {detail.items.map((i) => (
                       <article className="inventory-row" key={i.id}>
                         <strong>{i.name}</strong>

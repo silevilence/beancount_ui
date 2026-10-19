@@ -253,7 +253,11 @@ export default function StockActionEditor({
           )}
           <p>确认后只执行一次。结果未知时先核对，不自动重发。</p>
           <div className="toolbar">
-            <button disabled={busy} onClick={() => void preview()}>
+            <button
+              disabled={busy}
+              className="ghost"
+              onClick={() => void preview()}
+            >
               恢复原预览
             </button>
             {pending.preview && (

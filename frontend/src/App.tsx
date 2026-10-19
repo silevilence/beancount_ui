@@ -276,10 +276,13 @@ export default function App() {
           </button>
           <button
             className="ghost"
-            aria-current={page === "settings" ? "page" : undefined}
-            onClick={() => openSettings("")}
+            aria-current={page === "orders" ? "page" : undefined}
+            onClick={() => {
+              setSelectedOrder(undefined);
+              setPage("orders");
+            }}
           >
-            设置
+            订单与收货
           </button>
           <button
             className="ghost"
@@ -290,10 +293,10 @@ export default function App() {
           </button>
           <button
             className="ghost"
-            aria-current={page === "orders" ? "page" : undefined}
-            onClick={() => setPage("orders")}
+            aria-current={page === "settings" ? "page" : undefined}
+            onClick={() => openSettings("")}
           >
-            订单与收货
+            设置
           </button>
         </nav>
         <div className="app-content">

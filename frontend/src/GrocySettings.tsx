@@ -115,21 +115,31 @@ export default function GrocySettings() {
             历史记录不会迁移；已有绑定的地址迁移需停写、备份并核对同一数据库，不支持把旧产品
             ID 重新绑定到另一实例。
           </p>
-          <ul>
-            {bindings.items.map((i) => (
-              <li key={`${i.order_id}:${i.item_id}`}>
-                订单 {i.order_id} · {i.name} · Grocy #{i.product_id}
-              </li>
-            ))}
-          </ul>
-          <ul>
-            {bindings.operations.map((o) => (
-              <li key={o.id}>
-                操作 {o.id} · Grocy #{o.product_id} · {o.status}
-                {o.needs_review ? " · 待处理" : " · 历史记录"}
-              </li>
-            ))}
-          </ul>
+          {!!bindings.items.length && (
+            <>
+              <p className="muted small">订单商品关联</p>
+              <ul>
+                {bindings.items.map((i) => (
+                  <li key={`${i.order_id}:${i.item_id}`}>
+                    订单 {i.order_id} · {i.name} · Grocy #{i.product_id}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {!!bindings.operations.length && (
+            <>
+              <p className="muted small">库存操作记录</p>
+              <ul>
+                {bindings.operations.map((o) => (
+                  <li key={o.id}>
+                    操作 {o.id} · Grocy #{o.product_id} · {o.status}
+                    {o.needs_review ? " · 待处理" : " · 历史记录"}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           {!bindings.items.length && !bindings.operations.length && (
             <p>
               没有订单商品或库存操作记录。实例保护也可能来自历史主数据操作，请核对状态备份。
@@ -261,6 +271,7 @@ export default function GrocySettings() {
       <p className="muted small">
         由账本后端访问 Grocy。Key
         仅保存在后端状态目录；更换实例不会迁移旧产品关联。连接测试不会更改库存。
+        位置与单位编号可在库存管理 → 管理产品与基础资料中查看。
       </p>
     </>
   );

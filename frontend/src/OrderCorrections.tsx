@@ -228,7 +228,10 @@ export default function OrderCorrections({
         {inspection && (
           <>
             <p>{inspection.guidance}</p>
-            <OperationStatus operations={inspection.operations} />
+            <OperationStatus
+              operations={inspection.operations}
+              title="该批次的库存操作"
+            />
           </>
         )}
         <label>

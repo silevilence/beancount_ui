@@ -47,9 +47,11 @@ export function orderSyncLabel(operations: { status: string }[] = []): string {
 export default function OperationStatus({
   operations,
   onChanged,
+  title = "库存同步",
 }: {
   operations: StockOperation[];
   onChanged?: () => Promise<void>;
+  title?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -111,7 +113,7 @@ export default function OperationStatus({
   }
   return (
     <section>
-      <h3>库存同步</h3>
+      <h3>{title}</h3>
       {error && <Notice tone="error">{error}</Notice>}
       {!operations.length && <p className="muted">暂无库存操作。</p>}
       {operations.map((o) => (

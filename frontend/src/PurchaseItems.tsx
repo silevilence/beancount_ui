@@ -136,6 +136,7 @@ export default function PurchaseItems({
       {error && <Notice tone="warn">{error}。可继续记录未关联商品。</Notice>}
       <p className="muted small">
         商品数量独立于费用分录。价格为每库存单位价格；多商品、优惠和运费请逐项分配确认。
+        点「读取 Grocy 产品」后才能选择关联，未加载也可直接记录。
       </p>
       {items.map((item, index) => (
         <fieldset className="grocy-form inventory-row" key={item.id}>
