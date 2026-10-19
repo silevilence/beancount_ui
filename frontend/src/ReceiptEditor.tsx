@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Journal } from "./api";
 import { reasonOf } from "./api";
-import { post } from "./GrocySettings";
+import { post } from "./api";
 import type { ManagedOrder } from "./OrderPage";
 import { requestId } from "./requestId";
 import { shanghaiToday } from "./format";

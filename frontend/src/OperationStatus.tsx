@@ -1,6 +1,6 @@
 import { Chip } from "./ui";
 import { useState } from "react";
-import { post } from "./GrocySettings";
+import { post } from "./api";
 import { reasonOf } from "./api";
 import { Notice } from "./ui";
 
@@ -26,6 +26,24 @@ export const syncLabels: Record<string, string> = {
   undoing: "撤销结果待确认",
   draft: "尚未确认",
 };
+export const settledStatuses = new Set([
+  "success",
+  "undone",
+  "cancelled",
+  "resolved",
+]);
+export function needsSyncReview(status: string) {
+  return !settledStatuses.has(status);
+}
+export function orderSyncLabel(operations: { status: string }[] = []): string {
+  if (!operations.length) return "尚无库存操作";
+  const unsettled = operations.filter((o) => needsSyncReview(o.status));
+  if (unsettled.length)
+    return `同步待处理 ${unsettled.length}/${operations.length}`;
+  if (operations.every((o) => o.status === "success")) return "库存同步成功";
+  return "库存操作已处理（含撤销或人工处理）";
+}
+
 export default function OperationStatus({
   operations,
   onChanged,

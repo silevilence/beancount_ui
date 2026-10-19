@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ManagedOrder } from "./OrderPage";
 import { api, reasonOf } from "./api";
-import { post } from "./GrocySettings";
+import { post } from "./api";
 import { requestId } from "./requestId";
 import { Notice } from "./ui";
 import OperationStatus, { type StockOperation } from "./OperationStatus";
@@ -147,10 +147,14 @@ export default function OrderCorrections({
             }}
           >
             <option value="cancel_remaining">取消商品剩余待收</option>
-            <option value="replace_unreceived">更正尚无收货历史的商品</option>
+            <option value="replace_unreceived">
+              更正未收货或已作废全部收货的商品
+            </option>
             <option value="void_receipt">作废误录收货并核对入库撤销</option>
             <option value="return_note">记录实际退货核对说明</option>
-            <option value="release">解除尚无收货历史的订单管理</option>
+            <option value="release">
+              解除无有效收货的订单管理（保留历史）
+            </option>
           </select>
         </label>
         {["cancel_remaining", "replace_unreceived"].includes(action) && (
@@ -166,7 +170,15 @@ export default function OrderCorrections({
             >
               <option value="">请选择</option>
               {order.items
-                .filter((i) => Number(i.remaining) > 0)
+                .filter((i) =>
+                  action === "replace_unreceived"
+                    ? !order.receipts.some(
+                        (r) =>
+                          !r.voided &&
+                          r.lines.some((line) => line.item_id === i.id),
+                      )
+                    : Number(i.remaining) > 0,
+                )
                 .map((i) => (
                   <option key={i.id} value={i.id}>
                     {i.name} · 剩余 {i.remaining} {i.unit}

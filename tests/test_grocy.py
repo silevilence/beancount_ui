@@ -99,8 +99,7 @@ def test_check_reads_only_and_detects_version(grocy, monkeypatch):
     assert grocy.check()["version"] == "4.7.1"
     assert "stock/volatile" in paths
     version = "5.0.0"
-    with pytest.raises(GrocyError, match="4.x"):
-        grocy.check()
+    assert not grocy.check()["compatible"]
 
 
 def test_config_api_redaction(ledger):

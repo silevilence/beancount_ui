@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, reasonOf } from "./api";
+import { stampOf } from "./format";
 import { Chip, Notice } from "./ui";
 import MasterData from "./MasterData";
 import StockActionEditor from "./StockActionEditor";
@@ -138,9 +139,7 @@ export default function Inventory({
         >
           {busy ? "正在读取…" : "刷新库存"}
         </button>
-        {data && (
-          <small> · 更新于 {new Date(data.updated_at).toLocaleString()}</small>
-        )}
+        {data && <small> · 更新于 {stampOf(data.updated_at)}</small>}
       </header>
       {error && (
         <Notice tone="error">

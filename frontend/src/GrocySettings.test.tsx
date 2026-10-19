@@ -85,3 +85,96 @@ it("保存失败保留未提交的 Key 供修正", async () => {
   await waitFor(() => expect(screen.getByText("保存失败")).toBeInTheDocument());
   expect(key).toHaveValue("test-only-key");
 });
+
+it("逐接口展示权限失败和成功，并可查看实例关联", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path: string) => ({
+      ok: true,
+      json: async () =>
+        path.endsWith("check")
+          ? {
+              version: "4.7.1",
+              compatible: true,
+              write_permission: "未执行写入",
+              checks: {
+                stock: { available: true, code: "ok", message: "可读取" },
+                "objects/products": {
+                  available: false,
+                  code: "permission",
+                  message: "权限不足",
+                },
+              },
+            }
+          : path.endsWith("bindings")
+            ? {
+                locked: true,
+                items: [
+                  {
+                    order_id: "order-one",
+                    item_id: "item",
+                    name: "水",
+                    product_id: 1,
+                  },
+                ],
+                operations: [
+                  {
+                    id: "op",
+                    product_id: 1,
+                    status: "unknown",
+                    needs_review: true,
+                  },
+                ],
+              }
+            : config,
+    })),
+  );
+  render(<GrocySettings />);
+  fireEvent.click(await screen.findByText("测试已保存连接"));
+  expect(await screen.findByText("stock：可读取")).toBeInTheDocument();
+  expect(
+    screen.getByText(/objects\/products：权限不足（permission）/),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByText("查看实例关联与待处理操作"));
+  expect(await screen.findByText(/订单 order-one · 水/)).toBeInTheDocument();
+  expect(screen.getByText(/操作 op.*待处理/)).toBeInTheDocument();
+});
+
+it("未绑定实例和历史处理结果可见", async () => {
+  let locked = false;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path: string) => ({
+      ok: true,
+      json: async () =>
+        path.endsWith("bindings")
+          ? {
+              locked,
+              items: [],
+              operations: locked
+                ? [
+                    {
+                      id: "done",
+                      product_id: 1,
+                      status: "success",
+                      needs_review: false,
+                    },
+                  ]
+                : [],
+            }
+          : config,
+    })),
+  );
+  render(<GrocySettings />);
+  fireEvent.click(await screen.findByText("查看实例关联与待处理操作"));
+  expect(
+    await screen.findByText(/尚未绑定，可在设置中更换实例/),
+  ).toBeInTheDocument();
+  expect(screen.getByText(/没有订单商品或库存操作记录/)).toBeInTheDocument();
+  locked = true;
+  await waitFor(() =>
+    expect(screen.getByText("查看实例关联与待处理操作")).toBeEnabled(),
+  );
+  fireEvent.click(screen.getByText("查看实例关联与待处理操作"));
+  expect(await screen.findByText(/操作 done.*历史记录/)).toBeInTheDocument();
+});

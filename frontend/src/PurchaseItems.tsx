@@ -69,6 +69,30 @@ export function linkedItem(
     default_best_before_days: p.default_best_before_days ?? null,
   };
 }
+/** Suggest only an uncovered shortage with a known direct unit conversion. */
+export function shortagePurchase(
+  p: Product,
+  data: InventoryData,
+): PurchaseItem {
+  const item = linkedItem(p, data);
+  const factor = Number(item.factor);
+  const stock = data.stock.find((s) => String(s.product_id) === String(p.id));
+  const incoming = data.purchase_quantities?.[String(p.id)];
+  const shortage =
+    Number(p.min_stock_amount) -
+    Number(stock?.amount ?? 0) -
+    Number(incoming?.pending ?? 0) -
+    Number(incoming?.received_unsynced ?? 0);
+  item.quantity =
+    Number.isFinite(factor) &&
+    factor > 0 &&
+    Number.isFinite(shortage) &&
+    shortage > 0
+      ? String(Math.ceil(shortage / factor))
+      : "";
+  return item;
+}
+
 export default function PurchaseItems({
   items,
   onChange,

@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { api, reasonOf, type Journal } from "./api";
 import Orders, { type Order } from "./Orders";
-import OperationStatus from "./OperationStatus";
+import OperationStatus, {
+  needsSyncReview,
+  orderSyncLabel,
+} from "./OperationStatus";
 import ReceiptEditor from "./ReceiptEditor";
 import OrderCorrections from "./OrderCorrections";
 import type { DraftItem } from "./BatchEditor";
 import PurchaseItems, { blankItem, type PurchaseItem } from "./PurchaseItems";
-import { post } from "./GrocySettings";
+import { post } from "./api";
 import { requestId } from "./requestId";
 import { shanghaiToday } from "./format";
 import { confirmEntryDates } from "./confirmEntryDates";
@@ -18,6 +21,7 @@ export interface Receipt {
   received_date: string;
   lines: { item_id: string; quantity: string }[];
   voided?: boolean;
+  item_snapshots?: Record<string, { name: string; unit: string }>;
 }
 export interface ManagedOrder {
   corrections?: { action: string; reason: string }[];
@@ -405,14 +409,8 @@ export default function OrderPage({
                         (filter === "pending"
                           ? ["pending", "partial"].includes(r.receipt_state)
                           : filter === "sync"
-                            ? r.operations?.some(
-                                (o) =>
-                                  ![
-                                    "success",
-                                    "undone",
-                                    "cancelled",
-                                    "resolved",
-                                  ].includes(o.status),
+                            ? r.operations?.some((o) =>
+                                needsSyncReview(o.status),
                               )
                             : r.receipt_state === filter)),
                   )
@@ -429,6 +427,7 @@ export default function OrderPage({
                       </small>
                       <div className="inventory-alerts">
                         <Chip>{receiptLabel[r.receipt_state]}</Chip>
+                        <Chip>{orderSyncLabel(r.operations)}</Chip>
                         <Chip>
                           {
                             (
@@ -496,7 +495,7 @@ export default function OrderPage({
                           {r.lines
                             .map(
                               (l) =>
-                                `${detail.items.find((i) => i.id === l.item_id)?.name} ${l.quantity}`,
+                                `${r.item_snapshots?.[l.item_id]?.name ?? detail.items.find((i) => i.id === l.item_id)?.name} ${l.quantity}`,
                             )
                             .join("、")}
                         </p>

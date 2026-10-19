@@ -140,7 +140,6 @@ class ManualStock:
                 "request": original,
             }
             validate_operation(self.grocy, doc)
-            self.grocy.bind(request.instance_id)
             with self.writer.database() as db:
                 enqueue(db, doc, "draft")
             return self.operations.get(identity)

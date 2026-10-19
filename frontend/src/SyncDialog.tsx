@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, reasonOf } from "./api";
+import { post as postJson, api, reasonOf } from "./api";
 import Diff from "./Diff";
 import GithubAuth from "./GithubAuth";
 import {
@@ -92,11 +92,7 @@ export default function SyncDialog({
     path: string,
     body: Record<string, unknown> = {},
   ): Promise<T> {
-    return api<T>(`/sync/${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    return postJson<T>(`/sync/${path}`, body);
   }
   async function run(path: string, work: () => Promise<void>) {
     setBusy(true);

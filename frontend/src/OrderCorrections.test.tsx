@@ -2,6 +2,63 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import OrderCorrections from "./OrderCorrections";
 import type { ManagedOrder } from "./OrderPage";
+import { blankItem } from "./PurchaseItems";
+
+it("全部作废的商品可更正，仍有有效收货的商品不可选", async () => {
+  const fetch = vi.fn(async (_path: string, _init?: RequestInit) => ({
+    ok: true,
+    json: async () => ({ message: "更正已记录" }),
+  }));
+  vi.stubGlobal("fetch", fetch);
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const item = {
+    ...blankItem(),
+    name: "原商品",
+    remaining: "0",
+    received: "0",
+    cancelled: "1",
+  };
+  const live = {
+    ...blankItem(),
+    name: "有效收货商品",
+    remaining: "0",
+    received: "1",
+    cancelled: "0",
+  };
+  const order = {
+    id: "replace-voided",
+    source: { currency: "CNY" },
+    items: [item, live],
+    receipts: [
+      {
+        request_id: "old",
+        voided: true,
+        lines: [{ item_id: item.id, quantity: "1" }],
+      },
+      { request_id: "live", lines: [{ item_id: live.id, quantity: "1" }] },
+    ],
+  } as unknown as ManagedOrder;
+  render(<OrderCorrections order={order} onChanged={async () => {}} />);
+  fireEvent.change(screen.getByLabelText("更正类型"), {
+    target: { value: "replace_unreceived" },
+  });
+  expect(screen.getByRole("option", { name: /原商品/ })).toBeInTheDocument();
+  expect(screen.queryByRole("option", { name: /有效收货商品/ })).toBeNull();
+  fireEvent.change(screen.getByLabelText("商品"), {
+    target: { value: item.id },
+  });
+  fireEvent.change(screen.getByLabelText("商品名称"), {
+    target: { value: "正确商品" },
+  });
+  fireEvent.change(screen.getByLabelText("更正／核对依据"), {
+    target: { value: "原收货已作废并核实" },
+  });
+  fireEvent.click(screen.getByText("确认所选更正"));
+  await screen.findByText("更正已记录");
+  const sent = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
+  expect(sent.replacement).toMatchObject({ id: item.id, name: "正确商品" });
+  expect(sent.replacement).not.toHaveProperty("received");
+});
 
 it("取消剩余只提交显式更正，不触发退款", async () => {
   const fetch = vi.fn(async (_path: string) => ({

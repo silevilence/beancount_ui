@@ -9,7 +9,6 @@ import BatchEditor, { draftKey } from "./BatchEditor";
 import Brand from "./Brand";
 import Editor, { readPending } from "./Editor";
 import JournalPanel, { type Filters } from "./Journal";
-import LayoutDialog from "./LayoutDialog";
 import SyncDialog from "./SyncDialog";
 import SyncPanel from "./SyncPanel";
 import Statistics from "./Statistics";
@@ -17,7 +16,7 @@ import Settings from "./Settings";
 import GrocySettings from "./GrocySettings";
 import Inventory from "./Inventory";
 import OrderPage from "./OrderPage";
-import { linkedItem, type PurchaseItem } from "./PurchaseItems";
+import { shortagePurchase, type PurchaseItem } from "./PurchaseItems";
 import {
   syncDetail,
   syncLabel,
@@ -150,7 +149,11 @@ export default function App() {
   const [hasPending, setHasPending] = useState(() => !!readPending());
   const [drafts, setDrafts] = useState(0);
   const [backupOpen, setBackupOpen] = useState<{ auto: boolean } | null>(null);
-  const [layoutOpen, setLayoutOpen] = useState(false);
+  const [settingsEditor, setSettingsEditor] = useState("");
+  const openSettings = useCallback((target: string) => {
+    setSettingsEditor(target);
+    setPage("settings");
+  }, []);
   const [updated, setUpdated] = useState<Date>();
   const sync = useSyncSnapshot();
   const sequence = useRef(0);
@@ -198,7 +201,7 @@ export default function App() {
     function onKey(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (layoutOpen) return;
+      if (page === "settings" && event.key !== "r") return;
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
         return;
       if (event.key === "n") {
@@ -209,7 +212,7 @@ export default function App() {
         if (canEditRow) setBatch(true);
       } else if (event.key === "s") {
         event.preventDefault();
-        setBackupOpen({ auto: false });
+        openSettings("backup");
       } else if (event.key === "/") {
         event.preventDefault();
         search.current?.focus();
@@ -220,7 +223,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canEditRow, openCreate, refresh, layoutOpen]);
+  }, [canEditRow, openCreate, refresh, page, openSettings]);
   const relative = dayRelative(day);
   const status = error
     ? "连接异常"
@@ -274,7 +277,7 @@ export default function App() {
           <button
             className="ghost"
             aria-current={page === "settings" ? "page" : undefined}
-            onClick={() => setPage("settings")}
+            onClick={() => openSettings("")}
           >
             设置
           </button>
@@ -307,27 +310,17 @@ export default function App() {
                 setPage("orders");
               }}
               onPurchase={(product, inventory) => {
-                const item = linkedItem(product, inventory);
-                const stock = inventory.stock.find(
-                  (s) =>
-                    String(s.product_id ?? s.product?.id) ===
-                    String(product.id),
-                );
-                item.quantity = String(
-                  Math.max(
-                    1,
-                    Math.ceil(
-                      (Number(product.min_stock_amount) -
-                        Number(stock?.amount ?? 0)) /
-                        (Number(item.factor) || 1),
-                    ),
-                  ),
-                );
+                const item = shortagePurchase(product, inventory);
                 setEditor({ operation: "create", initialPurchase: item });
               }}
             />
           ) : page === "settings" ? (
-            <Settings onChanged={refresh} grocy={<GrocySettings />} />
+            <Settings
+              key={settingsEditor}
+              initialEditor={settingsEditor}
+              onChanged={refresh}
+              grocy={<GrocySettings />}
+            />
           ) : page === "statistics" ? (
             <Statistics revision={journal?.revision} />
           ) : (
@@ -423,7 +416,7 @@ export default function App() {
                   action={
                     <button
                       className="ghost small"
-                      onClick={() => setBackupOpen({ auto: false })}
+                      onClick={() => openSettings("backup")}
                     >
                       打开备份中心
                     </button>
@@ -513,7 +506,11 @@ export default function App() {
                 />
                 <aside className="rail">
                   <SyncPanel
-                    onOpen={(auto) => setBackupOpen({ auto: !!auto })}
+                    onOpen={(auto) =>
+                      auto
+                        ? setBackupOpen({ auto: true })
+                        : openSettings("backup")
+                    }
                   />
                   <section className="panel card">
                     <div className="panel-head">
@@ -548,7 +545,7 @@ export default function App() {
                       <button
                         className="ghost small"
                         title="文件布局与业务记录模板"
-                        onClick={() => setLayoutOpen(true)}
+                        onClick={() => openSettings("layout")}
                       >
                         布局与模板
                       </button>
@@ -643,12 +640,6 @@ export default function App() {
         <SyncDialog
           auto={backupOpen.auto}
           onClose={() => setBackupOpen(null)}
-          onChanged={refresh}
-        />
-      )}
-      {layoutOpen && (
-        <LayoutDialog
-          onClose={() => setLayoutOpen(false)}
           onChanged={refresh}
         />
       )}

@@ -7,7 +7,7 @@ import json
 import os
 import sqlite3
 import tempfile
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, nullcontext
 from decimal import Decimal
 from pathlib import Path
 
@@ -464,7 +464,7 @@ class Writer:
         from .grocy import Grocy
 
         grocy = Grocy(self.state)
-        with self.guard(), grocy.lock:
+        with self.guard():
             with self.database() as db:
                 request = db.execute("SELECT * FROM requests WHERE id=?", (request_id,)).fetchone()
             if not request:
@@ -473,39 +473,47 @@ class Writer:
                 return {**json.loads(request["result"]), "status": "done"}
             if request["status"] == "cancelled":
                 raise LedgerError("此账务预览已明确取消，请重新预览")
-            write_day = json.loads(request["result"]).get("write_day")
-            if write_day and write_day != str(current_day()):
-                raise LedgerError("预览后已跨日，请取消旧预览并重新预览实际写入日期")
-            expected_layout = json.loads(request["result"]).get("layout_version", "default")
-            if expected_layout != read_layout(self.ledger.settings)[2]:
-                raise LedgerError("预览后布局已变化，请重新预览后保存（使用新的请求标识）")
-            if digest(read_files(self.root)) != request["revision"]:
-                raise LedgerError("预览后账本已被修改，请重新加载并预览")
-            grocy.validate_items(json.loads(request["result"]).get("fulfillment", []), bind=True)
-            with self.database() as db:
-                managed = db.execute("SELECT payload FROM fulfillment_orders").fetchall()
-            if managed:
-                from .orders import orders
-
-                candidate_files = read_files(self.root)
-                candidate_files.update(
-                    {
-                        name: decode(change["after"])
-                        for name, change in json.loads(request["changes"]).items()
-                    }
+            documents = json.loads(request["result"]).get("fulfillment", [])
+            linked = any(i["product_id"] for d in documents for i in d["items"])
+            # Completed and ordinary saves never wait for the remote inventory lock.
+            with grocy.lock if linked else nullcontext():
+                write_day = json.loads(request["result"]).get("write_day")
+                if write_day and write_day != str(current_day()):
+                    raise LedgerError("预览后已跨日，请取消旧预览并重新预览实际写入日期")
+                expected_layout = json.loads(request["result"]).get("layout_version", "default")
+                if expected_layout != read_layout(self.ledger.settings)[2]:
+                    raise LedgerError("预览后布局已变化，请重新预览后保存（使用新的请求标识）")
+                if digest(read_files(self.root)) != request["revision"]:
+                    raise LedgerError("预览后账本已被修改，请重新加载并预览")
+                grocy.validate_items(
+                    json.loads(request["result"]).get("fulfillment", []), bind=True
                 )
-                candidates = {
-                    r["key"]: r
-                    for r in orders(
-                        load_snapshot(candidate_files, read_layout(self.ledger.settings)[0].entry)
+                with self.database() as db:
+                    managed = db.execute("SELECT payload FROM fulfillment_orders").fetchall()
+                if managed:
+                    from .orders import orders
+
+                    candidate_files = read_files(self.root)
+                    candidate_files.update(
+                        {
+                            name: decode(change["after"])
+                            for name, change in json.loads(request["changes"]).items()
+                        }
                     )
-                }
-                current = {r["key"]: r for r in orders(self.ledger.refresh())}
-                for row in managed:
-                    key = json.loads(row["payload"])["id"]
-                    if current.get(key, {}).get("raw") != candidates.get(key, {}).get("raw"):
-                        raise LedgerError("预览后订单已关联商品或收货，请在订单页显式处理")
-            with self.database() as db:
-                db.execute("UPDATE requests SET status='applying' WHERE id=?", (request_id,))
-            self.recover()
-            return {**json.loads(request["result"]), "status": "done"}
+                    candidates = {
+                        r["key"]: r
+                        for r in orders(
+                            load_snapshot(
+                                candidate_files, read_layout(self.ledger.settings)[0].entry
+                            )
+                        )
+                    }
+                    current = {r["key"]: r for r in orders(self.ledger.refresh())}
+                    for row in managed:
+                        key = json.loads(row["payload"])["id"]
+                        if current.get(key, {}).get("raw") != candidates.get(key, {}).get("raw"):
+                            raise LedgerError("预览后订单已关联商品或收货，请在订单页显式处理")
+                with self.database() as db:
+                    db.execute("UPDATE requests SET status='applying' WHERE id=?", (request_id,))
+                self.recover()
+                return {**json.loads(request["result"]), "status": "done"}

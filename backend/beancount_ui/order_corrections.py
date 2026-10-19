@@ -32,11 +32,6 @@ class OrderCorrections:
         self.writer = writer
         self.orders = Fulfillment(writer)
         self.operations = StockOperations(writer)
-        with writer.database() as db:
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS order_corrections "
-                "(id TEXT PRIMARY KEY, order_id TEXT, request TEXT, result TEXT)"
-            )
 
     def inspect(self, order_id, receipt_id):
         order = next((o for o in self.orders.list() if o["id"] == order_id), None)
@@ -82,9 +77,12 @@ class OrderCorrections:
                 ).fetchone()
             doc = json.loads(stored["payload"])
             receipt = None
+            previous_item = None
             if request.action in ("cancel_remaining", "replace_unreceived"):
                 item = next((i for i in current["items"] if i["id"] == request.item_id), None)
-                if not item or Decimal(item["remaining"]) <= 0:
+                if not item or (
+                    request.action == "cancel_remaining" and Decimal(item["remaining"]) <= 0
+                ):
                     raise LedgerError("商品没有剩余待收数量")
                 if request.action == "cancel_remaining":
                     doc["cancelled"][item["id"]] = str(
@@ -94,13 +92,15 @@ class OrderCorrections:
                     if any(
                         line["item_id"] == item["id"]
                         for r in current["receipts"]
+                        if not r.get("voided")
                         for line in r["lines"]
                     ):
                         raise LedgerError(
-                            "商品已有收货历史，不能修改快照；请取消剩余并单独建立更正购买"
+                            "商品仍有有效收货；请先作废相关收货并确认库存撤销，再更正商品"
                         )
                     if not request.replacement or str(request.replacement.id) != item["id"]:
                         raise LedgerError("更正需保留商品编号")
+                    previous_item = next(i for i in doc["items"] if i["id"] == item["id"])
                     replacement = request.replacement.model_dump(mode="json")
                     Grocy(self.writer.state).validate_items([{"items": [replacement]}], bind=True)
                     doc["items"] = [
@@ -108,7 +108,7 @@ class OrderCorrections:
                     ]
                     doc["cancelled"].pop(item["id"], None)
             elif request.action == "release":
-                if current["receipts"]:
+                if any(not r.get("voided") for r in current["receipts"]):
                     raise LedgerError("存在收货历史，不能解除关联或删除；请保留原订单并显式更正")
             else:
                 receipt = next(
@@ -135,10 +135,25 @@ class OrderCorrections:
                 "action": request.action,
                 "message": "更正已记录；付款／退款需单独在账务页处理",
             }
+            if previous_item is not None:
+                result["previous_item"] = previous_item
             with self.writer.database() as db:
+                if previous_item is not None:
+                    for historical in current["receipts"]:
+                        if any(
+                            line["item_id"] == previous_item["id"] for line in historical["lines"]
+                        ):
+                            historical.setdefault("item_snapshots", {}).setdefault(
+                                previous_item["id"], previous_item
+                            )
+                            db.execute(
+                                "UPDATE receipts SET payload=? WHERE id=?",
+                                (json.dumps(historical), historical["request_id"]),
+                            )
                 if request.action == "release":
                     db.execute("DELETE FROM fulfillment_orders WHERE id=?", (request.order_id,))
                     result["released_snapshot"] = doc
+                    result["released_receipts"] = current["receipts"]
                 else:
                     db.execute(
                         "UPDATE fulfillment_orders SET payload=? WHERE id=?",

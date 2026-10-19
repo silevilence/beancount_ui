@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { InventoryData } from "./Inventory";
-import { post } from "./GrocySettings";
+import { post } from "./api";
 import { requestId } from "./requestId";
 import { reasonOf } from "./api";
 import { Notice } from "./ui";

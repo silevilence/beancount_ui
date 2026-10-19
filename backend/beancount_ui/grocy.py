@@ -169,12 +169,11 @@ class Grocy:
 
     def check(self):
         with self.lock:
-            info = self.request("system/info", probe=True)
-            version = str(info.get("grocy_version", {}).get("Version", ""))
-            if not re.fullmatch(r"4\.\d+\.\d+", version):
-                raise GrocyError("incompatible", "暂仅支持 Grocy 4.x；请核对实际版本和接口")
             checks = {}
+            version = ""
+            compatible = False
             for path in (
+                "system/info",
                 "objects/products",
                 "objects/locations",
                 "objects/quantity_units",
@@ -184,10 +183,17 @@ class Grocy:
                 "stock",
                 "stock/volatile",
             ):
-                self.request(path, probe=True)
-                checks[path] = "可读取"
+                try:
+                    reply = self.request(path, probe=True)
+                    if path == "system/info":
+                        version = str(reply.get("grocy_version", {}).get("Version", ""))
+                        compatible = bool(re.fullmatch(r"4\.\d+\.\d+", version))
+                    checks[path] = {"available": True, "code": "ok", "message": "可读取"}
+                except GrocyError as exc:
+                    checks[path] = {"available": False, "code": exc.code, "message": str(exc)}
             return {
                 "version": version,
+                "compatible": compatible,
                 "checks": checks,
                 "write_permission": "未执行写入；按实际操作检查",
                 "checked_at": datetime.now(UTC).isoformat(),

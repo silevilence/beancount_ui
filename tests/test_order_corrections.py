@@ -52,12 +52,13 @@ def test_partial_cancel_void_and_return_note_never_change_finance(ledger):
     )
     assert orders.list()[0]["items"][0]["remaining"] == "0.4"
     assert ledger.refresh().revision == before
-    with pytest.raises(ValueError, match="收货历史"):
-        service.apply(
-            CorrectionInput(
-                request_id=uuid4(), order_id=order["id"], action="release", reason="解除管理关联"
-            )
+    released = service.apply(
+        CorrectionInput(
+            request_id=uuid4(), order_id=order["id"], action="release", reason="解除管理关联"
         )
+    )
+    assert released["released_receipts"][0]["voided"]
+    assert not orders.list()
 
 
 def test_changed_item_invalidates_previous_receipt_preview(ledger):

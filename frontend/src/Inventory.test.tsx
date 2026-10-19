@@ -11,7 +11,7 @@ it("待收货不抵消库存告警，购买只回传预填信息", async () => {
       ok: true,
       json: async () => ({
         instance_id: "one",
-        updated_at: new Date().toISOString(),
+        updated_at: "2026-10-19T16:30:00Z",
         products: [
           {
             id: 1,
@@ -37,6 +37,7 @@ it("待收货不抵消库存告警，购买只回传预填信息", async () => {
   );
   render(<Inventory onPurchase={purchase} onOrder={onOrder} />);
   expect(await screen.findByText(/已购买待收货 12 瓶/)).toBeInTheDocument();
+  expect(screen.getByText(/更新于 10\/20 00:30/)).toBeInTheDocument();
   expect(screen.getByText("缺货 / 低于最低库存")).toBeInTheDocument();
   fireEvent.click(screen.getByText("购买"));
   expect(purchase).toHaveBeenCalledOnce();

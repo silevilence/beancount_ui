@@ -1,6 +1,16 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import OperationStatus from "./OperationStatus";
+import OperationStatus, { orderSyncLabel } from "./OperationStatus";
+
+it("订单汇总区分部分失败、全部成功和已撤销历史", () => {
+  expect(orderSyncLabel([{ status: "success" }, { status: "unknown" }])).toBe(
+    "同步待处理 1/2",
+  );
+  expect(orderSyncLabel([{ status: "success" }])).toBe("库存同步成功");
+  expect(
+    orderSyncLabel([{ status: "undone" }, { status: "resolved" }]),
+  ).toContain("含撤销或人工处理");
+});
 
 function setup(status = "unknown", failure = false) {
   const fetch = vi.fn(async (_path: string, _init?: RequestInit) => ({

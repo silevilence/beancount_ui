@@ -13,6 +13,8 @@ from filelock import FileLock, Timeout
 from .grocy import Grocy, GrocyError
 from .ledger import LedgerError
 
+SETTLED_STATUSES = frozenset(("success", "cancelled", "resolved", "undone"))
+
 
 def enqueue(db, document, status="pending"):
     identity = document["id"]
@@ -65,6 +67,10 @@ class StockOperations:
             ).fetchone()
         if not row:
             raise LedgerError("库存操作不存在")
+        return self.document(row)
+
+    @staticmethod
+    def document(row):
         return json.loads(row["document"]) | {
             "status": row["status"],
             "evidence": json.loads(row["evidence"]),
@@ -74,12 +80,12 @@ class StockOperations:
         }
 
     def list(self):
+        # One SQLite snapshot; do not invert operation/Grocy -> ledger lock order.
         with self.writer.database() as db:
-            ids = [
-                r["id"]
-                for r in db.execute("SELECT id FROM inventory_operations ORDER BY rowid DESC")
+            return [
+                self.document(row)
+                for row in db.execute("SELECT * FROM inventory_operations ORDER BY rowid DESC")
             ]
-        return [self.get(identity) for identity in ids]
 
     def record(self, identity, status, evidence=None, error="", delay=0):
         with self.writer.database() as db:
@@ -103,6 +109,9 @@ class StockOperations:
                     return op
                 if op["status"] == "failed" and not op["evidence"].get("unsent"):
                     return op
+                if self.grocy.read()["instance_id"] != op["instance_id"]:
+                    return self.record(identity, "failed", {"unsent": True}, "Grocy 实例已变化")
+                self.grocy.bind(op["instance_id"])
                 # Commit the dispatch boundary before entering the network library.
                 with self.writer.database() as db:
                     db.execute(
@@ -407,7 +416,7 @@ class StockOperations:
             raise LedgerError("请确认原执行已停止并填写至少 10 字的核对依据")
         with self.operation_lock(identity), self.grocy.lock:
             op = self._reconcile(self.get(identity))
-            if op["status"] in ("success", "undone", "cancelled", "resolved"):
+            if op["status"] in SETTLED_STATUSES:
                 return op
             audit = {"manual_resolution": True, "applied": applied, "reason": reason}
             with self.writer.database() as db:

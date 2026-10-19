@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, reasonOf } from "./api";
+import { api, post, reasonOf } from "./api";
 import { Notice } from "./ui";
 
 export interface GrocyConfig {
@@ -10,14 +10,30 @@ export interface GrocyConfig {
   default_location_id: number | null;
   default_best_before_days: number | null;
 }
-export async function post<T>(path: string, body: unknown = {}): Promise<T> {
-  return api<T>(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+interface ConnectionCheck {
+  version: string;
+  compatible: boolean;
+  write_permission: string;
+  checks: Record<string, { available: boolean; code: string; message: string }>;
+}
+interface Bindings {
+  locked: boolean;
+  items: {
+    order_id: string;
+    item_id: string;
+    name: string;
+    product_id: number;
+  }[];
+  operations: {
+    id: string;
+    product_id: number;
+    status: string;
+    needs_review: boolean;
+  }[];
 }
 export default function GrocySettings() {
+  const [check, setCheck] = useState<ConnectionCheck>();
+  const [bindings, setBindings] = useState<Bindings>();
   const [saved, setSaved] = useState<GrocyConfig>();
   const [form, setForm] = useState<GrocyConfig>();
   const [key, setKey] = useState("");
@@ -45,6 +61,7 @@ export default function GrocySettings() {
     setBusy(true);
     setError("");
     setMessage("");
+    setCheck(undefined);
     try {
       await work();
     } catch (e) {
@@ -57,6 +74,69 @@ export default function GrocySettings() {
     <>
       {error && <Notice tone="error">{error}</Notice>}
       {message && <Notice>{message}</Notice>}
+      {check && (
+        <section aria-label="连接检查结果">
+          <Notice tone={check.compatible ? undefined : "warn"}>
+            Grocy {check.version || "版本未知"} ·{" "}
+            {check.compatible
+              ? "版本属于适配范围"
+              : "暂仅支持 Grocy 4.x，请核对版本"}{" "}
+            · {check.write_permission}
+          </Notice>
+          <ul>
+            {Object.entries(check.checks ?? {}).map(([path, result]) => (
+              <li key={path}>
+                {path}：
+                {result.available
+                  ? "可读取"
+                  : `${result.message}（${result.code}）`}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <button
+        className="ghost"
+        disabled={busy}
+        onClick={() =>
+          void run(async () => {
+            setBindings(await api<Bindings>("/grocy/bindings"));
+          })
+        }
+      >
+        查看实例关联与待处理操作
+      </button>
+      {bindings && (
+        <section aria-label="实例关联">
+          <p>
+            {bindings.locked
+              ? "实例已绑定，不能直接更换地址。"
+              : "尚未绑定，可在设置中更换实例。"}
+            历史记录不会迁移；已有绑定的地址迁移需停写、备份并核对同一数据库，不支持把旧产品
+            ID 重新绑定到另一实例。
+          </p>
+          <ul>
+            {bindings.items.map((i) => (
+              <li key={`${i.order_id}:${i.item_id}`}>
+                订单 {i.order_id} · {i.name} · Grocy #{i.product_id}
+              </li>
+            ))}
+          </ul>
+          <ul>
+            {bindings.operations.map((o) => (
+              <li key={o.id}>
+                操作 {o.id} · Grocy #{o.product_id} · {o.status}
+                {o.needs_review ? " · 待处理" : " · 历史记录"}
+              </li>
+            ))}
+          </ul>
+          {!bindings.items.length && !bindings.operations.length && (
+            <p>
+              没有订单商品或库存操作记录。实例保护也可能来自历史主数据操作，请核对状态备份。
+            </p>
+          )}
+        </section>
+      )}
       {form && (
         <fieldset disabled={busy} className="grocy-form">
           <label>
@@ -141,6 +221,7 @@ export default function GrocySettings() {
                     default_location_id: form.default_location_id,
                     default_best_before_days: form.default_best_before_days,
                   });
+                  setBindings(undefined);
                   setSaved(v);
                   setForm(v);
                   setKey("");
@@ -167,13 +248,8 @@ export default function GrocySettings() {
               className="ghost"
               onClick={() =>
                 void run(async () => {
-                  const v = await post<{
-                    version: string;
-                    write_permission: string;
-                  }>("/grocy/check");
-                  setMessage(
-                    `Grocy ${v.version} · 必要读取接口可用 · ${v.write_permission}`,
-                  );
+                  const v = await post<ConnectionCheck>("/grocy/check");
+                  setCheck(v);
                 })
               }
             >

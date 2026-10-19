@@ -221,6 +221,7 @@ it("包含图出现循环时显示诊断，仍可进入布局设置", async () =
   ).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "布局与模板" }));
   expect(await screen.findByText("请先修复入口")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
   fireEvent.keyDown(window, { key: "n" });
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
   fireEvent.click(screen.getByText("关闭布局"));
@@ -380,6 +381,7 @@ it("快捷键打开录入、聚焦搜索与刷新，输入中不触发", async (
   expect(searchBox).toHaveFocus();
   fireEvent.keyDown(window, { key: "s" });
   expect(await screen.findByRole("dialog")).toHaveAccessibleName("备份中心");
+  expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
   fireEvent.click(screen.getByLabelText("关闭备份"));
   await waitFor(() =>
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),

@@ -6,11 +6,13 @@ import SyncDialog from "./SyncDialog";
 export default function Settings({
   onChanged,
   grocy,
+  initialEditor = "",
 }: {
   onChanged: () => Promise<void>;
   grocy?: React.ReactNode;
+  initialEditor?: string;
 }) {
-  const [editor, setEditor] = useState("");
+  const [editor, setEditor] = useState(initialEditor);
   return (
     <section className="settings-page">
       <header className="page-heading">

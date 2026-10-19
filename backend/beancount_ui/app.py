@@ -138,6 +138,10 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     def grocy_configure(request: GrocyInput):
         return get_grocy().save(request)
 
+    @app.get("/api/grocy/bindings")
+    def grocy_bindings():
+        return Fulfillment(get_writer()).bindings()
+
     @app.post("/api/grocy/check")
     def grocy_check():
         return get_grocy().check()

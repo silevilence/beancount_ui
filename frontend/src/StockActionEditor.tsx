@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import type { InventoryData, Product, StockEntry } from "./Inventory";
 import { nameOf } from "./Inventory";
-import { post } from "./GrocySettings";
+import { post } from "./api";
 import { requestId } from "./requestId";
 import { reasonOf } from "./api";
 import { shanghaiToday } from "./format";

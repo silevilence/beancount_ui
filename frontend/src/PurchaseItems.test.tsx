@@ -4,9 +4,47 @@ import { expect, it, vi } from "vitest";
 import PurchaseItems, {
   blankItem,
   linkedItem,
+  shortagePurchase,
   type PurchaseItem,
 } from "./PurchaseItems";
 import type { InventoryData, Product } from "./Inventory";
+
+it("告警建议扣除在途与已收未同步，换算缺失或无净缺口时不猜数量", () => {
+  const product = {
+    id: 1,
+    name: "水",
+    qu_id_purchase: 2,
+    qu_id_stock: 1,
+    min_stock_amount: "30",
+  } as Product;
+  const data = {
+    instance_id: "one",
+    currency: "CNY",
+    units: [],
+    stock: [{ product_id: 1, amount: "1" }],
+    conversions: [{ product_id: 1, from_qu_id: 2, to_qu_id: 1, factor: "12" }],
+    purchase_quantities: {
+      "1": { pending: "12", received_unsynced: "5", order_ids: [] },
+    },
+  } as unknown as InventoryData;
+  expect(shortagePurchase(product, data).quantity).toBe("1");
+  expect(
+    shortagePurchase({ ...product, min_stock_amount: "6" }, data).quantity,
+  ).toBe("");
+  expect(shortagePurchase(product, { ...data, conversions: [] }).quantity).toBe(
+    "",
+  );
+  expect(
+    shortagePurchase(product, {
+      ...data,
+      stock: [],
+      purchase_quantities: undefined,
+    }).quantity,
+  ).toBe("3");
+  expect(
+    shortagePurchase({ ...product, min_stock_amount: "bad" }, data).quantity,
+  ).toBe("");
+});
 
 it("2 箱每箱 12 瓶计算每瓶 5 元，多商品不自动分配整单金额", async () => {
   vi.stubGlobal(

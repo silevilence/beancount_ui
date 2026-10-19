@@ -192,14 +192,53 @@ class Fulfillment:
                         ),
                         status="unknown" if recovery_required else "pending",
                     )
+            payload["item_snapshots"] = {
+                item["id"]: item
+                for item in doc["items"]
+                if any(str(line.item_id) == item["id"] for line in request.lines)
+            }
             db.execute(
                 "INSERT INTO receipts VALUES (?,?,?)",
                 (identity, request.order_id, json.dumps(payload)),
             )
             return payload
 
+    def bindings(self):
+        """Explain the conservative instance lock without changing historical links."""
+        from .grocy import Grocy
+        from .stock_operations import SETTLED_STATUSES, StockOperations
+
+        with self.writer.guard():
+            instance = Grocy(self.writer.state).read()["instance_id"]
+            linked = [
+                {
+                    "order_id": o["id"],
+                    "item_id": i["id"],
+                    "name": i["name"],
+                    "product_id": i["product_id"],
+                }
+                for o in self.list()
+                for i in o["items"]
+                if i["product_id"] and i["instance_id"] == instance
+            ]
+            operations = [
+                {
+                    "id": o["id"],
+                    "product_id": o["product_id"],
+                    "status": o["status"],
+                    "needs_review": o["status"] not in SETTLED_STATUSES,
+                }
+                for o in StockOperations(self.writer).list()
+                if o["instance_id"] == instance
+            ]
+            return {
+                "locked": (self.writer.state / "grocy-bindings.locked").exists(),
+                "items": linked,
+                "operations": operations,
+            }
+
     def purchase_quantities(self, instance_id):
-        from .stock_operations import StockOperations
+        from .stock_operations import SETTLED_STATUSES, StockOperations
 
         result = {}
         operations = StockOperations(self.writer).list()
@@ -223,7 +262,7 @@ class Fulfillment:
                     op["receipt_id"] in receipts
                     and key in result
                     and op["instance_id"] == instance_id
-                    and op["status"] not in ("success", "cancelled", "resolved")
+                    and op["status"] not in SETTLED_STATUSES
                 ):
                     result[key]["received_unsynced"] += Decimal(op["payload"]["amount"])
         return {

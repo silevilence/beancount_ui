@@ -70,6 +70,7 @@ it("独立页面保留收货和付款状态，结算预览后直接保存", asyn
   vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<OrderPage journal={journal} onChanged={async () => {}} />);
   expect(await screen.findByText("已付款")).toBeInTheDocument();
+  expect(screen.getByText("尚无库存操作")).toBeInTheDocument();
   expect(screen.getAllByText("待收货").length).toBeGreaterThan(0);
   fireEvent.click(screen.getByText("商户 · 采购"));
   expect(screen.getByText("原购买")).toBeInTheDocument();
@@ -155,6 +156,7 @@ it("历史购买认领可预览取消，筛选分别读取付款与收货状态"
           received_date: "2026-10-19",
           lines: [{ item_id: "i", quantity: "1" }],
           voided: true,
+          item_snapshots: { i: { name: "历史商品名称", unit: "瓶" } },
         },
       ],
       receipt_state: "received",
@@ -202,7 +204,7 @@ it("历史购买认领可预览取消，筛选分别读取付款与收货状态"
   );
   await screen.findByText("原购买发生变化，请核对账本。");
   expect(screen.getByText("未关联 Grocy")).toBeInTheDocument();
-  expect(screen.getByText(/已作废/)).toBeInTheDocument();
+  expect(screen.getByText(/2026.*已作废.*历史商品名称/)).toBeInTheDocument();
   expect(screen.getByText("付款原文")).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("搜索订单"), {
     target: { value: "找不到" },
