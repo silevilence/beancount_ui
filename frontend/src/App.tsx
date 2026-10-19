@@ -14,6 +14,7 @@ import SyncDialog from "./SyncDialog";
 import SyncPanel from "./SyncPanel";
 import Statistics from "./Statistics";
 import Settings from "./Settings";
+import GrocySettings from "./GrocySettings";
 import {
   syncDetail,
   syncLabel,
@@ -265,11 +266,18 @@ export default function App() {
           >
             统计图表
           </button>
-          <button className="ghost" aria-current={page === "settings" ? "page" : undefined}
-            onClick={() => setPage("settings")}>设置</button>
+          <button
+            className="ghost"
+            aria-current={page === "settings" ? "page" : undefined}
+            onClick={() => setPage("settings")}
+          >
+            设置
+          </button>
         </nav>
         <div className="app-content">
-          {page === "settings" ? <Settings onChanged={refresh} /> : page === "statistics" ? (
+          {page === "settings" ? (
+            <Settings onChanged={refresh} grocy={<GrocySettings />} />
+          ) : page === "statistics" ? (
             <Statistics revision={journal?.revision} />
           ) : (
             <>

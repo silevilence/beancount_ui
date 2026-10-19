@@ -21,6 +21,7 @@ from .config import Settings
 from .finance import FinanceInput, compose_finance
 from .git_network import ProxyInput
 from .github_auth import GithubAuthInput
+from .grocy import Grocy, GrocyInput
 from .income import income_days
 from .layout_config import LayoutInput, activate_layout, configuration, preview_layout
 from .ledger import Ledger, LedgerError
@@ -101,6 +102,21 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     def get_sync():
         return Sync(get_writer())
 
+    def get_grocy():
+        return Grocy(get_writer().state)
+
+    @app.get("/api/grocy/config")
+    def grocy_config():
+        return get_grocy().status()
+
+    @app.post("/api/grocy/config")
+    def grocy_configure(request: GrocyInput):
+        return get_grocy().save(request)
+
+    @app.post("/api/grocy/check")
+    def grocy_check():
+        return get_grocy().check()
+
     @app.get("/api/layout")
     def layout_config():
         return configuration(get_writer())
@@ -151,9 +167,14 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
                     )
                 },
             )
-        if request.url.path == "/api/sync/github-auth":
+        if request.url.path in ("/api/sync/github-auth", "/api/grocy/config"):
             # Pydantic's usual validation response includes the rejected input.
-            return JSONResponse(status_code=422, content={"detail": "请填写 GitHub 用户名和 Token"})
+            message = (
+                "请填写 GitHub 用户名和 Token"
+                if "github-auth" in request.url.path
+                else "Grocy 配置格式无效，请检查地址、Key 和默认值"
+            )
+            return JSONResponse(status_code=422, content={"detail": message})
         return await request_validation_exception_handler(request, exc)
 
     @app.post("/api/sync/preview")
@@ -272,11 +293,7 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     if not default_frontend.is_dir():
         # Vite serves the page in development; API docs still need the shared icon.
         default_frontend = source_frontend / "public"
-    frontend = Path(
-        os.environ.get(
-            "BEANCOUNT_FRONTEND_DIR", str(default_frontend)
-        )
-    )
+    frontend = Path(os.environ.get("BEANCOUNT_FRONTEND_DIR", str(default_frontend)))
     if frontend.is_dir():
         current_settings = settings or (
             Settings.from_env() if os.environ.get("BEANCOUNT_LEDGER_DIR") else None
