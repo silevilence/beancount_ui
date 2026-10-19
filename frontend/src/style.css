@@ -2563,3 +2563,8 @@ kbd {
 .grocy-form label:has(input[type="checkbox"]) { display: flex; align-items: center; }
 .grocy-form input[type="checkbox"] { width: auto; }
 .grocy-form .toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.inventory-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin-top: 20px; }
+.inventory-row { padding: 14px 0; border-bottom: 1px solid var(--line, #ddd5c8); display: grid; gap: 8px; overflow-wrap: anywhere; }
+.inventory-row > button { text-align: left; justify-self: start; }
+.inventory-alerts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+@media (max-width: 760px) { .inventory-grid { grid-template-columns: minmax(0, 1fr); } }

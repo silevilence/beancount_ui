@@ -183,3 +183,28 @@ class Grocy:
                 "write_permission": "未执行写入；按实际操作检查",
                 "checked_at": datetime.now(UTC).isoformat(),
             }
+
+    def inventory(self):
+        with self.lock:
+            paths = {
+                "products": "objects/products",
+                "stock": "stock",
+                "alerts": "stock/volatile",
+                "locations": "objects/locations",
+                "units": "objects/quantity_units",
+                "conversions": "objects/quantity_unit_conversions",
+                "shopping_locations": "objects/shopping_locations",
+            }
+            result = {key: self.request(path) for key, path in paths.items()}
+            return result | {
+                "instance_id": self.read()["instance_id"],
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+
+    def product(self, product_id: int):
+        with self.lock:
+            return {
+                "details": self.request(f"stock/products/{product_id}"),
+                "entries": self.request(f"stock/products/{product_id}/entries"),
+                "updated_at": datetime.now(UTC).isoformat(),
+            }

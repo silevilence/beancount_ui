@@ -111,3 +111,21 @@ def test_config_api_redaction(ledger):
     assert result.status_code == 200 and "secret" not in result.text
     invalid = client.post("/api/grocy/config", json={"api_key": {"secret": "secret"}})
     assert invalid.status_code == 422 and "secret" not in invalid.text
+
+
+def test_inventory_reads_fresh_and_failure_is_not_empty(grocy, monkeypatch):
+    calls = []
+
+    def request(path):
+        calls.append(path)
+        return []
+
+    monkeypatch.setattr(grocy, "request", request)
+    assert grocy.inventory()["instance_id"] == grocy.status()["instance_id"]
+    assert grocy.product(12)["entries"] == []
+    assert "stock/products/12/entries" in calls
+    monkeypatch.setattr(
+        grocy, "request", lambda path: (_ for _ in ()).throw(GrocyError("timeout", "断连"))
+    )
+    with pytest.raises(GrocyError):
+        grocy.inventory()

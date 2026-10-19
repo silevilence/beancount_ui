@@ -117,6 +117,14 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     def grocy_check():
         return get_grocy().check()
 
+    @app.get("/api/grocy/inventory")
+    def grocy_inventory():
+        return get_grocy().inventory()
+
+    @app.get("/api/grocy/products/{product_id}")
+    def grocy_product(product_id: int):
+        return get_grocy().product(product_id)
+
     @app.get("/api/layout")
     def layout_config():
         return configuration(get_writer())

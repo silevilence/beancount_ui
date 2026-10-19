@@ -15,6 +15,7 @@ import SyncPanel from "./SyncPanel";
 import Statistics from "./Statistics";
 import Settings from "./Settings";
 import GrocySettings from "./GrocySettings";
+import Inventory from "./Inventory";
 import {
   syncDetail,
   syncLabel,
@@ -273,9 +274,18 @@ export default function App() {
           >
             设置
           </button>
+          <button
+            className="ghost"
+            aria-current={page === "inventory" ? "page" : undefined}
+            onClick={() => setPage("inventory")}
+          >
+            库存管理
+          </button>
         </nav>
         <div className="app-content">
-          {page === "settings" ? (
+          {page === "inventory" ? (
+            <Inventory />
+          ) : page === "settings" ? (
             <Settings onChanged={refresh} grocy={<GrocySettings />} />
           ) : page === "statistics" ? (
             <Statistics revision={journal?.revision} />
