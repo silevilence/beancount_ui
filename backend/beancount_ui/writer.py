@@ -447,6 +447,19 @@ class Writer:
                 )
             return result
 
+    def cancel_preview(self, request_id: str) -> dict:
+        # guard completes any applying write first; never discard an unknown file write.
+        with self.guard(), self.database() as db:
+            request = db.execute("SELECT status FROM requests WHERE id=?", (request_id,)).fetchone()
+            if not request:
+                raise LedgerError("预览不存在，请先恢复原请求核对")
+            if request["status"] == "done":
+                return {"status": "done", "request_id": request_id}
+            if request["status"] not in ("preview", "cancelled"):
+                raise LedgerError("原写入尚未确认，不能结束请求")
+            db.execute("UPDATE requests SET status='cancelled' WHERE id=?", (request_id,))
+            return {"status": "cancelled", "request_id": request_id}
+
     def commit(self, request_id: str) -> dict:
         from .grocy import Grocy
 
@@ -458,6 +471,8 @@ class Writer:
                 raise LedgerError("预览不存在，请重新预览")
             if request["status"] == "done":
                 return {**json.loads(request["result"]), "status": "done"}
+            if request["status"] == "cancelled":
+                raise LedgerError("此账务预览已明确取消，请重新预览")
             write_day = json.loads(request["result"]).get("write_day")
             if write_day and write_day != str(current_day()):
                 raise LedgerError("预览后已跨日，请取消旧预览并重新预览实际写入日期")

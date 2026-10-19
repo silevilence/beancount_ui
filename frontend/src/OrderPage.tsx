@@ -197,6 +197,36 @@ export default function OrderPage({
             </Notice>
           )}
           <div className="toolbar">
+            {pending.uncertain && pending.preview && (
+              <button
+                disabled={busy}
+                className="ghost"
+                onClick={() =>
+                  void work(async () => {
+                    if (
+                      !window.confirm(
+                        "先由后端核对原写入：已保存的保持不变，尚未写入的预览将取消。结束后可重新预览账务。",
+                      )
+                    )
+                      return;
+                    const closed = await post<{ status: string }>(
+                      "/preview/cancel",
+                      { request_id: pending.preview!.request_id },
+                    );
+                    persist(null);
+                    setMessage(
+                      closed.status === "done"
+                        ? "原账务已经保存"
+                        : "原预览已取消，可重新处理账务",
+                    );
+                    await onChanged();
+                    await refresh();
+                  })
+                }
+              >
+                核对并结束原账务请求
+              </button>
+            )}
             <button
               disabled={busy}
               onClick={() => void preview(pending.path, pending.body)}
@@ -377,7 +407,12 @@ export default function OrderPage({
                           : filter === "sync"
                             ? r.operations?.some(
                                 (o) =>
-                                  !["success", "undone"].includes(o.status),
+                                  ![
+                                    "success",
+                                    "undone",
+                                    "cancelled",
+                                    "resolved",
+                                  ].includes(o.status),
                               )
                             : r.receipt_state === filter)),
                   )

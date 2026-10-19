@@ -39,7 +39,11 @@ def test_durable_dispatch_and_full_response_no_duplicate(operation, monkeypatch)
     service, doc = operation
     calls = []
     logs = [{"id": 1, "transaction_id": "tx"}, {"id": 2, "transaction_id": "tx"}]
-    monkeypatch.setattr(Grocy, "request", lambda *args, **kwargs: calls.append(args) or logs)
+
+    def remote(self, path, method="GET", payload=None, **kwargs):
+        return calls.append(path) or logs if method == "POST" else []
+
+    monkeypatch.setattr(Grocy, "request", remote)
     result = service.send(doc["id"])
     assert result["evidence"]["response"] == logs
     assert result["status"] == "unknown"
@@ -54,8 +58,10 @@ def test_single_sender_under_concurrency(operation, monkeypatch):
     entered, release = Event(), Event()
     calls = []
 
-    def remote(*args, **kwargs):
-        calls.append(args)
+    def remote(self, path, method="GET", payload=None, **kwargs):
+        if method != "POST":
+            return []
+        calls.append(path)
         entered.set()
         assert release.wait(5)
         return []
@@ -88,8 +94,10 @@ def test_only_proven_unsent_failures_allow_resend(operation, monkeypatch, unsent
     service, doc = operation
     calls = []
 
-    def fail(*args, **kwargs):
-        calls.append(args)
+    def fail(self, path, method="GET", payload=None, **kwargs):
+        if method != "POST":
+            return []
+        calls.append(path)
         raise GrocyError("timeout", "断连", unsent=unsent)
 
     monkeypatch.setattr(Grocy, "request", fail)

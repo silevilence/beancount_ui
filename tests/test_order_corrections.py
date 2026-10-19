@@ -111,6 +111,15 @@ def test_consumed_batch_cannot_be_automatically_undone(operation, monkeypatch):
         service.undo_receipt(doc["id"], "误录更正")
 
 
+def test_cancel_unsent_is_idempotent_but_manual_stop_is_not_proof_of_undo(operation):
+    service, doc = operation
+    assert service.undo_receipt(doc["id"], "未发送误录")["status"] == "cancelled"
+    assert service.undo_receipt(doc["id"], "继续其它商品撤销")["status"] == "cancelled"
+    service.record(doc["id"], "cancelled", {"manual_resolution": True, "applied": False})
+    with pytest.raises(ValueError, match="尚未确认"):
+        service.undo_receipt(doc["id"], "人工停止不代表已撤销")
+
+
 def test_unreceived_release_retains_audit_and_ledger(ledger):
     purchase(ledger, "paid")
     writer = Writer(ledger)

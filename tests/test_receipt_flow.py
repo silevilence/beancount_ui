@@ -85,6 +85,8 @@ def test_linked_receipt_keeps_physical_fact_when_remote_response_lost(
     posts = []
 
     def fail(self, path, method="GET", payload=None, **kwargs):
+        if method == "GET" and "stock_log" in path:
+            return []
         if method == "POST":
             posts.append(path)
         raise GrocyError("timeout", "响应丢失")
@@ -111,3 +113,27 @@ def test_two_previews_cannot_over_receive(ledger):
     service.commit(a["request_id"])
     with pytest.raises(ValueError, match="超过"):
         service.commit(b["request_id"])
+
+
+def test_failed_settlement_can_be_closed_without_blocking_next_partial_receipt(ledger):
+    source = purchase(ledger)
+    writer = Writer(ledger)
+    flow = ReceiptFlow(writer)
+    order = Fulfillment(writer).list()[0]
+    request = receipt(order, "0.4").model_dump(mode="json") | {
+        "settlement": {"date": "2026-09-30", "amount": "100", "account": "Assets:Cash"}
+    }
+    p = flow.preview(ReceiptInput.model_validate(request))
+    with pytest.raises(ValueError, match="尚未确认保存"):
+        flow.close_settlement(p["request_id"])
+    process(ledger, source, "settle", "20")
+    assert flow.commit(p["request_id"])["settlement_status"] == "needs_review"
+    assert flow.close_settlement(p["request_id"])["settlement_status"] == "abandoned"
+    before = ledger.refresh().revision
+    assert flow.commit(p["request_id"])["settlement_status"] == "abandoned"
+    with pytest.raises(ValueError, match="取消"):
+        writer.commit(p["financial"]["request_id"])
+    assert ledger.refresh().revision == before
+    remaining = flow.preview(receipt(Fulfillment(writer).list()[0], "0.6"))
+    assert flow.commit(remaining["request_id"])["receipt_saved"]
+    assert Fulfillment(writer).list()[0]["receipt_state"] == "received"

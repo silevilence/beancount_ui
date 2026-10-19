@@ -286,6 +286,9 @@ def test_old_request_fingerprint_remains_retryable(ledger, batch):
         else single
     )
     data = payload.model_dump(mode="json")
+    # These fields did not exist in deployed requests before physical receipt support.
+    data.pop("claim_order", None)
+    data.pop("claim_items", None)
     for item in data["items"] if batch else [data]:
         del item["values"]
         del item["layout_version"]

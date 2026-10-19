@@ -115,7 +115,9 @@ export default function ReceiptEditor({
             ? "结算已保存。"
             : result.settlement_status === "none"
               ? "本次没有新增账务。"
-              : `结算需要核对：${result.settlement_error}`}
+              : result.settlement_status === "abandoned"
+                ? "已停止原结算重试；请在结算与退款页重新核对付款。"
+                : `结算需要核对：${result.settlement_error}`}
         </Notice>
       )}
       {result && (
@@ -299,6 +301,31 @@ export default function ReceiptEditor({
             </Notice>
           )}
           <div className="toolbar">
+            {pending.uncertain && preview?.financial && (
+              <button
+                disabled={busy}
+                className="ghost"
+                onClick={() =>
+                  void work(async () => {
+                    if (
+                      !window.confirm(
+                        "保留已保存实收，停止重试尚未写入的原结算？后续付款请在结算与退款页重新核对。已经写入的账务不会撤销。",
+                      )
+                    )
+                      return;
+                    const closed = await post<ReceiptPreview>(
+                      "/fulfillment/receipt/close-settlement",
+                      { request_id: preview.request_id },
+                    );
+                    setResult(closed);
+                    persist(null);
+                    await onChanged();
+                  })
+                }
+              >
+                保留收货并结束原结算请求
+              </button>
+            )}
             <button
               disabled={busy}
               className="ghost"

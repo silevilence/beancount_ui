@@ -270,3 +270,7 @@ NAS 使用 `docker compose -f compose.nas.yaml` 执行同样步骤（若项目�
 若 GHCR 已推送但 Release 创建失败，不重建覆盖版本镜像。核对镜像 revision 标签、摘要与成功验证的
 提交后，从同 Tag 提取正文，用 `gh release create <Tag> --verify-tag --title <Tag> --notes-file <文件>
 image.txt` 恢复元数据。若代码需修复，发布新的版本号。
+
+## Grocy 联动的额外持久数据
+
+启用 Grocy 后，账本 Git 备份不包含实收、库存同步状态或 Grocy 库存。重建容器必须保留完整应用 state 与 Grocy 数据卷；恢复前停止旧执行并核对远端日志。连接地址、权限、备份文件、保守恢复和实际验证版本见 [Grocy 联动与恢复](grocy-workflows.md)。

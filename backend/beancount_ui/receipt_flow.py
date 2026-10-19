@@ -144,10 +144,12 @@ class ReceiptFlow:
                 ):
                     raise LedgerError("收货预览后商品关联已更正，请重新预览")
             # The physical fact and outbox are committed together before optional external steps.
-            self.orders.receive(request, prepared=True)
+            self.orders.receive(
+                request, prepared=True, recovery_required=result.get("recovery_required", False)
+            )
             result["receipt_saved"] = True
             result["settlement_error"] = ""
-            if result["financial"]:
+            if result["financial"] and result["settlement_status"] != "abandoned":
                 try:
                     self.writer.commit(result["financial"]["request_id"])
                     result["settlement_status"] = "done"
@@ -171,4 +173,39 @@ class ReceiptFlow:
             if sent["status"] in ("unknown", "sending"):
                 operations.reconcile(op_id)
         result["operations"] = [operations.get(op_id) for op_id in operation_ids]
+        return result
+
+    def close_settlement(self, identity):
+        """Keep a durable receipt, cancel only an unapplied financial preview."""
+        identity = str(UUID(identity))
+        with self.writer.guard(), self.writer.database() as db:
+            row = db.execute("SELECT * FROM receipt_previews WHERE id=?", (identity,)).fetchone()
+            if (
+                not row
+                or not db.execute("SELECT 1 FROM receipts WHERE id=?", (identity,)).fetchone()
+            ):
+                raise LedgerError("收货尚未确认保存，请先恢复原收货请求")
+            result = json.loads(row["result"])
+            financial = result["financial"]
+            if not financial:
+                raise LedgerError("本次没有待处理结算")
+            request = db.execute(
+                "SELECT status FROM requests WHERE id=?", (financial["request_id"],)
+            ).fetchone()
+            if not request or request["status"] not in ("preview", "cancelled", "done"):
+                raise LedgerError("账务执行状态需核对，不能停止重试")
+            if request["status"] == "done":
+                result["settlement_status"] = "done"
+            else:
+                db.execute(
+                    "UPDATE requests SET status='cancelled' WHERE id=?", (financial["request_id"],)
+                )
+                result["settlement_status"] = "abandoned"
+            result["receipt_saved"] = True
+            db.execute(
+                "UPDATE receipt_previews SET result=? WHERE id=?", (json.dumps(result), identity)
+            )
+        result["operations"] = [
+            o for o in StockOperations(self.writer).list() if o["receipt_id"] == identity
+        ]
         return result

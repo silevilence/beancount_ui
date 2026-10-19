@@ -155,7 +155,7 @@ class Fulfillment:
                 )
             return result
 
-    def receive(self, request: ReceiptInput, *, prepared=False):
+    def receive(self, request: ReceiptInput, *, prepared=False, recovery_required=False):
         with self.writer.guard(), self.writer.database() as db:
             identity = str(request.request_id)
             payload = request.model_dump(mode="json")
@@ -190,6 +190,7 @@ class Fulfillment:
                             line.model_dump(mode="json"),
                             str(request.received_date),
                         ),
+                        status="unknown" if recovery_required else "pending",
                     )
             db.execute(
                 "INSERT INTO receipts VALUES (?,?,?)",

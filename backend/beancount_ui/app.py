@@ -196,6 +196,14 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     def receipt_preview(request: ReceiptInput):
         return ReceiptFlow(get_writer()).preview(request)
 
+    @app.post("/api/fulfillment/receipt/close-settlement")
+    def close_receipt_settlement(request: CommitInput):
+        return ReceiptFlow(get_writer()).close_settlement(str(request.request_id))
+
+    @app.post("/api/preview/cancel")
+    def cancel_preview(request: CommitInput):
+        return get_writer().cancel_preview(str(request.request_id))
+
     @app.post("/api/fulfillment/receipt/commit")
     def receipt_commit(request: CommitInput):
         return ReceiptFlow(get_writer()).commit(str(request.request_id))

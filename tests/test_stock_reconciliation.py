@@ -56,10 +56,10 @@ def remote_state(service, doc, monkeypatch, *, consumed=False):
 def test_lost_response_reconciles_original_even_when_total_is_six(operation, monkeypatch, consumed):
     service, doc = operation
     state = remote_state(service, doc, monkeypatch, consumed=consumed)
-    service.send(doc["id"])
+    service.record(doc["id"], "unknown", error="远端已写入但响应丢失")
     assert service.reconcile(doc["id"])["status"] == "success"
     service.send(doc["id"])
-    assert state["posts"] == 1
+    assert state["posts"] == 0
 
 
 def test_no_log_never_means_safe_resend_even_when_total_matches(operation, monkeypatch):

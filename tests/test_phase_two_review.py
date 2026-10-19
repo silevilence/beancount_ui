@@ -140,7 +140,7 @@ def test_income_edit_duplicate_and_order_metadata_immutable(ledger):
         )
     order = purchase(ledger)
     original = next(r for r in transactions(ledger.refresh()) if r["id"] == order["id"])
-    with pytest.raises(LedgerError, match="元数据"):
+    with pytest.raises(LedgerError, match="元数据|订单已关联"):
         writer.preview(
             mutation(
                 ledger,

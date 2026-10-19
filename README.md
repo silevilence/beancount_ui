@@ -2,12 +2,13 @@
 
 # 日用账本
 
-Python / FastAPI + React / TypeScript 的本地 Beancount 记账界面。账本文本是唯一正式数据源。
+Python / FastAPI + React / TypeScript 的本地 Beancount 记账界面。账务以账本文本为准；订单实收与同步记录保存在独立 state，库存以可选接入的 Grocy 为准。
 
 应用图标统一用于工作台、访问页、浏览器标签、主屏幕快捷方式和 API 文档；原图、尺寸及重建方式见[图标说明](docs/app-icon.md)。
 
 默认镜像：`ghcr.io/silevilence/beancount_ui:latest`；可通过 `BEANCOUNT_IMAGE` 固定版本或摘要。
 [容器部署、升级与恢复](docs/deployment.md) · [版本说明](changelog.md)。
+[Grocy 库存联动、独立订单收货与恢复](docs/grocy-workflows.md)：统一设置、可选商品关联、分批收货、日常库存操作及异常核对。
 绿联 NAS 请使用独立的 [compose.nas.yaml](compose.nas.yaml)，按[部署说明](docs/deployment.md#绿联-nas项目部署)准备权限、访问地址与转发。
 
 ## Windows 开发（不需要 Docker）

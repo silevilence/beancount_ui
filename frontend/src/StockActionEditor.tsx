@@ -82,7 +82,7 @@ export default function StockActionEditor({
       };
       persist({ body });
       const p = await post<StockOperation>("/grocy/manual/preview", body);
-      persist({ body, preview: p });
+      persist({ body, preview: p, uncertain: pending?.uncertain });
     });
   }
   return (
@@ -213,9 +213,44 @@ export default function StockActionEditor({
       {pending && (
         <>
           <h4>本次操作预览</h4>
-          <pre className="changes">
-            {JSON.stringify(pending.preview?.payload ?? pending.body, null, 2)}
-          </pre>
+          <p>
+            {product.name} ·{" "}
+            {
+              {
+                consume: "消耗",
+                open: "开封",
+                transfer: "转移",
+                add: "手动入库",
+              }[String(pending.body.action)]
+            }{" "}
+            {String(pending.body.amount)}{" "}
+            {nameOf(data.units, product.qu_id_stock)}
+          </p>
+          <p>
+            位置：{nameOf(data.locations, Number(pending.body.location_id))}
+            {pending.body.action === "transfer" && (
+              <>
+                {" "}
+                →{" "}
+                {nameOf(
+                  data.locations,
+                  Number(pending.body.target_location_id),
+                )}
+              </>
+            )}
+          </p>
+          {pending.body.stock_id ? (
+            <p>批次：{String(pending.body.stock_id)}</p>
+          ) : (
+            <p>批次由 Grocy 选择</p>
+          )}
+          {pending.body.action === "add" && (
+            <p>
+              购买日期：{String(pending.body.purchased_date)}；保质期：
+              {String(pending.body.best_before_date)}；每库存单位{" "}
+              {String(pending.body.price)} {String(pending.body.currency)}
+            </p>
+          )}
           <p>确认后只执行一次。结果未知时先核对，不自动重发。</p>
           <div className="toolbar">
             <button disabled={busy} onClick={() => void preview()}>

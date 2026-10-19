@@ -111,6 +111,10 @@ class StockOperations:
                         (identity,),
                     )
                 try:
+                    if op["action"] == "add":
+                        # A restored snapshot may predate this outbox row.
+                        if self.logs("note", op["payload"]["note"], op["instance_id"]):
+                            return self._reconcile(self.get(identity))
                     if op.get("manual"):
                         from .manual_stock import validate_operation
 
@@ -239,57 +243,68 @@ class StockOperations:
             entries = self.grocy.request(
                 f"stock/products/{op['product_id']}/entries", instance_id=instance
             )
-            evidence.update(histories=histories, entries=entries)
+            # Opening a partial quantity creates a NEW stock_id for the remainder
+            # without a purchase log. Grocy propagates the original note to it.
+            evidence.update(histories=histories, entries=entries, related_logs=found)
+            related = {str(r["id"]): r for r in found}
             for stock_id, history in histories.items():
                 required = {str(r["id"]) for r in full if str(r["stock_id"]) == stock_id}
                 if not stock_id or not required.issubset({str(r["id"]) for r in history}):
                     return self.record(
                         identity, "conflict", evidence, "批次历史缺少原始入库日志", delay
                     )
-                balances = defaultdict(Decimal)
                 for row in history:
                     if str(row["stock_id"]) != stock_id:
                         raise ValueError("批次历史查询范围不一致")
-                    if str(row.get("undone", "0")) in ("1", "True", "true"):
-                        continue
-                    kind = row["transaction_type"]
-                    if str(row["product_id"]) != str(op["product_id"]):
-                        raise ValueError("产品历史发生变化")
-                    if kind == "product-opened":
-                        continue
-                    if kind not in (
-                        "purchase",
-                        "consume",
-                        "inventory-correction",
-                        "transfer_from",
-                        "transfer_to",
-                        "stock-edit-old",
-                        "stock-edit-new",
-                    ):
-                        raise ValueError("无法解释的后续操作")
-                    amount = Decimal(str(row["amount"]))
-                    if kind == "stock-edit-old":
-                        amount = -amount
-                    balances[str(row["location_id"])] += amount
-                actual = defaultdict(Decimal)
-                for entry in entries:
-                    if str(entry["stock_id"]) == stock_id:
-                        actual[str(entry["location_id"])] += Decimal(str(entry["amount"]))
-                if any(
-                    abs(balances[k] - actual[k]) > Decimal("0.00000001")
-                    for k in set(balances) | set(actual)
+                    old = related.get(str(row["id"]))
+                    if old is not None and old != row:
+                        raise ValueError("两次日志读取不一致")
+                    related[str(row["id"])] = row
+            balances = defaultdict(Decimal)
+            for row in related.values():
+                if str(row.get("undone", "0")) in ("1", "True", "true"):
+                    continue
+                kind = row["transaction_type"]
+                if str(row["product_id"]) != str(op["product_id"]):
+                    raise ValueError("产品历史发生变化")
+                if kind == "product-opened":
+                    continue
+                if kind not in (
+                    "purchase",
+                    "consume",
+                    "inventory-correction",
+                    "transfer_from",
+                    "transfer_to",
+                    "stock-edit-old",
+                    "stock-edit-new",
                 ):
-                    return self.record(
-                        identity,
-                        "conflict",
-                        evidence,
-                        "日志与当前批次数量尚不一致，可能部分执行或并发变化",
-                        delay,
-                    )
-                if self.logs("stock_id", stock_id, instance) != history:
-                    return self.record(
-                        identity, "unknown", evidence, "核对期间日志发生变化，稍后复查", delay
-                    )
+                    raise ValueError("无法解释的后续操作")
+                amount = Decimal(str(row["amount"]))
+                if kind == "stock-edit-old":
+                    amount = -amount
+                balances[str(row["location_id"])] += amount
+            actual = defaultdict(Decimal)
+            for entry in entries:
+                if str(entry["stock_id"]) in histories or entry.get("note") == expected["note"]:
+                    actual[str(entry["location_id"])] += Decimal(str(entry["amount"]))
+            if any(
+                abs(balances[k] - actual[k]) > Decimal("0.00000001")
+                for k in set(balances) | set(actual)
+            ):
+                return self.record(
+                    identity,
+                    "conflict",
+                    evidence,
+                    "日志与当前批次数量尚不一致，可能部分执行或并发变化",
+                    delay,
+                )
+            if self.logs("note", expected["note"], instance) != found or any(
+                self.logs("stock_id", stock_id, instance) != history
+                for stock_id, history in histories.items()
+            ):
+                return self.record(
+                    identity, "unknown", evidence, "核对期间日志发生变化，稍后复查", delay
+                )
             return self.record(identity, "success", evidence)
         except GrocyError as exc:
             return self.record(identity, "unknown", evidence, str(exc), delay)
@@ -412,11 +427,16 @@ class StockOperations:
             op = self.get(identity)
             if not op["receipt_id"] or op["action"] != "add":
                 raise LedgerError("此入口仅用于纠正订单收货入库")
+            if op["status"] == "cancelled" and op["evidence"].get("cancelled_unsent"):
+                return op
             if op["status"] in ("pending", "failed") and (
                 not op["attempts"] or op["evidence"].get("unsent")
             ):
                 return self.record(
-                    identity, "cancelled", op["evidence"], "误录收货已取消未发送入库"
+                    identity,
+                    "cancelled",
+                    op["evidence"] | {"cancelled_unsent": True},
+                    "误录收货已取消未发送入库",
                 )
             checked = self._reconcile(op)
             if checked["status"] == "undone":
@@ -475,8 +495,17 @@ class StockReconciler:
         with self.operations.writer.database() as db:
             db.execute(
                 "UPDATE inventory_operations SET status='unknown',next_check=0 "
-                "WHERE status IN ('pending','sending','failed')"
+                "WHERE status IN ('draft','pending','sending','failed')"
             )
+            # The remote write can be newer than a backup containing only its preview.
+            for row in db.execute("SELECT id,result FROM receipt_previews").fetchall():
+                result = json.loads(row["result"])
+                if not result["receipt_saved"]:
+                    result["recovery_required"] = True
+                    db.execute(
+                        "UPDATE receipt_previews SET result=? WHERE id=?",
+                        (json.dumps(result), row["id"]),
+                    )
         self.thread.start()
 
     def run(self):

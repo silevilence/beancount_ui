@@ -1,7 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { expect, it, vi } from "vitest";
-import PurchaseItems, { blankItem } from "./PurchaseItems";
+import PurchaseItems, {
+  blankItem,
+  linkedItem,
+  type PurchaseItem,
+} from "./PurchaseItems";
+import type { InventoryData, Product } from "./Inventory";
 
 it("2 箱每箱 12 瓶计算每瓶 5 元，多商品不自动分配整单金额", async () => {
   vi.stubGlobal(
@@ -47,4 +52,79 @@ it("2 箱每箱 12 瓶计算每瓶 5 元，多商品不自动分配整单金额"
   expect(screen.getByText(/本次 24 瓶/)).toBeInTheDocument();
   fireEvent.click(screen.getByText("添加商品明细"));
   expect(screen.queryByText("按单商品金额计算单价")).toBeNull();
+});
+
+it("断连仍可编辑未关联商品，不把其他币种整单金额填为价格", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({ detail: "Grocy 已停用" }),
+    })),
+  );
+  function Form() {
+    const [items, setItems] = useState<PurchaseItem[]>([
+      {
+        ...blankItem(),
+        product_id: 1,
+        name: "保存的水",
+        currency: "USD",
+        factor: "",
+        stock_unit: "瓶",
+      },
+    ]);
+    return (
+      <PurchaseItems
+        items={items}
+        onChange={setItems}
+        amount="120"
+        currency="CNY"
+      />
+    );
+  }
+  render(<Form />);
+  expect(screen.getByText(/币种不同/)).toBeInTheDocument();
+  expect(screen.queryByText("按单商品金额计算单价")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText(/每库存单位价格/), {
+    target: { value: "2" },
+  });
+  fireEvent.click(screen.getByLabelText("已核对商品、换算和分配后价格"));
+  fireEvent.click(screen.getByText("读取 Grocy 产品"));
+  await screen.findByText(/可继续记录未关联商品/);
+  fireEvent.change(screen.getByLabelText("关联 Grocy 产品"), {
+    target: { value: "" },
+  });
+  fireEvent.change(screen.getByLabelText("商品名称"), {
+    target: { value: "普通商品" },
+  });
+  fireEvent.change(screen.getByLabelText("采购单位"), {
+    target: { value: "袋" },
+  });
+  expect(screen.getByLabelText("商品名称")).toHaveValue("普通商品");
+  fireEvent.click(screen.getByText("移除此商品"));
+  expect(screen.queryByLabelText("商品名称")).not.toBeInTheDocument();
+});
+it("优先产品换算，同单位不换算，缺失换算不可猜测", () => {
+  const data = {
+    instance_id: "one",
+    currency: "CNY",
+    units: [],
+    conversions: [
+      { from_qu_id: 2, to_qu_id: 1, product_id: null, factor: "10" },
+      { from_qu_id: 2, to_qu_id: 1, product_id: 1, factor: "12" },
+    ],
+  } as unknown as InventoryData;
+  const product = {
+    id: 1,
+    name: "水",
+    qu_id_stock: 1,
+    qu_id_purchase: 2,
+    location_id: 1,
+    default_best_before_days: -1,
+  } as Product;
+  expect(linkedItem(product, data).factor).toBe("12");
+  expect(linkedItem({ ...product, id: 2 }, data).factor).toBe("10");
+  expect(linkedItem({ ...product, qu_id_purchase: 1 }, data).factor).toBe("1");
+  expect(linkedItem({ ...product, qu_id_purchase: 3 }, data).factor).toBe("");
 });
