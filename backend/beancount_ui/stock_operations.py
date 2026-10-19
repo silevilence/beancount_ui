@@ -168,7 +168,7 @@ class StockOperations:
         checks = int(op["evidence"].get("checks", 0)) + 1
         evidence["checks"] = checks
         delay = min(900, 15 * 2 ** min(checks, 6))
-        if op["status"] == "cancelled":
+        if op["status"] in ("cancelled", "resolved"):
             return op
         try:
             if op["action"] != "add":
@@ -380,12 +380,88 @@ class StockOperations:
         for op in self.list():
             if op["next_check"] > time.time():
                 continue
-            if op["status"] in ("sending", "unknown", "conflict"):
+            if op["status"] in ("sending", "unknown", "conflict", "undoing"):
                 self.reconcile(op["id"])
             elif op["status"] == "failed" and op["evidence"].get("unsent") and op["attempts"] < 3:
                 result = self.send(op["id"])
                 if result["status"] == "unknown":
                     self.reconcile(op["id"])
+
+    def resolve(self, identity, reason, applied, original_stopped):
+        if len(reason.strip()) < 10 or not original_stopped:
+            raise LedgerError("请确认原执行已停止并填写至少 10 字的核对依据")
+        with self.operation_lock(identity), self.grocy.lock:
+            op = self._reconcile(self.get(identity))
+            if op["status"] in ("success", "undone", "cancelled", "resolved"):
+                return op
+            audit = {"manual_resolution": True, "applied": applied, "reason": reason}
+            with self.writer.database() as db:
+                db.execute(
+                    "INSERT INTO inventory_audit VALUES (?,?,?)",
+                    (identity, json.dumps(audit), time.time()),
+                )
+            return self.record(
+                identity,
+                "resolved" if applied else "cancelled",
+                op["evidence"] | audit,
+                "已记录人工核对结论，未发送任何库存请求",
+            )
+
+    def undo_receipt(self, identity, reason):
+        with self.operation_lock(identity), self.grocy.lock:
+            op = self.get(identity)
+            if not op["receipt_id"] or op["action"] != "add":
+                raise LedgerError("此入口仅用于纠正订单收货入库")
+            if op["status"] in ("pending", "failed") and (
+                not op["attempts"] or op["evidence"].get("unsent")
+            ):
+                return self.record(
+                    identity, "cancelled", op["evidence"], "误录收货已取消未发送入库"
+                )
+            checked = self._reconcile(op)
+            if checked["status"] == "undone":
+                return checked
+            if checked["status"] != "success":
+                raise LedgerError("入库结果尚未确认，请先核对，不能自动撤销")
+            evidence = checked["evidence"]
+            original_ids = {str(r["id"]) for r in evidence["transaction"]}
+            for history in evidence["histories"].values():
+                if any(
+                    str(r["id"]) not in original_ids and not int(r.get("undone", 0))
+                    for r in history
+                ):
+                    raise LedgerError("批次已有后续操作，请在 Grocy 核对，不能直接撤销")
+            with self.writer.database() as db:
+                audit = db.execute(
+                    "SELECT event FROM inventory_audit WHERE operation_id=?", (identity,)
+                ).fetchall()
+                if any(json.loads(r["event"]).get("undo_dispatched") for r in audit):
+                    raise LedgerError("撤销已发送过，结果尚未确认；仅核对日志，不重复撤销")
+                db.execute(
+                    "INSERT INTO inventory_audit VALUES (?,?,?)",
+                    (
+                        identity,
+                        json.dumps({"undo_dispatched": True, "reason": reason}),
+                        time.time(),
+                    ),
+                )
+            self.record(identity, "undoing", evidence, "撤销已提交，等待远端日志确认")
+            try:
+                transaction = evidence["transaction"][0]["transaction_id"]
+                self.grocy.request(
+                    "stock/transactions/" + quote(str(transaction), safe="") + "/undo",
+                    "POST",
+                    {},
+                    instance_id=op["instance_id"],
+                )
+            except GrocyError:
+                pass
+            result = self._reconcile(self.get(identity))
+            if result["status"] != "undone":
+                return self.record(
+                    identity, "conflict", result["evidence"], "撤销结果待确认，禁止重复撤销"
+                )
+            return result
 
 
 class StockReconciler:

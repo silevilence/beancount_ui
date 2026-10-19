@@ -3,6 +3,7 @@ import { api, reasonOf, type Journal } from "./api";
 import Orders, { type Order } from "./Orders";
 import OperationStatus from "./OperationStatus";
 import ReceiptEditor from "./ReceiptEditor";
+import OrderCorrections from "./OrderCorrections";
 import type { DraftItem } from "./BatchEditor";
 import PurchaseItems, { blankItem, type PurchaseItem } from "./PurchaseItems";
 import { post } from "./GrocySettings";
@@ -19,6 +20,7 @@ export interface Receipt {
   voided?: boolean;
 }
 export interface ManagedOrder {
+  corrections?: { action: string; reason: string }[];
   id: string;
   source: Order;
   items: (PurchaseItem & {
@@ -434,6 +436,11 @@ export default function OrderPage({
                       </article>
                     ))}
                     <h3>收货历史</h3>
+                    <OrderCorrections
+                      key={detail.id}
+                      order={detail}
+                      onChanged={refresh}
+                    />
                     <ReceiptEditor
                       key={detail.id}
                       order={detail}
@@ -450,7 +457,7 @@ export default function OrderPage({
                     {detail.receipts.length ? (
                       detail.receipts.map((r) => (
                         <p key={r.request_id}>
-                          {r.received_date} ·{" "}
+                          {r.received_date} · {r.voided && "已作废 · "}
                           {r.lines
                             .map(
                               (l) =>

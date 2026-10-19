@@ -12,6 +12,10 @@ from .orders import orders
 def initialize(db):
     db.execute("CREATE TABLE IF NOT EXISTS fulfillment_orders (id TEXT PRIMARY KEY, payload TEXT)")
     db.execute(
+        "CREATE TABLE IF NOT EXISTS order_corrections "
+        "(id TEXT PRIMARY KEY, order_id TEXT, request TEXT, result TEXT)"
+    )
+    db.execute(
         "CREATE TABLE IF NOT EXISTS receipt_previews "
         "(id TEXT PRIMARY KEY, request TEXT, prepared TEXT, result TEXT)"
     )
@@ -140,6 +144,13 @@ class Fulfillment:
                         "payment_state": payment,
                         "source_changed": not live or live["raw"] != doc["source"]["raw"],
                         "operations": operations,
+                        "corrections": [
+                            json.loads(r["request"])
+                            for r in db.execute(
+                                "SELECT request FROM order_corrections WHERE order_id=?",
+                                (doc["id"],),
+                            )
+                        ],
                     }
                 )
             return result
@@ -211,7 +222,7 @@ class Fulfillment:
                     op["receipt_id"] in receipts
                     and key in result
                     and op["instance_id"] == instance_id
-                    and op["status"] not in ("success", "cancelled")
+                    and op["status"] not in ("success", "cancelled", "resolved")
                 ):
                     result[key]["received_unsynced"] += Decimal(op["payload"]["amount"])
         return {

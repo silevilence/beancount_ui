@@ -31,6 +31,7 @@ from .layout_config import LayoutInput, activate_layout, configuration, preview_
 from .ledger import Ledger, LedgerError
 from .manual_stock import ManualStock, StockAction
 from .models import BatchMutation, CommitInput, Mutation
+from .order_corrections import CorrectionInput, OrderCorrections
 from .orders import orders
 from .query import daily_view
 from .receipt_flow import ReceiptFlow
@@ -46,6 +47,12 @@ class RetryStockInput(BaseModel):
     reason: str = Field(min_length=10, max_length=2000)
     original_stopped: bool
     no_effect: bool
+
+
+class ResolveStockInput(BaseModel):
+    reason: str = Field(min_length=10, max_length=2000)
+    original_stopped: bool
+    applied: bool
 
 
 def create_app(settings: Settings | None = None, access: Access | None = None):
@@ -163,6 +170,14 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     def fulfillment_orders():
         return Fulfillment(get_writer()).list()
 
+    @app.get("/api/fulfillment/corrections/inspect")
+    def inspect_correction(order_id: str, receipt_id: str):
+        return OrderCorrections(get_writer()).inspect(order_id, receipt_id)
+
+    @app.post("/api/fulfillment/corrections")
+    def correct_order(request: CorrectionInput):
+        return OrderCorrections(get_writer()).apply(request)
+
     @app.post("/api/fulfillment/claim/preview")
     def fulfillment_claim(request: ClaimInput):
         return get_writer().preview(
@@ -197,6 +212,12 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     def retry_stock_operation(identity: str, request: RetryStockInput):
         return StockOperations(get_writer()).manual_retry(
             identity, request.reason, request.original_stopped, request.no_effect
+        )
+
+    @app.post("/api/grocy/operations/{identity}/resolve")
+    def resolve_stock_operation(identity: str, request: ResolveStockInput):
+        return StockOperations(get_writer()).resolve(
+            identity, request.reason, request.applied, request.original_stopped
         )
 
     @app.get("/api/layout")

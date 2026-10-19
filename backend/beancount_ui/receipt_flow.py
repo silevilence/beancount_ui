@@ -90,12 +90,20 @@ class ReceiptFlow:
                             kind="settle",
                             source_id=doc["source"]["id"],
                             date=settle.date,
-                        amount=str(settle.amount),
+                            amount=str(settle.amount),
                             account=settle.account,
                         ),
                     )
                 )
             result = {
+                "item_snapshots": {
+                    i["id"]: {
+                        k: v
+                        for k, v in i.items()
+                        if k not in ("received", "remaining", "cancelled")
+                    }
+                    for i in doc["items"]
+                },
                 "request_id": identity,
                 "received_date": str(request.received_date),
                 "actions": actions,
@@ -121,6 +129,20 @@ class ReceiptFlow:
                 raise LedgerError("收货预览不存在")
             request = ReceiptInput.model_validate_json(row["prepared"])
             result = json.loads(row["result"])
+            with self.writer.database() as db:
+                existing = db.execute("SELECT 1 FROM receipts WHERE id=?", (identity,)).fetchone()
+            if not existing:
+                order = next((o for o in self.orders.list() if o["id"] == request.order_id), None)
+                if not order or any(
+                    {
+                        k: v
+                        for k, v in item.items()
+                        if k not in ("received", "remaining", "cancelled")
+                    }
+                    != result["item_snapshots"].get(item["id"])
+                    for item in order["items"]
+                ):
+                    raise LedgerError("收货预览后商品关联已更正，请重新预览")
             # The physical fact and outbox are committed together before optional external steps.
             self.orders.receive(request, prepared=True)
             result["receipt_saved"] = True

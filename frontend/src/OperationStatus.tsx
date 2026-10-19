@@ -22,6 +22,9 @@ export const syncLabels: Record<string, string> = {
   conflict: "需要人工核对",
   undone: "远端已撤销",
   cancelled: "已停止操作",
+  resolved: "已人工核实",
+  undoing: "撤销结果待确认",
+  draft: "尚未确认",
 };
 export default function OperationStatus({
   operations,
@@ -32,6 +35,35 @@ export default function OperationStatus({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  async function resolve(id: string, applied: boolean) {
+    const reason = window.prompt(
+      "请填写人工核对依据（至少 10 字），说明远端日志、批次及原执行已停止的证据：",
+    );
+    if (
+      !reason ||
+      reason.trim().length < 10 ||
+      !window.confirm(
+        applied
+          ? "确认已经核实远端操作完整生效？这里只保存结论，不操作库存。"
+          : "确认原执行已停止？这里只关闭追踪，不操作库存；已有库存需另行更正。",
+      )
+    )
+      return;
+    setBusy(true);
+    setError("");
+    try {
+      await post(`/grocy/operations/${id}/resolve`, {
+        reason,
+        applied,
+        original_stopped: true,
+      });
+      await onChanged?.();
+    } catch (e) {
+      setError(reasonOf(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function action(id: string, retry = false) {
     if (busy) return;
     let body: Record<string, unknown> = {};
@@ -81,6 +113,24 @@ export default function OperationStatus({
           {o.error && <p>{o.error}</p>}
           {onChanged && (
             <div className="toolbar">
+              {["unknown", "conflict", "undoing"].includes(o.status) && (
+                <>
+                  <button
+                    disabled={busy}
+                    className="ghost small"
+                    onClick={() => void resolve(o.id, true)}
+                  >
+                    记录人工核实成功
+                  </button>
+                  <button
+                    disabled={busy}
+                    className="ghost small"
+                    onClick={() => void resolve(o.id, false)}
+                  >
+                    人工核对后停止
+                  </button>
+                </>
+              )}
               <button
                 disabled={busy}
                 className="ghost small"
