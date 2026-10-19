@@ -2546,3 +2546,15 @@ kbd {
 }
 .quick-fill details { margin-top: 0.75rem; }
 .quick-fill summary { cursor: pointer; }
+/* Settings and inventory use the ledger's paper, ink and ruled card vocabulary. */
+.settings-page { padding: 24px; max-width: 1200px; margin: auto; }
+.page-heading { margin-bottom: 24px; }
+.page-heading h1 { margin: 4px 0 12px; font-size: 30px; }
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.settings-wide { grid-column: 1 / -1; }
+.settings-grid .card { min-width: 0; }
+.settings-grid p { line-height: 1.7; }
+@media (max-width: 680px) {
+  .settings-page { padding: 16px 10px; }
+  .settings-grid { grid-template-columns: minmax(0, 1fr); }
+}
