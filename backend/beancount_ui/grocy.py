@@ -179,6 +179,7 @@ class Grocy:
                 "objects/quantity_units",
                 "objects/quantity_unit_conversions",
                 "objects/shopping_locations",
+                "objects/product_groups",
                 "objects/stock_log?limit=1",
                 "stock",
                 "stock/volatile",
@@ -209,6 +210,7 @@ class Grocy:
                 "units": "objects/quantity_units",
                 "conversions": "objects/quantity_unit_conversions",
                 "shopping_locations": "objects/shopping_locations",
+                "product_groups": "objects/product_groups",
             }
             result = {key: self.request(path) for key, path in paths.items()}
             result["currency"] = self.request("system/config").get("CURRENCY", "")
@@ -237,6 +239,10 @@ class Grocy:
                 )
                 if not product or item["instance_id"] != data["instance_id"]:
                     raise LedgerError("关联产品已失效或实例变化，请重新选择")
+                if int(product.get("no_own_stock", 0) or 0):
+                    raise LedgerError("该产品无自有库存，请选择可入库的子产品")
+                if not int(product.get("active", 1)):
+                    raise LedgerError("关联产品已停用，请重新选择")
                 if int(product.get("enable_tare_weight_handling", 0)):
                     raise LedgerError("首版暂不支持皮重产品，请在 Grocy 核对操作")
                 stock_unit = int(product["qu_id_stock"])
@@ -255,7 +261,7 @@ class Grocy:
                     factor = Decimal(str((specific or conversions)[0]["factor"]))
                 if item["stock_unit_id"] != stock_unit or factor != Decimal(item["factor"]):
                     raise LedgerError("产品单位换算已变化或不支持，请重新核对")
-                if item["currency"] != data["currency"] or not item["price_confirmed"]:
-                    raise LedgerError("请确认 Grocy 币种下的每库存单位价格")
+                if not item["price_confirmed"]:
+                    raise LedgerError("请填写商品分配金额以计算库存单价")
             if bind:
                 self.bind(data["instance_id"])

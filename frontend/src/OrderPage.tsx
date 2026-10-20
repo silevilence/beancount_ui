@@ -352,6 +352,7 @@ export default function OrderPage({
                 </label>
                 <PurchaseItems
                   items={items}
+                  autoCalculate={!pending}
                   onChange={setItems}
                   amount={candidate.total}
                   currency={candidate.currency}

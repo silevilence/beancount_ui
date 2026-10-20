@@ -357,11 +357,11 @@ export default function BatchEditor({
                 }
               : next.advanced || balanceRaw
                 ? { raw: next.advancedRaw || "" }
-                : next.orderMode &&
+                : (next.orderMode || next.purchaseItems?.length) &&
                     (!next.business || next.business === "ordinary")
                   ? {
                       order: {
-                        kind: next.orderMode,
+                        kind: next.orderMode || "paid",
                         purchase: next.form,
                         date: next.form.date,
                         amount: next.form.amount,
@@ -751,9 +751,10 @@ export default function BatchEditor({
               onChange={(form) => update({ ...draft, form })}
             />
           )}
-          {business === "ordinary" && draft.orderMode && (
+          {business === "ordinary" && (
             <PurchaseItems
               items={draft.purchaseItems || []}
+              autoCalculate={!locked}
               onChange={(purchaseItems) => update({ ...draft, purchaseItems })}
               amount={draft.form.amount}
               currency={draft.form.currency}

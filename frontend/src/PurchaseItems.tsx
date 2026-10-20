@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, reasonOf } from "./api";
 import { nameOf, type InventoryData, type Product } from "./Inventory";
 import { requestId } from "./requestId";
@@ -18,6 +18,7 @@ export interface PurchaseItem {
   unit_price: string | null;
   currency: string;
   price_confirmed: boolean;
+  allocated_amount?: string | null;
   default_location_id?: number | null;
   default_best_before_days?: number | null;
 }
@@ -63,7 +64,7 @@ export function linkedItem(
     unit: nameOf(data.units, p.qu_id_purchase),
     stock_unit: nameOf(data.units, p.qu_id_stock),
     unit_price: null,
-    currency: data.currency,
+    currency: old.currency,
     price_confirmed: false,
     default_location_id: Number(p.location_id) || null,
     default_best_before_days: p.default_best_before_days ?? null,
@@ -98,18 +99,68 @@ export default function PurchaseItems({
   onChange,
   amount,
   currency,
+  autoCalculate = true,
 }: {
   items: PurchaseItem[];
   onChange: (v: PurchaseItem[]) => void;
   amount: string;
   currency: string;
+  autoCalculate?: boolean;
 }) {
   const [data, setData] = useState<InventoryData>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  function update(index: number, next: PurchaseItem) {
-    onChange(items.map((item, i) => (i === index ? next : item)));
+  function priced(rows: PurchaseItem[]) {
+    return rows.map((item) => {
+      const allocation =
+        rows.length === 1 && amount !== ""
+          ? amount
+          : (item.allocated_amount ??
+            (item.unit_price != null
+              ? (
+                  Number(item.unit_price) *
+                  Number(item.quantity) *
+                  Number(item.factor)
+                )
+                  .toFixed(8)
+                  .replace(/\.?0+$/, "")
+              : undefined));
+      const quantity = Number(item.quantity) * Number(item.factor);
+      const valid =
+        allocation != null &&
+        allocation !== "" &&
+        Number.isFinite(Number(allocation)) &&
+        Number(allocation) >= 0 &&
+        Number.isFinite(quantity) &&
+        quantity > 0;
+      return {
+        ...item,
+        allocated_amount: allocation,
+        currency,
+        unit_price:
+          item.product_id && valid
+            ? (Number(allocation) / quantity).toFixed(8).replace(/\.?0+$/, "")
+            : null,
+        price_confirmed: !!item.product_id && valid,
+      };
+    });
   }
+  function change(rows: PurchaseItem[]) {
+    onChange(priced(rows));
+  }
+  useEffect(() => {
+    if (!autoCalculate) return;
+    const next = priced(items);
+    if (JSON.stringify(next) !== JSON.stringify(items)) onChange(next);
+  }, [items, amount, currency, autoCalculate]);
+  function update(index: number, next: PurchaseItem) {
+    change(items.map((item, i) => (i === index ? next : item)));
+  }
+  const allocated = items.reduce(
+    (sum, item) => sum + Number(item.allocated_amount || 0),
+    0,
+  );
+
   return (
     <section className="purchase-items">
       <div className="panel-head">
@@ -135,7 +186,7 @@ export default function PurchaseItems({
       </div>
       {error && <Notice tone="warn">{error}。可继续记录未关联商品。</Notice>}
       <p className="muted small">
-        商品数量独立于费用分录。价格为每库存单位价格；多商品、优惠和运费请逐项分配确认。
+        单商品自动使用整单金额；多商品只需分配金额（含优惠和运费），单价按数量和单位换算自动计算。金额使用账本币种。
         点「读取 Grocy 产品」后才能选择关联，未加载也可直接记录。
       </p>
       {items.map((item, index) => (
@@ -159,13 +210,17 @@ export default function PurchaseItems({
                 );
                 update(
                   index,
-                  p && data
+                  p &&
+                    data &&
+                    !Number(p.no_own_stock) &&
+                    Number(p.active ?? 1) !== 0
                     ? linkedItem(p, data, item)
                     : {
                         ...blankItem(),
                         id: item.id,
                         name: item.name,
                         quantity: item.quantity,
+                        allocated_amount: item.allocated_amount,
                       },
                 );
               }}
@@ -180,8 +235,19 @@ export default function PurchaseItems({
                   </option>
                 )}
               {data?.products.map((p) => (
-                <option key={p.id} value={p.id}>
+                <option
+                  key={p.id}
+                  value={p.id}
+                  disabled={
+                    !!Number(p.no_own_stock) || Number(p.active ?? 1) === 0
+                  }
+                >
                   {p.name}
+                  {Number(p.no_own_stock)
+                    ? "（无自有库存）"
+                    : Number(p.active ?? 1) === 0
+                      ? "（已停用）"
+                      : ""}
                 </option>
               ))}
             </select>
@@ -210,6 +276,18 @@ export default function PurchaseItems({
               onChange={(e) => update(index, { ...item, unit: e.target.value })}
             />
           </label>
+          <label>
+            分配金额（{currency}）
+            <input
+              required
+              inputMode="decimal"
+              readOnly={items.length === 1 && amount !== ""}
+              value={item.allocated_amount ?? ""}
+              onChange={(e) =>
+                update(index, { ...item, allocated_amount: e.target.value })
+              }
+            />
+          </label>
           {item.product_id && (
             <>
               <p>
@@ -218,77 +296,30 @@ export default function PurchaseItems({
                 {Number(item.quantity) * Number(item.factor)} {item.stock_unit}
               </p>
               <label>
-                每库存单位价格（{item.currency} / {item.stock_unit}）
-                <input
-                  required
-                  inputMode="decimal"
-                  value={item.unit_price ?? ""}
-                  onChange={(e) =>
-                    update(index, {
-                      ...item,
-                      unit_price: e.target.value,
-                      price_confirmed: false,
-                    })
-                  }
-                />
-              </label>
-              {items.length === 1 &&
-                currency === item.currency &&
-                Number(amount) > 0 &&
-                Number(item.quantity) * Number(item.factor) > 0 && (
-                  <button
-                    type="button"
-                    className="ghost small"
-                    onClick={() =>
-                      update(index, {
-                        ...item,
-                        unit_price: (
-                          Number(amount) /
-                          (Number(item.quantity) * Number(item.factor))
-                        )
-                          .toFixed(8)
-                          .replace(/\.?0+$/, ""),
-                        price_confirmed: false,
-                      })
-                    }
-                  >
-                    按单商品金额计算单价
-                  </button>
-                )}
-              {currency !== item.currency && (
-                <p className="muted">
-                  账本币种 {currency} 与 Grocy
-                  币种不同，请手动填写换算后的单价。
-                </p>
-              )}
-              <label>
-                <input
-                  type="checkbox"
-                  checked={item.price_confirmed}
-                  onChange={(e) =>
-                    update(index, {
-                      ...item,
-                      price_confirmed: e.target.checked,
-                    })
-                  }
-                />
-                已核对商品、换算和分配后价格
+                每库存单位价格（{currency} / {item.stock_unit}，自动计算）
+                <input readOnly value={item.unit_price ?? ""} />
               </label>
             </>
           )}
           <button
             type="button"
             className="ghost small"
-            onClick={() => onChange(items.filter((_, i) => i !== index))}
+            onClick={() => change(items.filter((_, i) => i !== index))}
           >
             移除此商品
           </button>
         </fieldset>
       ))}
+      {items.length > 1 && amount !== "" && (
+        <p role="status">
+          已分配 {allocated.toFixed(2)} / {amount} {currency} · 剩余{" "}
+          {(Number(amount) - allocated).toFixed(2)}
+        </p>
+      )}
       <button
         type="button"
         className="ghost"
-        onClick={() => onChange([...items, blankItem()])}
+        onClick={() => change([...items, blankItem()])}
       >
         添加商品明细
       </button>

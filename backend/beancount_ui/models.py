@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .fulfillment_models import ItemInput
 
@@ -76,6 +76,20 @@ class OrderInput(BaseModel):
     category: str = ""
     note: str = Field(default="", max_length=2000)
     items: list[ItemInput] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def allocated_prices(self):
+        if any(item.allocated_amount is not None for item in self.items):
+            if any(item.allocated_amount is None for item in self.items):
+                raise ValueError("请为每个商品填写分配金额")
+            total = sum((item.allocated_amount for item in self.items), Decimal(0))
+            if total != self.amount:
+                raise ValueError("商品分配金额合计必须等于订单金额")
+            if self.purchase and any(
+                item.currency != self.purchase.currency for item in self.items
+            ):
+                raise ValueError("商品分配金额必须使用账本币种")
+        return self
 
     @field_validator("amount", mode="before")
     @classmethod

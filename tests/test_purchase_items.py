@@ -62,7 +62,7 @@ def test_purchase_snapshot_only_after_commit(ledger, linked_purchase):
     assert (writer.state / "grocy-bindings.locked").exists()
 
 
-def test_product_conversion_or_currency_change_blocks_commit(ledger, linked_purchase):
+def test_product_conversion_or_disappearance_blocks_commit(ledger, linked_purchase):
     request, data = linked_purchase
     writer = Writer(ledger)
     result = writer.preview(request)
@@ -71,9 +71,51 @@ def test_product_conversion_or_currency_change_blocks_commit(ledger, linked_purc
         writer.commit(result["request_id"])
     assert not Fulfillment(writer).list()
     data["conversions"][0]["factor"] = "12"
-    data["currency"] = "USD"
-    with pytest.raises(ValueError, match="币种"):
-        writer.commit(result["request_id"])
     data["products"] = []
     with pytest.raises(ValueError, match="失效"):
         writer.commit(result["request_id"])
+
+
+def test_grocy_currency_is_ignored_and_allocation_calculates_price(ledger, linked_purchase):
+    request, data = linked_purchase
+    data["currency"] = "USD"
+    body = request.order.model_dump(mode="json")
+    body["items"][0].update(allocated_amount="120", unit_price="999", price_confirmed=False)
+    request.order = OrderInput.model_validate(body)
+    assert request.order.items[0].unit_price == 5
+    writer = Writer(ledger)
+    preview = writer.preview(request)
+    writer.commit(preview["request_id"])
+    item = Fulfillment(writer).list()[0]["items"][0]
+    assert item["currency"] == "CNY"
+    assert item["unit_price"] == "5.00000000"
+
+
+@pytest.mark.parametrize("field,value", [("no_own_stock", "1"), ("active", "0")])
+def test_unstockable_or_inactive_product_rejected(ledger, linked_purchase, field, value):
+    request, data = linked_purchase
+    data["products"][0][field] = value
+    with pytest.raises(ValueError, match="无自有库存|停用"):
+        Writer(ledger).preview(request)
+
+
+def test_multi_product_allocation_must_equal_order_total(linked_purchase):
+    request, _ = linked_purchase
+    body = request.order.model_dump(mode="json")
+    body["items"][0]["allocated_amount"] = "80"
+    body["items"].append(body["items"][0] | {"id": str(uuid4()), "allocated_amount": "40"})
+    result = OrderInput.model_validate(body)
+    assert str(result.items[0].unit_price) == "3.33333333"
+    body["items"][1]["allocated_amount"] = "41"
+    with pytest.raises(ValueError, match="合计"):
+        OrderInput.model_validate(body)
+    body["items"][1]["allocated_amount"] = None
+    with pytest.raises(ValueError, match="每个商品"):
+        OrderInput.model_validate(body)
+
+
+def test_legacy_items_keep_serialized_request_shape(linked_purchase):
+    request, _ = linked_purchase
+    item = request.order.items[0]
+    assert "allocated_amount" not in item.model_dump(mode="json")
+    assert "allocated_amount" not in request.model_dump(mode="json")["order"]["items"][0]

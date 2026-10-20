@@ -51,6 +51,13 @@ def order_document(source, items):
         ]
     if len({str(i.id) for i in items}) != len(items):
         raise LedgerError("商品明细编号重复")
+    if any(i.allocated_amount is not None for i in items):
+        if any(i.allocated_amount is None for i in items):
+            raise LedgerError("请为每个商品填写分配金额")
+        if sum((i.allocated_amount for i in items), Decimal(0)) != Decimal(source["total"]):
+            raise LedgerError("商品分配金额合计必须等于订单金额")
+        if any(i.currency != source["currency"] for i in items):
+            raise LedgerError("商品分配金额必须使用账本币种")
     return {
         "id": identity,
         "source": source,

@@ -9,6 +9,89 @@ import PurchaseItems, {
 } from "./PurchaseItems";
 import type { InventoryData, Product } from "./Inventory";
 
+it("旧商品单价还原分配金额时消除浮点尾数，金额变化重新计算", () => {
+  function Form() {
+    const [items, setItems] = useState([
+      {
+        ...blankItem(),
+        name: "水",
+        product_id: 1,
+        unit_price: "0.1",
+        quantity: "3",
+        currency: "CNY",
+      },
+    ]);
+    const [amount, setAmount] = useState("");
+    return (
+      <>
+        <input
+          aria-label="订单金额"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+        />
+        <PurchaseItems
+          items={items}
+          onChange={(next) => setItems(next as typeof items)}
+          amount={amount}
+          currency="CNY"
+        />
+      </>
+    );
+  }
+  render(<Form />);
+  expect(screen.getByLabelText(/分配金额/)).toHaveValue("0.3");
+  fireEvent.change(screen.getByLabelText("订单金额"), {
+    target: { value: "6" },
+  });
+  expect(screen.getByLabelText(/每库存单位价格/)).toHaveValue("2");
+});
+
+it("忽略 Grocy 币种并随数量自动计算单价，禁止选择无自有库存父产品", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        instance_id: "one",
+        currency: "USD",
+        products: [
+          { id: 1, name: "水", qu_id_stock: 1, qu_id_purchase: 2 },
+          { id: 2, name: "饮料", no_own_stock: 1 },
+        ],
+        units: [
+          { id: 1, name: "瓶" },
+          { id: 2, name: "箱" },
+        ],
+        conversions: [
+          { product_id: 1, from_qu_id: 2, to_qu_id: 1, factor: "12" },
+        ],
+      }),
+    })),
+  );
+  function Form() {
+    const [items, setItems] = useState([blankItem()]);
+    return (
+      <PurchaseItems
+        items={items}
+        onChange={setItems}
+        amount="120"
+        currency="CNY"
+      />
+    );
+  }
+  render(<Form />);
+  fireEvent.click(screen.getByText("读取 Grocy 产品"));
+  expect(await screen.findByRole("option", { name: /饮料/ })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("关联 Grocy 产品"), {
+    target: { value: "1" },
+  });
+  fireEvent.change(screen.getByLabelText("采购数量"), {
+    target: { value: "2" },
+  });
+  expect(screen.getByLabelText(/每库存单位价格/)).toHaveValue("5");
+  expect(screen.queryByText(/币种不同/)).not.toBeInTheDocument();
+});
+
 it("告警建议扣除在途与已收未同步，换算缺失或无净缺口时不猜数量", () => {
   const product = {
     id: 1,
@@ -85,14 +168,21 @@ it("2 箱每箱 12 瓶计算每瓶 5 元，多商品不自动分配整单金额"
   fireEvent.change(screen.getByLabelText("采购数量"), {
     target: { value: "2" },
   });
-  fireEvent.click(screen.getByText("按单商品金额计算单价"));
   expect(screen.getByLabelText(/每库存单位价格/)).toHaveValue("5");
   expect(screen.getByText(/本次 24 瓶/)).toBeInTheDocument();
   fireEvent.click(screen.getByText("添加商品明细"));
   expect(screen.queryByText("按单商品金额计算单价")).toBeNull();
+  fireEvent.change(screen.getAllByLabelText(/分配金额/)[0], {
+    target: { value: "72" },
+  });
+  fireEvent.change(screen.getAllByLabelText(/分配金额/)[1], {
+    target: { value: "48" },
+  });
+  expect(screen.getByLabelText(/每库存单位价格/)).toHaveValue("3");
+  expect(screen.getByRole("status")).toHaveTextContent("剩余 0.00");
 });
 
-it("断连仍可编辑未关联商品，不把其他币种整单金额填为价格", async () => {
+it("断连仍可取消关联并编辑普通商品", async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => ({
@@ -122,12 +212,6 @@ it("断连仍可编辑未关联商品，不把其他币种整单金额填为价�
     );
   }
   render(<Form />);
-  expect(screen.getByText(/币种不同/)).toBeInTheDocument();
-  expect(screen.queryByText("按单商品金额计算单价")).not.toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText(/每库存单位价格/), {
-    target: { value: "2" },
-  });
-  fireEvent.click(screen.getByLabelText("已核对商品、换算和分配后价格"));
   fireEvent.click(screen.getByText("读取 Grocy 产品"));
   await screen.findByText(/可继续记录未关联商品/);
   fireEvent.change(screen.getByLabelText("关联 Grocy 产品"), {

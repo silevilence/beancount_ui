@@ -2567,6 +2567,10 @@ kbd {
 .inventory-row { padding: 14px 0; border-bottom: 1px solid var(--line, #ddd5c8); display: grid; gap: 8px; overflow-wrap: anywhere; }
 .inventory-row > button { text-align: left; justify-self: start; }
 .inventory-row > button[aria-pressed="true"] { border-color: var(--amber-soft); color: var(--amber); }
+.inventory-title { display: flex; align-items: center; gap: 8px; }
+.inventory-title > button { text-align: left; }
+.inventory-title > button[aria-pressed="true"] { border-color: var(--amber-soft); color: var(--amber); }
+.inventory-child { border-left: 2px solid var(--line); padding-left: 12px; }
 .inventory-alerts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 @media (max-width: 760px) { .inventory-grid { grid-template-columns: minmax(0, 1fr); } }
 .order-work { border: 0; padding: 0; min-width: 0; }

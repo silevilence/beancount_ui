@@ -8,9 +8,15 @@ import {
 } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import Editor, { PENDING_KEY } from "./Editor";
+import { blankItem } from "./PurchaseItems";
 import type { Journal, Transaction } from "./api";
 
-beforeEach(() => vi.stubGlobal("confirm", vi.fn(() => true)));
+beforeEach(() =>
+  vi.stubGlobal(
+    "confirm",
+    vi.fn(() => true),
+  ),
+);
 
 type Reply = { ok: boolean; status?: number; json: () => Promise<unknown> };
 
@@ -69,6 +75,24 @@ function fill() {
   });
 }
 
+it("普通记一笔添加商品后自动保存为可收货订单", async () => {
+  const { requests } = setup();
+  fill();
+  fireEvent.click(screen.getByText("添加商品明细"));
+  fireEvent.change(screen.getByLabelText("商品名称"), {
+    target: { value: "洗发水" },
+  });
+  expect(screen.getByLabelText("关联 Grocy 产品")).toBeInTheDocument();
+  fireEvent.click(screen.getByText("预览并校验"));
+  await screen.findByText("保存预览");
+  expect(
+    requests.find((r) => r.path.endsWith("/preview"))?.body.order,
+  ).toMatchObject({
+    kind: "paid",
+    items: [{ name: "洗发水", allocated_amount: "12.30" }],
+  });
+});
+
 function setup(
   mode: "success" | "timeout" | "invalid" | "empty" | "offline" = "success",
   op: "create" | "edit" | "delete" = "create",
@@ -86,7 +110,9 @@ function setup(
         request_id: body.request_id,
         target: "txs/2026/09.bean",
         items: [
-          { raw: '2026-09-30 * "超市"\n  Expenses:Food 12.30 CNY\n  Assets:Cash -12.30 CNY\n' },
+          {
+            raw: '2026-09-30 * "超市"\n  Expenses:Food 12.30 CNY\n  Assets:Cash -12.30 CNY\n',
+          },
         ],
         diffs:
           mode === "empty"
@@ -356,6 +382,56 @@ it("恢复已有预览时可以取消并关闭", async () => {
   expect(screen.getByLabelText("金额")).toHaveValue("9.90");
   fireEvent.click(screen.getByText("取消预览，继续修改"));
   expect(onClose).toHaveBeenCalledOnce();
+});
+
+it("恢复旧版商品请求时不自动改价或丢失原请求", async () => {
+  const saved = JSON.stringify({
+    request: {
+      request_id: "legacy-order",
+      revision: journal.revision,
+      operation: "create",
+      business: "ordinary",
+      order: {
+        kind: "paid",
+        purchase: {
+          date: journal.date,
+          amount: "120",
+          currency: "CNY",
+          payee: "",
+          narration: "",
+          category: "Expenses:Food",
+          payment: "Assets:Cash",
+          note: "",
+        },
+        date: journal.date,
+        amount: "120",
+        account: "Assets:Cash",
+        items: [
+          {
+            ...blankItem(),
+            name: "水",
+            product_id: 1,
+            unit_price: "5",
+            currency: "USD",
+            price_confirmed: true,
+          },
+        ],
+      },
+    },
+  });
+  localStorage.setItem(PENDING_KEY, saved);
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok(journal)));
+  render(
+    <Editor
+      journal={journal}
+      operation="create"
+      onClose={vi.fn()}
+      onSaved={vi.fn()}
+    />,
+  );
+  expect(await screen.findByText(/已恢复原预览请求/)).toBeInTheDocument();
+  expect(localStorage.getItem(PENDING_KEY)).toBe(saved);
+  expect(screen.getByLabelText(/每库存单位价格/)).toHaveValue("5");
 });
 
 it("账户加载失败时禁止预览并给出原因", async () => {

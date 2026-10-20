@@ -1,11 +1,18 @@
 """Physical quantities and receipt requests are independent of ledger postings."""
 
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 
 class ItemInput(BaseModel):
@@ -16,17 +23,25 @@ class ItemInput(BaseModel):
     unit: str = Field(default="件", min_length=1, max_length=50)
     product_id: int | None = Field(default=None, gt=0)
     instance_id: str = ""
-    factor: Decimal = Field(default=Decimal(1), gt=0, max_digits=20, decimal_places=8)
+    factor: Decimal = Field(default=Decimal(1), gt=0, max_digits=30, decimal_places=18)
     stock_unit: str = Field(default="件", max_length=50)
     purchase_unit_id: int | None = Field(default=None, gt=0)
     stock_unit_id: int | None = Field(default=None, gt=0)
     unit_price: Decimal | None = Field(default=None, ge=0, max_digits=20, decimal_places=8)
     currency: str = Field(default="", max_length=20)
     price_confirmed: bool = False
+    allocated_amount: Decimal | None = Field(default=None, ge=0, max_digits=24, decimal_places=8)
     default_location_id: int | None = Field(default=None, gt=0)
     default_best_before_days: int | None = Field(default=None, ge=-1, le=36500)
 
-    @field_validator("quantity", "factor", "unit_price", mode="before")
+    @model_serializer(mode="wrap")
+    def preserve_legacy_request(self, handler):
+        result = handler(self)
+        if self.allocated_amount is None:
+            result.pop("allocated_amount", None)
+        return result
+
+    @field_validator("quantity", "factor", "unit_price", "allocated_amount", mode="before")
     @classmethod
     def exact(cls, value):
         if value is not None and not isinstance(value, (str, Decimal)):
@@ -35,6 +50,15 @@ class ItemInput(BaseModel):
 
     @model_validator(mode="after")
     def linked(self):
+        if self.product_id and self.allocated_amount is not None:
+            with localcontext() as context:
+                context.prec = 60
+                self.unit_price = (self.allocated_amount / (self.quantity * self.factor)).quantize(
+                    Decimal("0.00000001"), rounding=ROUND_HALF_UP
+                )
+            if self.unit_price >= Decimal("1000000000000"):
+                raise ValueError("计算后的库存单价超出支持范围，请核对金额与数量")
+            self.price_confirmed = True
         if self.product_id and (
             not self.instance_id
             or not self.purchase_unit_id

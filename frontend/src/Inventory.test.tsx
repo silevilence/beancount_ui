@@ -1,6 +1,75 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import Inventory from "./Inventory";
+import Inventory, { inventoryTree, type InventoryData } from "./Inventory";
+
+it("接口聚合数量不重复累加，叶子产品保留自有数量，搜索保留上下文", () => {
+  const data = {
+    products: [
+      { id: 1, name: "洗发水", qu_id_stock: 1 },
+      { id: 2, name: "海飞丝", parent_product_id: 1, qu_id_stock: 1 },
+      { id: 3, name: "补充装", parent_product_id: 2, qu_id_stock: 1 },
+    ],
+    stock: [
+      {
+        product_id: 1,
+        amount: "0",
+        amount_aggregated: "5",
+        amount_opened_aggregated: "1",
+      },
+      { product_id: 2, amount: "2", amount_aggregated: "5" },
+      {
+        product_id: 3,
+        amount: "3",
+        amount_aggregated: "0",
+        is_aggregated_amount: false,
+      },
+    ],
+    alerts: {},
+  } as unknown as InventoryData;
+  const rows = inventoryTree(data, "洗发水", false);
+  expect(rows.map((r) => r.amount)).toEqual([5, 5, 3]);
+  expect(rows.map((r) => r.depth)).toEqual([0, 1, 2]);
+  expect(inventoryTree(data, "补充装", false)).toHaveLength(3);
+});
+
+it("默认隐藏空库存无告警产品，保留父子树并显示子产品汇总", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        products: [
+          {
+            id: 1,
+            name: "洗发水",
+            qu_id_stock: 1,
+            cumulate_min_stock_amount_of_sub_products: 1,
+            parent_product_id: null,
+          },
+          { id: 2, name: "海飞丝", qu_id_stock: 1, parent_product_id: 1 },
+          { id: 3, name: "空库存", qu_id_stock: 1 },
+          { id: 4, name: "需补货", qu_id_stock: 1, min_stock_amount: "2" },
+        ],
+        stock: [{ product_id: 2, amount: "2", amount_opened: "1" }],
+        alerts: {},
+        units: [{ id: 1, name: "瓶" }],
+        locations: [],
+      }),
+    })),
+  );
+  render(<Inventory />);
+  await screen.findByText("海飞丝");
+  expect(screen.queryByText("空库存")).not.toBeInTheDocument();
+  expect(screen.getByText("需补货")).toBeInTheDocument();
+  expect(screen.getByText(/含子产品合计 2 瓶/)).toBeInTheDocument();
+  expect(screen.getAllByRole("treeitem")).toHaveLength(3);
+  fireEvent.click(screen.getByLabelText("收起洗发水"));
+  expect(screen.queryByText("海飞丝")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText("展开洗发水"));
+  expect(screen.getByText("海飞丝")).toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText("显示全部产品"));
+  expect(screen.getByText("空库存")).toBeInTheDocument();
+});
 
 it("待收货不抵消库存告警，购买只回传预填信息", async () => {
   const purchase = vi.fn();

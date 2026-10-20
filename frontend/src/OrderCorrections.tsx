@@ -74,6 +74,7 @@ export default function OrderCorrections({
           purchase_unit_id: r.purchase_unit_id,
           stock_unit_id: r.stock_unit_id,
           unit_price: r.unit_price,
+          allocated_amount: r.allocated_amount,
           currency: r.currency,
           price_confirmed: r.price_confirmed,
           default_location_id: r.default_location_id,
@@ -190,6 +191,7 @@ export default function OrderCorrections({
         {action === "replace_unreceived" && replacement.length > 0 && (
           <PurchaseItems
             items={replacement}
+            autoCalculate={!pending}
             onChange={setReplacement}
             amount=""
             currency={order.source.currency}

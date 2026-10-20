@@ -272,10 +272,12 @@ export default function Editor({
                       postings,
                     },
                   }
-                : orderMode && op === "create" && business === "ordinary"
+                : (orderMode || purchaseItems.length > 0) &&
+                    op === "create" &&
+                    business === "ordinary"
                   ? {
                       order: {
-                        kind: orderMode,
+                        kind: orderMode || "paid",
                         purchase: fields,
                         date: fields.date,
                         amount: fields.amount,
@@ -764,9 +766,10 @@ export default function Editor({
                     }}
                   />
                 )}
-                {op === "create" && business === "ordinary" && orderMode && (
+                {op === "create" && business === "ordinary" && (
                   <PurchaseItems
                     items={purchaseItems}
+                    autoCalculate={!pending.current}
                     onChange={(items) => {
                       invalidate();
                       setPurchaseItems(items);

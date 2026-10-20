@@ -13,9 +13,14 @@ from beancount_ui.writer import Writer
         ("locations", {"name": "冰箱", "is_freezer": 1}),
         ("quantity_units", {"name": "瓶"}),
         ("shopping_locations", {"name": "超市"}),
+        ("product_groups", {"name": "日用品"}),
         (
             "quantity_unit_conversions",
             {"product_id": 1, "from_qu_id": 2, "to_qu_id": 1, "factor": "12"},
+        ),
+        (
+            "quantity_unit_conversions",
+            {"product_id": 1, "from_qu_id": 1, "to_qu_id": 2, "factor": "0.011111111111111112"},
         ),
     ],
 )
@@ -71,3 +76,28 @@ def test_unknown_fields_and_entities_rejected(ledger):
         )
     with pytest.raises(ValueError):
         EntityChange(request_id=uuid4(), instance_id="one", entity="stock_log", delete=True)
+
+
+def test_product_hierarchy_fields_and_partial_update_preserved(ledger, monkeypatch):
+    calls = []
+    monkeypatch.setattr(Grocy, "request", lambda *args, **kwargs: calls.append(args) or {})
+    service = MasterData(Writer(ledger))
+    data = {
+        "name": "洗发水",
+        "location_id": 1,
+        "qu_id_purchase": 1,
+        "qu_id_stock": 1,
+        "product_group_id": 2,
+        "parent_product_id": 3,
+        "no_own_stock": 1,
+        "cumulate_min_stock_amount_of_sub_products": 1,
+    }
+    request = EntityChange(
+        request_id=uuid4(), instance_id="one", entity="products", entity_id=4, data=data
+    )
+    service.change(request)
+    assert calls[0][3] == data
+    request.data["parent_product_id"] = 4
+    request.request_id = uuid4()
+    with pytest.raises(ValueError, match="自己"):
+        service.change(request)
