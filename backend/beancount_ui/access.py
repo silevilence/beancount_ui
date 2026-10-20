@@ -109,4 +109,7 @@ class Access:
         response = await call_next(request)
         if protected:
             response.headers["Cache-Control"] = "no-store"
+        elif request.url.path in {"/", "/index.html"}:
+            # Revalidate the entry document after deployment; hashed assets may be cached.
+            response.headers["Cache-Control"] = "no-cache"
         return response

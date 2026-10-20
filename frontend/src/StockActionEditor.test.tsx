@@ -61,6 +61,71 @@ const data = {
     { id: 2, name: "冰箱" },
   ],
 } as InventoryData;
+it("按产品默认数量预填消耗和开封，仍可手改", async () => {
+  const configured = {
+    ...product,
+    quick_consume_amount: "0.5",
+    quick_open_amount: "24",
+  };
+  const { rerender } = render(
+    <StockActionEditor
+      product={configured}
+      data={data}
+      entries={[]}
+      onChanged={async () => {}}
+    />,
+  );
+  expect(screen.getByLabelText("数量（瓶）")).toHaveValue("0.5");
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "open" },
+  });
+  expect(screen.getByLabelText("数量（瓶）")).toHaveValue("24");
+  fireEvent.change(screen.getByLabelText("数量（瓶）"), {
+    target: { value: "12" },
+  });
+  expect(screen.getByLabelText("数量（瓶）")).toHaveValue("12");
+  rerender(
+    <StockActionEditor
+      product={{ ...configured, quick_open_amount: "48" }}
+      data={data}
+      entries={[]}
+      onChanged={async () => {}}
+    />,
+  );
+  expect(screen.getByLabelText("数量（瓶）")).toHaveValue("12");
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "transfer" },
+  });
+  expect(screen.getByLabelText("数量（瓶）")).toHaveValue("1");
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "consume" },
+  });
+  expect(screen.getByLabelText("数量（瓶）")).toHaveValue("0.5");
+});
+
+it.each([undefined, "bad", "0", "-2", "Infinity"])(
+  "无效或缺失默认数量 %s 回退为 1",
+  (value) => {
+    render(
+      <StockActionEditor
+        product={{
+          ...product,
+          quick_consume_amount: value,
+          quick_open_amount: value,
+        }}
+        data={data}
+        entries={[]}
+        onChanged={async () => {}}
+      />,
+    );
+    expect(screen.getByLabelText("数量（瓶）")).toHaveValue("1");
+    fireEvent.change(screen.getByLabelText("库存动作"), {
+      target: { value: "open" },
+    });
+    expect(screen.getByLabelText("数量（瓶）")).toHaveValue("1");
+  },
+);
+
 it("手动入库预览显示数量价格日期，取消不发送库存写入", async () => {
   const fetch = vi.fn(async (_path: string, _init?: RequestInit) => ({
     ok: true,

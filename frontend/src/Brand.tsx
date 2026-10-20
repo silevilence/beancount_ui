@@ -1,3 +1,5 @@
+import { version } from "../package.json";
+
 /** 工作台与访问页共用的应用标识。文字已提供名称，图片避免重复朗读。 */
 export default function Brand() {
   return (
@@ -12,7 +14,12 @@ export default function Brand() {
       />
       <span>
         日用账本
-        <small>THE DAILY LEDGER · 本地记账</small>
+        <small>
+          THE DAILY LEDGER · 本地记账
+          <span className="app-version" title="当前页面的构建版本">
+            V{version}
+          </span>
+        </small>
       </span>
     </div>
   );

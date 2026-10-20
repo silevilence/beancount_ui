@@ -19,6 +19,8 @@ export interface Product {
   no_own_stock?: number | string;
   active?: number | string;
   product_group_id?: number | null;
+  quick_consume_amount?: number | string;
+  quick_open_amount?: number | string;
 }
 export interface Named {
   id: number;

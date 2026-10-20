@@ -8,6 +8,19 @@ import { shanghaiToday } from "./format";
 import { Notice } from "./ui";
 import OperationStatus, { type StockOperation } from "./OperationStatus";
 
+function defaultAmount(product: Product, action: string) {
+  // Grocy stores quick action quantities in stock units, matching this form.
+  const value =
+    action === "consume"
+      ? product.quick_consume_amount
+      : action === "open"
+        ? product.quick_open_amount
+        : undefined;
+  return Number.isFinite(Number(value)) && Number(value) > 0
+    ? String(value)
+    : "1";
+}
+
 export default function StockActionEditor({
   product,
   data,
@@ -32,7 +45,7 @@ export default function StockActionEditor({
     }
   });
   const [action, setAction] = useState("consume");
-  const [amount, setAmount] = useState("1");
+  const [amount, setAmount] = useState(() => defaultAmount(product, "consume"));
   const [stockId, setStockId] = useState("");
   const [location, setLocation] = useState(String(product.location_id));
   const [target, setTarget] = useState("");
@@ -100,7 +113,13 @@ export default function StockActionEditor({
         <fieldset className="grocy-form" disabled={busy}>
           <label>
             库存动作
-            <select value={action} onChange={(e) => setAction(e.target.value)}>
+            <select
+              value={action}
+              onChange={(e) => {
+                setAction(e.target.value);
+                setAmount(defaultAmount(product, e.target.value));
+              }}
+            >
               <option value="consume">消耗</option>
               <option value="open">开封</option>
               <option value="transfer">转移</option>

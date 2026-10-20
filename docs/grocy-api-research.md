@@ -24,6 +24,10 @@
 
 ## 数量、价格和日期
 
+2026-10-20 复核：Grocy 采购页的“总价”是前端计算模式，`purchase.js` 在发送请求前将价格除以数量，再写入 `jsonData.price`。`AddProduct` 控制器仍仅读取 `price`，没有总价模式或总价参数。本项目继续接收用户分配的商品总金额、自动计算库存单价，再调用 Grocy；不能将总价直接传入 `price`。来源：[v4.7.1 采购页请求构造](https://github.com/grocy/grocy/blob/v4.7.1/public/viewjs/purchase.js#L25-L51)、[入库控制器](https://github.com/grocy/grocy/blob/v4.7.1/controllers/Api/StockApiController.php#L84-L168)。
+
+库存页快速消耗和开封分别使用产品的 `quick_consume_amount`、`quick_open_amount`，二者均为库存单位数量；Grocy 模板另用 `_qu_consume` 字段展示消费单位。本项目库存表单已经使用库存单位，直接应用产品原字段，不再二次换算。Grocy 独立消耗页另有用户偏好，本项目按库存页产品设置预填。来源：[库存页默认数量](https://github.com/grocy/grocy/blob/v4.7.1/views/stockoverview.blade.php#L199-L233)、[库存页请求构造](https://github.com/grocy/grocy/blob/v4.7.1/public/viewjs/stockoverview.js#L128-L191)。
+
 入库请求支持 `amount`、`price`、`best_before_date`、`location_id`、`shopping_location_id`、`note` 等。`price` 明确是 **Grocy 配置币种下，每库存单位的单价**。产品详情提供采购单位、库存单位以及采购到库存的换算系数，因此订单“2 箱、总计 120 元”不能直接提交为 `amount: 2, price: 120`；需要按产品的单位换算，再分摊到库存单位。不同币种、优惠及运费分摊规则需由本项目明确。来源：[OpenAPI 的 add 和 ProductDetailsResponse 定义](https://github.com/grocy/grocy/blob/v4.7.1/grocy.openapi.json)。
 
 控制器实际还接受 `purchased_date`，默认当天；该字段未列在当前 add 的 OpenAPI 请求属性中。缺省保质期的实际服务逻辑会考虑产品默认天数及冷冻设置，不能只依赖 OpenAPI 中“默认当天”的简化描述。确认收货时最好提供明确的日期字段，接入测试应覆盖真实部署版本。来源：[AddProduct 控制器](https://github.com/grocy/grocy/blob/v4.7.1/controllers/Api/StockApiController.php#L84-L168)、[AddProduct 服务](https://github.com/grocy/grocy/blob/v4.7.1/services/StockService.php#L124-L190)。

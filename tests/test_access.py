@@ -148,6 +148,8 @@ def test_static_entry_available_before_login_but_ledger_protected(ledger, tmp_pa
     app = create_app(ledger.settings, Access("private", TOKEN, ("http://ledger.test:8000",)))
     client = TestClient(app)
     assert client.get("/").text == "<h1>Login</h1>"
+    assert client.get("/").headers["Cache-Control"] == "no-cache"
+    assert client.get("/index.html").headers["Cache-Control"] == "no-cache"
     assert client.get("/api/ledger").status_code == 401
 
 

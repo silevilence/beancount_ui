@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, reasonOf, type Journal } from "./api";
 import Orders, { type Order } from "./Orders";
 import OperationStatus, {
@@ -88,6 +88,10 @@ export default function OrderPage({
   const [tab, setTab] = useState("receipts");
   const [date, setDate] = useState(shanghaiToday);
   const [claim, setClaim] = useState("");
+  const [claimQuery, setClaimQuery] = useState("");
+  const [claimFrom, setClaimFrom] = useState("");
+  const [claimTo, setClaimTo] = useState("");
+  const [claimPage, setClaimPage] = useState(0);
   const [mode, setMode] = useState("paid");
   const [items, setItems] = useState<PurchaseItem[]>([blankItem()]);
   const [error, setError] = useState("");
@@ -97,6 +101,33 @@ export default function OrderPage({
   const pendingRef = useRef<HTMLElement>(null);
   const detail = rows.find((r) => r.id === selected);
   const candidate = candidates.find((c) => c.id === claim);
+  const claimCandidates = useMemo(() => {
+    const managed = new Set(rows.map((r) => r.id));
+    return candidates
+      .filter((c) => !managed.has(c.key ?? c.id))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [candidates, rows]);
+  const matchingCandidates = useMemo(() => {
+    const query = claimQuery.trim().toLocaleLowerCase();
+    return claimCandidates.filter(
+      (c) =>
+        (!claimFrom || c.date >= claimFrom) &&
+        (!claimTo || c.date <= claimTo) &&
+        `${c.date} ${c.payee} ${c.narration} ${c.total} ${c.currency}`
+          .toLocaleLowerCase()
+          .includes(query),
+    );
+  }, [claimCandidates, claimQuery, claimFrom, claimTo]);
+  const claimPageSize = 50;
+  const claimPageCount = Math.max(
+    1,
+    Math.ceil(matchingCandidates.length / claimPageSize),
+  );
+  const currentClaimPage = Math.min(claimPage, claimPageCount - 1);
+  const pagedCandidates = matchingCandidates.slice(
+    currentClaimPage * claimPageSize,
+    (currentClaimPage + 1) * claimPageSize,
+  );
   const visibleOrders = rows.filter(
     (r) =>
       (!from || r.source.date >= from) &&
@@ -315,6 +346,45 @@ export default function OrderPage({
             <p className="muted">
               仅选择确需跟踪实物的购买。认领不会再次记消费，也不会将历史结算认作已收货。
             </p>
+            <div className="form-grid">
+              <label className="field">
+                搜索历史购买
+                <input
+                  value={claimQuery}
+                  placeholder="商户、摘要、金额"
+                  onChange={(e) => {
+                    setClaimQuery(e.target.value);
+                    setClaimPage(0);
+                  }}
+                />
+              </label>
+              <label className="field">
+                历史购买起始日期
+                <input
+                  type="date"
+                  value={claimFrom}
+                  onChange={(e) => {
+                    setClaimFrom(e.target.value);
+                    setClaimPage(0);
+                  }}
+                />
+              </label>
+              <label className="field">
+                历史购买结束日期
+                <input
+                  type="date"
+                  value={claimTo}
+                  onChange={(e) => {
+                    setClaimTo(e.target.value);
+                    setClaimPage(0);
+                  }}
+                />
+              </label>
+            </div>
+            <p className="muted small">
+              匹配 {matchingCandidates.length} / {claimCandidates.length} 笔 ·
+              按日期从新到旧 · 每页 {claimPageSize} 笔
+            </p>
             <label className="field">
               历史购买
               <select
@@ -327,16 +397,45 @@ export default function OrderPage({
                 }}
               >
                 <option value="">请选择</option>
-                {candidates
-                  .filter((c) => !rows.some((r) => r.id === c.key))
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.date} · {c.payee} · {c.narration} · {c.total}{" "}
-                      {c.currency}
-                    </option>
-                  ))}
+                {candidate && !pagedCandidates.some((c) => c.id === claim) && (
+                  <option value={candidate.id}>
+                    当前选择：{candidate.date} · {candidate.payee} ·{" "}
+                    {candidate.narration} · {candidate.total}{" "}
+                    {candidate.currency}
+                  </option>
+                )}
+                {pagedCandidates.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.date} · {c.payee} · {c.narration} · {c.total}{" "}
+                    {c.currency}
+                  </option>
+                ))}
               </select>
             </label>
+            <div className="toolbar">
+              <button
+                className="ghost"
+                aria-label="上一页历史购买"
+                disabled={currentClaimPage === 0}
+                onClick={() => setClaimPage(currentClaimPage - 1)}
+              >
+                上一页
+              </button>
+              <span className="muted small">
+                第 {currentClaimPage + 1} / {claimPageCount} 页
+              </span>
+              <button
+                className="ghost"
+                aria-label="下一页历史购买"
+                disabled={currentClaimPage + 1 >= claimPageCount}
+                onClick={() => setClaimPage(currentClaimPage + 1)}
+              >
+                下一页
+              </button>
+            </div>
+            {matchingCandidates.length === 0 && (
+              <p className="muted">没有匹配的历史购买，请调整搜索或日期。</p>
+            )}
             {candidate && (
               <>
                 <pre className="changes">{candidate.raw}</pre>

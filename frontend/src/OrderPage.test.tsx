@@ -3,6 +3,75 @@ import { expect, it, vi } from "vitest";
 import OrderPage from "./OrderPage";
 import type { Journal } from "./api";
 
+it("大量历史购买只渲染一页选项，支持搜索、翻页并保留已选商品", async () => {
+  const candidates = Array.from({ length: 8421 }, (_, i) => ({
+    id: `history-${i}`,
+    key: `key-${i}`,
+    date: "2026-10-19",
+    payee: "历史商店",
+    narration: `商品${i}`,
+    total: "12",
+    currency: "CNY",
+    mode: "paid",
+    raw: `原文${i}`,
+  }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path: string) => ({
+      ok: true,
+      json: async () => (path === "/api/orders" ? candidates : []),
+    })),
+  );
+  render(
+    <OrderPage
+      journal={{ identity: "large", revision: "a" } as Journal}
+      onChanged={async () => {}}
+    />,
+  );
+  await waitFor(() => expect(screen.getByText("认领历史购买")).toBeEnabled());
+  fireEvent.click(screen.getByText("认领历史购买"));
+  await screen.findByRole("option", { name: /商品0 ·/ });
+  expect(
+    screen.getByLabelText("历史购买").querySelectorAll("option").length,
+  ).toBeLessThanOrEqual(51);
+  fireEvent.click(screen.getByRole("button", { name: "下一页历史购买" }));
+  expect(
+    screen.queryByRole("option", { name: /商品0 ·/ }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "上一页历史购买" }));
+  expect(screen.getByRole("option", { name: /商品0 ·/ })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("历史购买起始日期"), {
+    target: { value: "2026-10-20" },
+  });
+  expect(
+    screen.getByText("没有匹配的历史购买，请调整搜索或日期。"),
+  ).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("历史购买起始日期"), {
+    target: { value: "" },
+  });
+  fireEvent.change(screen.getByLabelText("历史购买结束日期"), {
+    target: { value: "2026-10-18" },
+  });
+  expect(
+    screen.getByText("没有匹配的历史购买，请调整搜索或日期。"),
+  ).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("历史购买结束日期"), {
+    target: { value: "2026-10-19" },
+  });
+  fireEvent.change(screen.getByLabelText("搜索历史购买"), {
+    target: { value: "商品8420" },
+  });
+  fireEvent.change(screen.getByLabelText("历史购买"), {
+    target: { value: "history-8420" },
+  });
+  expect(screen.getByText("原文8420")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("搜索历史购买"), {
+    target: { value: "找不到" },
+  });
+  expect(screen.getByText("原文8420")).toBeInTheDocument();
+  expect(screen.getByLabelText("历史购买")).toHaveValue("history-8420");
+});
+
 vi.mock("./Orders", () => ({
   default: ({ onAdd }: { onAdd: (item: unknown) => void }) => (
     <button
