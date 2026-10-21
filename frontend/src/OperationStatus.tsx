@@ -12,6 +12,7 @@ export interface StockOperation {
   product_id?: number;
   action?: string;
   payload?: Record<string, unknown>;
+  open_target_location_id?: number | null;
 }
 export const syncLabels: Record<string, string> = {
   pending: "待同步",

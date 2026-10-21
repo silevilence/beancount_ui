@@ -10,7 +10,7 @@ from beancount_ui.writer import Writer
 def manual(ledger, monkeypatch):
     service = ManualStock(Writer(ledger))
     config = service.grocy.save(GrocyInput(url="http://nas", api_key="secret", enabled=True))
-    remote = {"posts": [], "tare": 0, "logs": [], "lose": False}
+    remote = {"posts": [], "tare": 0, "logs": [], "lose": False, "move_on_open": 0}
 
     def request(self, path, method="GET", payload=None, **kwargs):
         if method == "POST":
@@ -28,6 +28,17 @@ def manual(ledger, monkeypatch):
                 remote["logs"] = [base | {"transaction_type": "consume", "amount": "-1"}]
             elif action == "open":
                 remote["logs"] = [base | {"transaction_type": "product-opened", "amount": "1"}]
+                if remote["move_on_open"]:
+                    remote["logs"] += [
+                        base | {"id": 2, "transaction_type": "transfer_from", "amount": "-1"},
+                        base
+                        | {
+                            "id": 3,
+                            "transaction_type": "transfer_to",
+                            "amount": "1",
+                            "location_id": 2,
+                        },
+                    ]
             elif action == "transfer":
                 remote["logs"] = [
                     base | {"transaction_type": "transfer_from", "amount": "-1"},
@@ -38,7 +49,13 @@ def manual(ledger, monkeypatch):
                 raise GrocyError("timeout", "响应丢失")
             return remote["logs"]
         if path.startswith("objects/products/"):
-            return {"id": 1, "qu_id_stock": 1, "enable_tare_weight_handling": remote["tare"]}
+            return {
+                "id": 1,
+                "qu_id_stock": 1,
+                "enable_tare_weight_handling": remote["tare"],
+                "move_on_open": remote["move_on_open"],
+                "default_consume_location_id": 2,
+            }
         if path.endswith("/entries"):
             return [{"stock_id": "batch", "location_id": 1, "amount": "3", "open": 0}]
         if path.startswith("stock/transactions/"):
@@ -78,6 +95,57 @@ def test_lost_movement_response_is_not_reconstructed_from_stock(manual):
     remote["lose"] = True
     assert service.commit(p["id"])["status"] == "unknown"
     service.commit(p["id"])
+    assert len(remote["posts"]) == 1
+
+
+def test_open_with_automatic_transfer_is_successful_and_sent_once(manual):
+    service, body, remote = manual
+    remote["move_on_open"] = 1
+    p = service.preview(StockAction(**(body | {"action": "open"})))
+    assert service.commit(p["id"])["status"] == "success"
+    service.commit(p["id"])
+    assert remote["posts"] == [
+        ("stock/products/1/open", {"amount": "1", "stock_entry_id": "batch"})
+    ]
+
+
+def test_changed_open_transfer_setting_is_rejected_before_sending(manual):
+    service, body, remote = manual
+    p = service.preview(StockAction(**(body | {"action": "open"})))
+    remote["move_on_open"] = 1
+    result = service.commit(p["id"])
+    assert result["status"] == "failed"
+    assert "设置已变化" in result["error"]
+    assert not remote["posts"]
+
+
+@pytest.mark.parametrize("change", ["amount", "destination", "missing", "batch", "unexpected"])
+def test_open_transfer_logs_must_match_preview(manual, change):
+    service, body, remote = manual
+    remote["move_on_open"] = 1
+    p = service.preview(StockAction(**(body | {"action": "open"})))
+    service.operations.record(p["id"], "pending")
+    service.operations.send(p["id"])
+    if change == "amount":
+        remote["logs"][-1]["amount"] = "2"
+    elif change == "destination":
+        remote["logs"][-1]["location_id"] = 3
+    elif change == "missing":
+        remote["logs"].pop()
+    elif change == "batch":
+        remote["logs"][-1]["stock_id"] = "other"
+    else:
+        remote["logs"][-1]["transaction_type"] = "consume"
+    assert service.operations.reconcile(p["id"])["status"] == "conflict"
+    assert len(remote["posts"]) == 1
+
+
+def test_open_transfer_lost_response_does_not_resend(manual):
+    service, body, remote = manual
+    remote.update(move_on_open=1, lose=True)
+    p = service.preview(StockAction(**(body | {"action": "open"})))
+    assert service.commit(p["id"])["status"] == "unknown"
+    assert service.commit(p["id"])["status"] == "unknown"
     assert len(remote["posts"]) == 1
 
 

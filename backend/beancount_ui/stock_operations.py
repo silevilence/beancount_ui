@@ -380,6 +380,18 @@ class StockOperations:
                 ("transfer_from", str(expected["location_id_from"])): -amount,
                 ("transfer_to", str(expected["location_id_to"])): amount,
             }
+        elif op["action"] == "open":
+            source = str(op["source_location_id"])
+            expected_totals = {("product-opened", source): amount}
+            target = op.get("open_target_location_id")
+            if target is not None:
+                expected_totals.update(
+                    {
+                        ("transfer_from", source): -amount,
+                        ("transfer_to", str(target)): amount,
+                    }
+                )
+            valid = totals == expected_totals
         else:
             kind = "consume" if op["action"] == "consume" else "product-opened"
             valid = all(k[0] == kind for k in totals) and sum(totals.values()) == (

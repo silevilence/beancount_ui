@@ -1,7 +1,13 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import StockActionEditor from "./StockActionEditor";
-import type { InventoryData, Product } from "./Inventory";
+import type { InventoryData, Product, StockEntry } from "./Inventory";
 
 it("手动库存操作先预览再确认，未知结果保留核对入口", async () => {
   const paths: string[] = [];
@@ -33,7 +39,15 @@ it("手动库存操作先预览再确认，未知结果保留核对入口", asyn
           locations: [{ id: 1, name: "冰箱" }],
         } as InventoryData
       }
-      entries={[]}
+      entries={[
+        {
+          id: 1,
+          stock_id: "batch",
+          amount: "1",
+          location_id: 1,
+          open: 0,
+        } as StockEntry,
+      ]}
       onChanged={async () => {}}
     />,
   );
@@ -61,6 +75,129 @@ const data = {
     { id: 2, name: "冰箱" },
   ],
 } as InventoryData;
+it("来源位置仅显示有库存的位置，并将实际选中的位置提交预览", async () => {
+  const fetch = vi.fn(async (_path: string, _init?: RequestInit) => ({
+    ok: true,
+    json: async () => ({
+      id: "filtered",
+      status: "draft",
+      payload: { amount: "1" },
+    }),
+  }));
+  vi.stubGlobal("fetch", fetch);
+  render(
+    <StockActionEditor
+      product={product}
+      data={data}
+      entries={[
+        {
+          id: 1,
+          stock_id: "batch",
+          amount: "2",
+          location_id: 2,
+          open: 0,
+        } as StockEntry,
+      ]}
+      onChanged={async () => {}}
+    />,
+  );
+  const location = screen.getByLabelText("来源位置");
+  expect(
+    within(location).queryByRole("option", { name: "厨房" }),
+  ).not.toBeInTheDocument();
+  expect(location).toHaveValue("2");
+  fireEvent.click(screen.getByText("预览库存动作"));
+  await screen.findByText("确认库存操作");
+  expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+    location_id: 2,
+  });
+});
+
+it("开封仅列未开封库存，切换动作清除批次并保留完整入库及目标位置", async () => {
+  const fetch = vi.fn(async (_path: string, _init?: RequestInit) => ({
+    ok: true,
+    json: async () => ({
+      id: "opened",
+      status: "draft",
+      open_target_location_id: 1,
+    }),
+  }));
+  vi.stubGlobal("fetch", fetch);
+  const entries = [
+    { id: 1, stock_id: "opened", amount: "2", location_id: 1, open: 1 },
+    { id: 2, stock_id: "unopened", amount: "3", location_id: 2, open: 0 },
+    { id: 3, stock_id: "empty", amount: "0", location_id: 2, open: 0 },
+  ] as StockEntry[];
+  render(
+    <StockActionEditor
+      product={product}
+      data={data}
+      entries={entries}
+      onChanged={async () => {}}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("批次（开封必须选择）"), {
+    target: { value: "opened" },
+  });
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "open" },
+  });
+  expect(screen.getByLabelText("来源位置")).toHaveValue("2");
+  expect(
+    within(screen.getByLabelText("来源位置")).getAllByRole("option"),
+  ).toHaveLength(1);
+  const batches = screen.getByLabelText("批次（开封必须选择）");
+  expect(batches).toHaveValue("");
+  expect(within(batches).getAllByRole("option")).toHaveLength(2);
+  expect(screen.getByText("预览库存动作")).toBeDisabled();
+  fireEvent.change(batches, { target: { value: "unopened" } });
+  fireEvent.click(screen.getByText("预览库存动作"));
+  expect(await screen.findByText("开封后自动转移至：厨房")).toBeInTheDocument();
+  expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+    action: "open",
+    location_id: 2,
+    stock_id: "unopened",
+  });
+  fireEvent.click(screen.getByText("取消库存预览"));
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "transfer" },
+  });
+  expect(screen.getByLabelText("批次（开封必须选择）")).toHaveValue("");
+  expect(
+    within(screen.getByLabelText("目标位置")).getAllByRole("option"),
+  ).toHaveLength(3);
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "add" },
+  });
+  expect(
+    within(screen.getByLabelText("入库位置")).getAllByRole("option"),
+  ).toHaveLength(2);
+});
+
+it("库存刷新后回退到剩余位置，无库存时禁止预览但允许手动入库", () => {
+  const entries = [
+    { id: 1, stock_id: "first", amount: "1", location_id: 1, open: 0 },
+    { id: 2, stock_id: "second", amount: "1", location_id: 2, open: 0 },
+  ] as StockEntry[];
+  const props = { product, data, onChanged: async () => {} };
+  const { rerender } = render(
+    <StockActionEditor {...props} entries={entries} />,
+  );
+  fireEvent.change(screen.getByLabelText("批次（开封必须选择）"), {
+    target: { value: "first" },
+  });
+  rerender(<StockActionEditor {...props} entries={entries.slice(1)} />);
+  expect(screen.getByLabelText("来源位置")).toHaveValue("2");
+  expect(screen.getByLabelText("批次（开封必须选择）")).toHaveValue("");
+  rerender(<StockActionEditor {...props} entries={[]} />);
+  expect(screen.getByText("无可操作库存位置")).toBeInTheDocument();
+  expect(screen.getByText("预览库存动作")).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "add" },
+  });
+  expect(screen.getByText("预览库存动作")).toBeEnabled();
+});
+
 it("按产品默认数量预填消耗和开封，仍可手改", async () => {
   const configured = {
     ...product,

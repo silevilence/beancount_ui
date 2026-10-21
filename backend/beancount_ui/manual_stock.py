@@ -34,6 +34,13 @@ class StockAction(BaseModel):
         return ItemInput.exact(value)
 
 
+def open_target(product, source_location_id):
+    target = product.get("default_consume_location_id")
+    if int(product.get("move_on_open", 0)) and target and str(target) != str(source_location_id):
+        return int(target)
+    return None
+
+
 def validate_operation(grocy, op):
     product = grocy.request(f"objects/products/{op['product_id']}", instance_id=op["instance_id"])
     if int(product.get("enable_tare_weight_handling", 0)) or int(product.get("no_own_stock", 0)):
@@ -41,6 +48,9 @@ def validate_operation(grocy, op):
     if str(product["qu_id_stock"]) != str(op["stock_unit_id"]):
         raise LedgerError("库存单位已变化，请重新核对")
     payload = op["payload"]
+    if op["action"] == "open" and "open_target_location_id" in op:
+        if open_target(product, op["source_location_id"]) != op["open_target_location_id"]:
+            raise LedgerError("开封自动转移设置已变化，请重新预览")
     if op["action"] == "add":
         if grocy.request("system/config")["CURRENCY"] != op["currency"]:
             raise LedgerError("Grocy 币种已变化，请重新确认单价")
@@ -139,6 +149,8 @@ class ManualStock:
                 "source_location_id": request.location_id,
                 "request": original,
             }
+            if request.action == "open":
+                doc["open_target_location_id"] = open_target(product, request.location_id)
             validate_operation(self.grocy, doc)
             with self.writer.database() as db:
                 enqueue(db, doc, "draft")

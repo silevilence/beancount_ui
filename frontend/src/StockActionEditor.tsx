@@ -57,6 +57,28 @@ export default function StockActionEditor({
   const running = useRef(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<StockOperation>();
+  const availableEntries = entries.filter(
+    (entry) =>
+      Number(entry.amount) > 0 && (action !== "open" || !Number(entry.open)),
+  );
+  const locations =
+    action === "add"
+      ? data.locations
+      : data.locations.filter((l) =>
+          availableEntries.some((e) => String(e.location_id) === String(l.id)),
+        );
+  const selectedLocation = locations.some((l) => String(l.id) === location)
+    ? location
+    : String(locations[0]?.id ?? "");
+  const batches = availableEntries.filter(
+    (e) => String(e.location_id) === selectedLocation,
+  );
+  const selectedStockId = batches.some((e) => e.stock_id === stockId)
+    ? stockId
+    : "";
+  const canPreview =
+    Boolean(selectedLocation) &&
+    (action !== "open" || Boolean(selectedStockId));
   function persist(p: typeof pending) {
     if (p) localStorage.setItem(key, JSON.stringify(p));
     else localStorage.removeItem(key);
@@ -84,8 +106,8 @@ export default function StockActionEditor({
         product_id: Number(product.id),
         action,
         amount,
-        stock_id: stockId,
-        location_id: Number(location),
+        stock_id: action === "add" ? "" : selectedStockId,
+        location_id: Number(selectedLocation),
         target_location_id: target ? Number(target) : null,
         price: price || null,
         purchased_date: action === "add" ? date : null,
@@ -118,6 +140,9 @@ export default function StockActionEditor({
               onChange={(e) => {
                 setAction(e.target.value);
                 setAmount(defaultAmount(product, e.target.value));
+                setStockId("");
+                if (e.target.value === "add")
+                  setLocation(String(product.location_id));
               }}
             >
               <option value="consume">消耗</option>
@@ -137,13 +162,14 @@ export default function StockActionEditor({
           <label>
             {action === "add" ? "入库位置" : "来源位置"}
             <select
-              value={location}
+              value={selectedLocation}
               onChange={(e) => {
                 setLocation(e.target.value);
                 setStockId("");
               }}
             >
-              {data.locations.map((l) => (
+              {!locations.length && <option value="">无可操作库存位置</option>}
+              {locations.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
                 </option>
@@ -155,24 +181,32 @@ export default function StockActionEditor({
               <label>
                 批次（开封必须选择）
                 <select
-                  value={stockId}
+                  value={selectedStockId}
                   onChange={(e) => setStockId(e.target.value)}
                 >
-                  <option value="">由 Grocy 按顺序选择</option>
-                  {entries
-                    .filter((e) => String(e.location_id) === location)
-                    .map((e) => (
-                      <option key={e.id} value={e.stock_id}>
-                        {e.stock_id} · {e.amount} · {e.best_before_date} ·{" "}
-                        {Number(e.open) ? "已开封" : "未开封"}
-                      </option>
-                    ))}
+                  <option value="">
+                    {action === "open"
+                      ? "请选择未开封批次"
+                      : "由 Grocy 按顺序选择"}
+                  </option>
+                  {batches.map((e) => (
+                    <option key={e.id} value={e.stock_id}>
+                      {e.stock_id} · {e.amount} · {e.best_before_date} ·{" "}
+                      {Number(e.open) ? "已开封" : "未开封"}
+                    </option>
+                  ))}
                 </select>
               </label>
               <p className="muted small">
                 操作日期由 Grocy
                 按当前服务时间记录；这些接口不支持回填历史日期。
               </p>
+              {action === "open" && (
+                <p className="muted small">
+                  若产品已启用开封后自动转移，Grocy
+                  会将本次开封的数量移至配置的默认消耗位置。
+                </p>
+              )}
             </>
           )}
           {action === "transfer" && (
@@ -226,7 +260,9 @@ export default function StockActionEditor({
               </label>
             </>
           )}
-          <button onClick={() => void preview()}>预览库存动作</button>
+          <button disabled={!canPreview} onClick={() => void preview()}>
+            预览库存动作
+          </button>
         </fieldset>
       )}
       {pending && (
@@ -258,6 +294,12 @@ export default function StockActionEditor({
               </>
             )}
           </p>
+          {pending.preview?.open_target_location_id != null && (
+            <p>
+              开封后自动转移至：
+              {nameOf(data.locations, pending.preview.open_target_location_id)}
+            </p>
+          )}
           {pending.body.stock_id ? (
             <p>批次：{String(pending.body.stock_id)}</p>
           ) : (

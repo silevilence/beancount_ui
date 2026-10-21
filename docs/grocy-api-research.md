@@ -34,6 +34,8 @@
 
 ## 结果关联、超时与重试
 
+2026-10-21 复核开封自动转移：`OpenProduct` 在标记本次库存为已开封后，若产品 `move_on_open = 1` 且 `default_consume_location_id` 非空并不同于当前批次位置，会调用 `TransferProduct`，传入本次开封批次数量和同一个 transaction ID。部分开封会先拆出未开封余量，自动转移只影响已开封部分。因此 `/open` 的正常事务可能同时包含 `product-opened`、`transfer_from` 和 `transfer_to`，不能仅接受开封日志。本项目预览保存自动转移目标，提交前复核配置，结果核对同时验证来源、目标、批次及三类数量，不另外发送转移请求。来源：[v4.7.1 OpenProduct 与 TransferProduct](https://github.com/grocy/grocy/blob/v4.7.1/services/StockService.php)。
+
 入库成功返回 `StockLogEntry[]`，包含日志 `id`、`stock_id`、`transaction_id` 等；一次请求可能返回多条日志。本项目应保存整个关联集合，不能假设只返回一个库存行。控制器将入库返回的 transaction ID 交给事务查询接口返回结果。来源：[OpenAPI 的 StockLogEntry](https://github.com/grocy/grocy/blob/v4.7.1/grocy.openapi.json)、[库存控制器](https://github.com/grocy/grocy/blob/v4.7.1/controllers/Api/StockApiController.php)。
 
 **唯一操作 ID 可以放进 purchase 的 `note`，但它不是服务端幂等键。** v4.7.1 的 AddProduct 将该 note 同时写入 `stock_log` 和 `stock`；transaction ID 则由服务端生成，API 控制器没有接受客户端 transaction ID 的处理。未发现 add 提供原生幂等键或按 note 去重。重复 POST 可能再次入库。来源：[AddProduct 的 note 写入及 transaction ID 生成](https://github.com/grocy/grocy/blob/v4.7.1/services/StockService.php#L184-L279)、[控制器参数解析](https://github.com/grocy/grocy/blob/v4.7.1/controllers/Api/StockApiController.php#L84-L168)。
