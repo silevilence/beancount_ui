@@ -51,18 +51,30 @@ export default function OperationStatus({
   title = "库存同步",
 }: {
   operations: StockOperation[];
-  onChanged?: () => Promise<void>;
+  onChanged?: (operation: StockOperation) => Promise<void>;
   title?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  function requestReason(message: string) {
+    setError("");
+    const reason = window.prompt(message);
+    if (reason === null) return null;
+    if (reason.trim().length < 10) {
+      setError(
+        "核对依据至少 10 字，请补充远端日志、批次和原执行已停止的核对结果后重试。此次未提交。",
+      );
+      return null;
+    }
+    return reason.trim();
+  }
   async function resolve(id: string, applied: boolean) {
-    const reason = window.prompt(
+    if (busy) return;
+    const reason = requestReason(
       "请填写人工核对依据（至少 10 字），说明远端日志、批次及原执行已停止的证据：",
     );
     if (
       !reason ||
-      reason.trim().length < 10 ||
       !window.confirm(
         applied
           ? "确认已经核实远端操作完整生效？这里只保存结论，不操作库存。"
@@ -73,12 +85,15 @@ export default function OperationStatus({
     setBusy(true);
     setError("");
     try {
-      await post(`/grocy/operations/${id}/resolve`, {
-        reason,
-        applied,
-        original_stopped: true,
-      });
-      await onChanged?.();
+      const operation = await post<StockOperation>(
+        `/grocy/operations/${id}/resolve`,
+        {
+          reason,
+          applied,
+          original_stopped: true,
+        },
+      );
+      await onChanged?.(operation);
     } catch (e) {
       setError(reasonOf(e));
     } finally {
@@ -89,10 +104,10 @@ export default function OperationStatus({
     if (busy) return;
     let body: Record<string, unknown> = {};
     if (retry) {
-      const reason = window.prompt(
+      const reason = requestReason(
         "仅在已核实原请求停止、没有任何入库时重发。查无日志本身不是证明；仍有重复入库风险。请填写核对依据（至少 10 字）：",
       );
-      if (!reason || reason.trim().length < 10) return;
+      if (!reason) return;
       if (
         !window.confirm(
           "确认已核实原执行不会继续，且没有产生库存写入？系统将再次查日志，再沿用原编号发送。",
@@ -104,8 +119,11 @@ export default function OperationStatus({
     setBusy(true);
     setError("");
     try {
-      await post(`/grocy/operations/${id}/${retry ? "retry" : "check"}`, body);
-      await onChanged?.();
+      const operation = await post<StockOperation>(
+        `/grocy/operations/${id}/${retry ? "retry" : "check"}`,
+        body,
+      );
+      await onChanged?.(operation);
     } catch (e) {
       setError(reasonOf(e));
     } finally {

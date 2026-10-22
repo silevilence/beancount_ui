@@ -121,7 +121,21 @@ export default function ReceiptEditor({
         </Notice>
       )}
       {result && (
-        <OperationStatus operations={result.operations} onChanged={onChanged} />
+        <OperationStatus
+          operations={result.operations}
+          onChanged={async (operation) => {
+            setResult(
+              (previous) =>
+                previous && {
+                  ...previous,
+                  operations: previous.operations.map((o) =>
+                    o.id === operation.id ? operation : o,
+                  ),
+                },
+            );
+            await onChanged();
+          }}
+        />
       )}
       {!pending && order.items.some((i) => Number(i.remaining) > 0) && (
         <>

@@ -27,7 +27,7 @@ it("已付款商品收货先预览，取消不写入，确认不调用账务提�
     financial: null,
     settlement_status: "none",
     actions: [{ name: "食品", quantity: "2", unit: "件", product_id: null }],
-    operations: [],
+    operations: [{ id: "receipt-op", status: "unknown", error: "" }],
   };
   vi.stubGlobal(
     "fetch",
@@ -35,10 +35,17 @@ it("已付款商品收货先预览，取消不写入，确认不调用账务提�
       calls.push(path);
       return {
         ok: true,
-        json: async () => ({
-          ...result,
-          receipt_saved: path.endsWith("commit"),
-        }),
+        json: async () =>
+          path.endsWith("/resolve")
+            ? {
+                id: "receipt-op",
+                status: "resolved",
+                error: "",
+              }
+            : {
+                ...result,
+                receipt_saved: path.endsWith("commit"),
+              },
       };
     }),
   );
@@ -61,6 +68,13 @@ it("已付款商品收货先预览，取消不写入，确认不调用账务提�
   expect(calls.filter((p) => p.endsWith("commit"))).toEqual([
     "/api/fulfillment/receipt/commit",
   ]);
+  vi.spyOn(window, "prompt").mockReturnValue(
+    "已人工核实收货日志与批次并确认原执行停止",
+  );
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  fireEvent.click(screen.getByText("记录人工核实成功"));
+  expect(await screen.findByText("已人工核实")).toBeInTheDocument();
+  expect(screen.queryByText("结果待确认")).not.toBeInTheDocument();
 });
 
 it("分批收货过滤未到货商品，结算失败保留原请求，恢复不重复创建", async () => {

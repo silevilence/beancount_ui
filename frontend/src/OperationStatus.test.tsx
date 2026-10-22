@@ -93,3 +93,20 @@ it("成功和远端未知状态可展示，不暴露重发按钮", () => {
   expect(screen.getByText("new-status")).toBeInTheDocument();
   expect(screen.queryByText("人工核实后重发")).not.toBeInTheDocument();
 });
+
+it.each(["记录人工核实成功", "人工核对后停止", "人工核实后重发"])(
+  "%s 输入不足时明确提示，而不是静默退出",
+  (button) => {
+    const { fetch, changed } = setup();
+    vi.spyOn(window, "prompt").mockReturnValue("已核实");
+    const confirm = vi
+      .spyOn(window, "confirm")
+      .mockReturnValue(true)
+      .mockClear();
+    fireEvent.click(screen.getByText(button));
+    expect(screen.getByRole("alert")).toHaveTextContent("至少 10 字");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(changed).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
+  },
+);

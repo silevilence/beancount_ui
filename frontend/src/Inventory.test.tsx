@@ -2,6 +2,60 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import Inventory, { inventoryTree, type InventoryData } from "./Inventory";
 
+it.each([true, false])(
+  "人工结论保存后即使库存刷新失败仍显示新状态 applied=%s",
+  async (applied) => {
+    const product = { id: 1, name: "测试食品", qu_id_stock: 1, location_id: 1 };
+    let resolved = false;
+    const fetch = vi.fn(async (path: string) => {
+      if (path.endsWith("/resolve")) resolved = true;
+      const failed = resolved && path.endsWith("/inventory");
+      return {
+        ok: !failed,
+        status: failed ? 503 : 200,
+        json: async () => {
+          if (failed) return { detail: "库存刷新失败" };
+          if (path.endsWith("/resolve"))
+            return {
+              id: "op",
+              product_id: 1,
+              status: applied ? "resolved" : "cancelled",
+              error: "",
+            };
+          if (path.endsWith("/operations"))
+            return [{ id: "op", product_id: 1, status: "unknown", error: "" }];
+          if (path.endsWith("/products/1")) return { details: {}, entries: [] };
+          return {
+            products: [product],
+            stock: [{ product_id: 1, amount: "1" }],
+            units: [{ id: 1, name: "件" }],
+            locations: [{ id: 1, name: "厨房" }],
+            alerts: {},
+          };
+        },
+      };
+    });
+    vi.stubGlobal("fetch", fetch);
+    vi.spyOn(window, "prompt").mockReturnValue(
+      "已人工核实日志与批次并确认原执行停止",
+    );
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<Inventory />);
+    fireEvent.click(await screen.findByRole("button", { name: "测试食品" }));
+    fireEvent.click(
+      await screen.findByText(applied ? "记录人工核实成功" : "人工核对后停止"),
+    );
+    expect(await screen.findByText(/库存刷新失败/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(applied ? "已人工核实" : "已停止操作"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("结果待确认")).not.toBeInTheDocument();
+    expect(
+      fetch.mock.calls.filter(([path]) => path.endsWith("/resolve")),
+    ).toHaveLength(1);
+  },
+);
+
 it("接口聚合数量不重复累加，叶子产品保留自有数量，搜索保留上下文", () => {
   const data = {
     products: [

@@ -129,7 +129,13 @@ export default function StockActionEditor({
       </p>
       {error && <Notice tone="error">{error}</Notice>}
       {result && (
-        <OperationStatus operations={[result]} onChanged={onChanged} />
+        <OperationStatus
+          operations={[result]}
+          onChanged={async (operation) => {
+            setResult(operation);
+            await onChanged();
+          }}
+        />
       )}
       {!pending && (
         <fieldset className="grocy-form" disabled={busy}>

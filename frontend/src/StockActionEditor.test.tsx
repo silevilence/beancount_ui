@@ -75,6 +75,59 @@ const data = {
     { id: 2, name: "冰箱" },
   ],
 } as InventoryData;
+it.each([true, false])(
+  "人工核对保存后更新当前操作结果 applied=%s",
+  async (applied) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string) => ({
+        ok: true,
+        json: async () => ({
+          id: "request",
+          status: path.endsWith("preview")
+            ? "draft"
+            : path.endsWith("resolve")
+              ? applied
+                ? "resolved"
+                : "cancelled"
+              : "unknown",
+          error: "",
+          payload: { amount: "1" },
+        }),
+      })),
+    );
+    vi.spyOn(window, "prompt").mockReturnValue(
+      "已经核对远端完整日志与批次并停止原执行",
+    );
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(
+      <StockActionEditor
+        product={product}
+        data={data}
+        entries={[
+          {
+            id: 1,
+            stock_id: "batch",
+            amount: "2",
+            location_id: 1,
+            open: 0,
+          } as StockEntry,
+        ]}
+        onChanged={async () => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText("预览库存动作"));
+    fireEvent.click(await screen.findByText("确认库存操作"));
+    await screen.findByText("结果待确认");
+    fireEvent.click(
+      screen.getByText(applied ? "记录人工核实成功" : "人工核对后停止"),
+    );
+    expect(
+      await screen.findByText(applied ? "已人工核实" : "已停止操作"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("结果待确认")).not.toBeInTheDocument();
+  },
+);
 it("来源位置仅显示有库存的位置，并将实际选中的位置提交预览", async () => {
   const fetch = vi.fn(async (_path: string, _init?: RequestInit) => ({
     ok: true,

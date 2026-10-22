@@ -444,7 +444,12 @@ export default function Inventory({
                   operations={operations.filter(
                     (o) => String(o.product_id) === String(selected?.id),
                   )}
-                  onChanged={async () => {
+                  onChanged={async (operation) => {
+                    setOperations((previous) =>
+                      previous.map((o) =>
+                        o.id === operation.id ? operation : o,
+                      ),
+                    );
                     await refresh();
                     if (selected) await pick(selected);
                   }}
