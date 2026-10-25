@@ -114,3 +114,9 @@ class ReceiptInput(BaseModel):
     received_date: date
     lines: list[ReceiptLine] = Field(min_length=1, max_length=100)
     settlement: SettlementInput | None = None
+
+
+class ReceiptBatchInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: UUID
+    receipts: list[ReceiptInput] = Field(min_length=1, max_length=100)

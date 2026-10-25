@@ -19,6 +19,18 @@ def linked_purchase(ledger, monkeypatch):
         "conversions": [{"product_id": 1, "from_qu_id": 2, "to_qu_id": 1, "factor": "12"}],
     }
     monkeypatch.setattr(Grocy, "inventory", lambda self: data)
+    monkeypatch.setattr(
+        Grocy,
+        "receipt_options",
+        lambda self: (
+            data
+            | {
+                "locations": [{"id": 1, "name": "厨房"}, {"id": 2, "name": "储物间"}],
+                "default_location_id": None,
+                "default_best_before_days": None,
+            }
+        ),
+    )
     request = mutation(ledger)
     entry = request.entry.model_dump(mode="json") | {"amount": "120"}
     request.entry = None

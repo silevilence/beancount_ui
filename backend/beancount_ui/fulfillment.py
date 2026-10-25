@@ -21,6 +21,10 @@ def initialize(db):
     )
     db.execute("""CREATE TABLE IF NOT EXISTS receipts (
         id TEXT PRIMARY KEY, order_id TEXT NOT NULL, payload TEXT NOT NULL)""")
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS receipt_batches "
+        "(id TEXT PRIMARY KEY, request TEXT NOT NULL, result TEXT NOT NULL)"
+    )
     db.execute("""CREATE TABLE IF NOT EXISTS inventory_operations (
         id TEXT PRIMARY KEY, receipt_id TEXT NOT NULL, document TEXT NOT NULL,
         status TEXT NOT NULL, evidence TEXT NOT NULL DEFAULT '{}',

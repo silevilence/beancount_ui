@@ -6,6 +6,8 @@ import OperationStatus, {
   orderSyncLabel,
 } from "./OperationStatus";
 import ReceiptEditor from "./ReceiptEditor";
+import ReceiptBatch from "./ReceiptBatch";
+import type { ReceiptDraft } from "./receiptDraft";
 import OrderCorrections from "./OrderCorrections";
 import type { DraftItem } from "./BatchEditor";
 import PurchaseItems, { blankItem, type PurchaseItem } from "./PurchaseItems";
@@ -79,6 +81,19 @@ export default function OrderPage({
     }
   });
   const [rows, setRows] = useState<ManagedOrder[]>([]);
+  const draftKey = `beancount-ui.receipt-drafts.${journal.identity ?? "default"}`;
+  const [receiptDrafts, setReceiptDrafts] = useState<ReceiptDraft[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(draftKey) || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const [batchLocked, setBatchLocked] = useState(false);
+  function saveReceiptDrafts(drafts: ReceiptDraft[]) {
+    localStorage.setItem(draftKey, JSON.stringify(drafts));
+    setReceiptDrafts(drafts);
+  }
   const [candidates, setCandidates] = useState<Order[]>([]);
   const [selected, setSelected] = useState(initialOrder || "");
   const [query, setQuery] = useState("");
@@ -132,7 +147,9 @@ export default function OrderPage({
     (r) =>
       (!from || r.source.date >= from) &&
       (!to || r.source.date <= to) &&
-      `${r.source.payee} ${r.source.narration} ${r.id}`.includes(query) &&
+      `${r.source.payee} ${r.source.narration} ${r.source.note ?? ""} ${r.id}`
+        .toLocaleLowerCase()
+        .includes(query.toLocaleLowerCase()) &&
       (filter === "all" ||
         (filter === "pending"
           ? ["pending", "partial"].includes(r.receipt_state)
@@ -211,14 +228,14 @@ export default function OrderPage({
         <p className="eyebrow">ORDERS / 购买与到货</p>
         <h1>订单与收货</h1>
         <p className="muted">
-          付款、实物到货和库存同步分别记录。结算或退款不会自动改变库存。
+          确认收货一次完成：先用后付先记账再入库，已付款直接入库，不重复记账。
         </p>
         <div className="toolbar">
           <Segmented
             label="订单页区块"
             value={tab}
             options={[
-              { value: "receipts", label: "收货进度" },
+              { value: "receipts", label: "确认收货" },
               { value: "finance", label: "结算与退款" },
               { value: "claim", label: "认领历史购买" },
             ]}
@@ -235,6 +252,21 @@ export default function OrderPage({
       </header>
       {error && <Notice tone="error">{error}</Notice>}
       {message && <Notice>{message}</Notice>}
+      <ReceiptBatch
+        journal={journal}
+        drafts={receiptDrafts}
+        onDraftsChange={saveReceiptDrafts}
+        onEdit={(id) => {
+          setSelected(id);
+          setTab("receipts");
+          setFilter("all");
+        }}
+        onChanged={async () => {
+          await refresh();
+          await onChanged();
+        }}
+        onLockChange={setBatchLocked}
+      />
       {pending && (
         <section className="panel card" ref={pendingRef}>
           <h2>确认账务处理</h2>
@@ -556,6 +588,12 @@ export default function OrderPage({
                       <small>
                         {r.source.date} · {r.source.total} {r.source.currency}
                       </small>
+                      {r.source.note && (
+                        <p className="order-note">备注：{r.source.note}</p>
+                      )}
+                      {receiptDrafts.some((d) => d.order.id === r.id) && (
+                        <Chip>已加入本批</Chip>
+                      )}
                       <div className="inventory-alerts">
                         <Chip>{receiptLabel[r.receipt_state]}</Chip>
                         <Chip>{orderSyncLabel(r.operations)}</Chip>
@@ -594,20 +632,39 @@ export default function OrderPage({
                         </small>
                       </article>
                     ))}
+                    <ReceiptEditor
+                      key={`${detail.id}:${receiptDrafts.find((d) => d.order.id === detail.id)?.body.request_id ?? "new"}`}
+                      order={detail}
+                      journal={journal}
+                      draft={receiptDrafts.find(
+                        (d) => d.order.id === detail.id,
+                      )}
+                      locked={batchLocked}
+                      onStage={(draft) => {
+                        const existing = receiptDrafts.some(
+                          (d) => d.order.id === draft.order.id,
+                        );
+                        saveReceiptDrafts(
+                          existing
+                            ? receiptDrafts.map((d) =>
+                                d.order.id === draft.order.id ? draft : d,
+                              )
+                            : [...receiptDrafts, draft],
+                        );
+                        setMessage(
+                          "已保存到批量收货草稿，可继续填写其他订单，或在上方统一预览。",
+                        );
+                      }}
+                      onChanged={async () => {
+                        await refresh();
+                        await onChanged();
+                      }}
+                    />
                     <h3>收货历史</h3>
                     <OrderCorrections
                       key={detail.id}
                       order={detail}
                       onChanged={refresh}
-                    />
-                    <ReceiptEditor
-                      key={detail.id}
-                      order={detail}
-                      journal={journal}
-                      onChanged={async () => {
-                        await refresh();
-                        await onChanged();
-                      }}
                     />
                     <OperationStatus
                       operations={detail.operations || []}

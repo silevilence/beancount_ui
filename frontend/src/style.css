@@ -2677,3 +2677,5 @@ kbd {
 .purchase-items { margin: 18px 0; }
 .orders-page .toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
 @media (max-width: 760px) { .order-filters { grid-template-columns: minmax(0, 1fr); } }
+
+.order-note { white-space: pre-wrap; overflow-wrap: anywhere; margin-block: 0.5rem; }

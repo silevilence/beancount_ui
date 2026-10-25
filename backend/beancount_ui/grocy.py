@@ -200,6 +200,17 @@ class Grocy:
                 "checked_at": datetime.now(UTC).isoformat(),
             }
 
+    def receipt_options(self):
+        with self.lock:
+            config = self.read()
+            return {
+                "instance_id": config["instance_id"],
+                "default_location_id": config.get("default_location_id"),
+                "default_best_before_days": config.get("default_best_before_days"),
+                "products": self.request("objects/products"),
+                "locations": self.request("objects/locations"),
+            }
+
     def inventory(self):
         with self.lock:
             paths = {

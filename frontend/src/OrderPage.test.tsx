@@ -3,6 +3,128 @@ import { expect, it, vi } from "vitest";
 import OrderPage from "./OrderPage";
 import type { Journal } from "./api";
 
+it("列表显示备注并可搜索，多订单填写后统一预览提交且草稿可恢复", async () => {
+  const rows = ["paid", "deferred"].map((mode, index) => ({
+    id: mode,
+    source: {
+      mode,
+      unpaid: mode === "paid" ? "0" : "20",
+      date: "2026-10-25",
+      payee: "商店",
+      narration: `订单${index}`,
+      note: `备注${index}：家庭采购`,
+      currency: "CNY",
+      total: "20",
+    },
+    items: [
+      {
+        id: `item${index}`,
+        name: `食品${index}`,
+        remaining: "2",
+        quantity: "2",
+        unit: "件",
+        product_id: null,
+      },
+    ],
+    receipts: [],
+    receipt_state: "pending",
+    payment_state: mode === "paid" ? "paid" : "unpaid",
+  }));
+  const financial = {
+    items: [{ raw: '2026-10-25 * "账单"' }],
+    diffs: { "账本.bean": "+整批账单" },
+  };
+  const result = {
+    request_id: "batch",
+    status: "preview",
+    financial,
+    receipts: rows.map((o) => ({
+      request_id: o.id,
+      payee: o.source.payee,
+      narration: o.source.narration,
+      note: o.source.note,
+      received_date: "2026-10-25",
+      actions: [
+        { name: o.items[0].name, quantity: "2", unit: "件", product_id: null },
+      ],
+      receipt_saved: false,
+      settlement_status: o.id === "paid" ? "none" : "pending",
+      financial: o.id === "paid" ? null : financial,
+      operations: [],
+    })),
+  };
+  const fetch = vi.fn(async (path: string, _init?: RequestInit) => ({
+    ok: true,
+    json: async () =>
+      path.endsWith("fulfillment/orders")
+        ? rows
+        : path.endsWith("/orders")
+          ? []
+          : path.endsWith("/commit")
+            ? {
+                ...result,
+                status: "done",
+                receipts: result.receipts.map((r) => ({
+                  ...r,
+                  receipt_saved: true,
+                  settlement_status: r.financial ? "done" : "none",
+                })),
+              }
+            : result,
+  }));
+  vi.stubGlobal("fetch", fetch);
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const journal = {
+    identity: "batch-ui",
+    revision: "a",
+    accounts: [{ name: "Assets:Cash" }],
+  } as Journal;
+  const view = render(
+    <OrderPage journal={journal} onChanged={async () => {}} />,
+  );
+  expect(await screen.findByText("备注：备注0：家庭采购")).toBeInTheDocument();
+  expect(screen.getByText("备注：备注1：家庭采购")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("搜索订单"), {
+    target: { value: "备注1" },
+  });
+  expect(screen.queryByText("商店 · 订单0")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("搜索订单"), {
+    target: { value: "" },
+  });
+  fireEvent.click(screen.getByText("商店 · 订单0"));
+  fireEvent.click(screen.getByText("加入批量收货"));
+  await screen.findByText("批量收货 · 1 个订单");
+  fireEvent.click(screen.getByText("商店 · 订单1"));
+  fireEvent.change(screen.getByLabelText("账单账户"), {
+    target: { value: "Assets:Cash" },
+  });
+  fireEvent.click(screen.getByText("加入批量收货"));
+  await screen.findByText("批量收货 · 2 个订单");
+  expect(fetch.mock.calls.some((c) => c[0].endsWith("/preview"))).toBe(false);
+  view.unmount();
+  render(<OrderPage journal={journal} onChanged={async () => {}} />);
+  await screen.findByText("批量收货 · 2 个订单");
+  fireEvent.click(screen.getByText("批量预览收货与入库"));
+  await screen.findByText("整批账单变更");
+  const body = JSON.parse(
+    String(
+      fetch.mock.calls.find((c) => c[0].endsWith("/batch/preview"))?.[1]?.body,
+    ),
+  );
+  expect(body.receipts).toHaveLength(2);
+  expect(body.receipts[0].settlement).toBeNull();
+  expect(body.receipts[1].settlement.account).toBe("Assets:Cash");
+  fireEvent.click(screen.getByText("确认整批记账与入库"));
+  await screen.findByText(/整批收货已保存/);
+  expect(fetch.mock.calls.filter((c) => c[0].endsWith("/commit"))).toHaveLength(
+    1,
+  );
+  fireEvent.click(screen.getByText("完成本批"));
+  await waitFor(() =>
+    expect(screen.queryByLabelText("批量收货草稿")).not.toBeInTheDocument(),
+  );
+});
+
 it("大量历史购买只渲染一页选项，支持搜索、翻页并保留已选商品", async () => {
   const candidates = Array.from({ length: 8421 }, (_, i) => ({
     id: `history-${i}`,

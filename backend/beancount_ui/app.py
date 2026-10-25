@@ -21,7 +21,7 @@ from .access import Access
 from .config import Settings
 from .finance import FinanceInput, compose_finance
 from .fulfillment import Fulfillment
-from .fulfillment_models import ClaimInput, ReceiptInput
+from .fulfillment_models import ClaimInput, ReceiptBatchInput, ReceiptInput
 from .git_network import ProxyInput
 from .github_auth import GithubAuthInput
 from .grocy import Grocy, GrocyInput
@@ -34,6 +34,7 @@ from .models import BatchMutation, CommitInput, Mutation
 from .order_corrections import CorrectionInput, OrderCorrections
 from .orders import orders
 from .query import daily_view
+from .receipt_batch import ReceiptBatch
 from .receipt_flow import ReceiptFlow
 from .scheduler import ScheduleInput, Scheduler, configure
 from .statistics import Granularity, statistics, statistics_details
@@ -195,6 +196,22 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
                 claim_items=request.items,
             )
         )
+
+    @app.get("/api/fulfillment/receipt/options")
+    def receipt_options():
+        return Grocy(get_writer().state).receipt_options()
+
+    @app.post("/api/fulfillment/receipt/batch/preview")
+    def receipt_batch_preview(request: ReceiptBatchInput):
+        return ReceiptBatch(get_writer()).preview(request)
+
+    @app.post("/api/fulfillment/receipt/batch/commit")
+    def receipt_batch_commit(request: CommitInput):
+        return ReceiptBatch(get_writer()).commit(str(request.request_id))
+
+    @app.post("/api/fulfillment/receipt/batch/cancel")
+    def receipt_batch_cancel(request: CommitInput):
+        return ReceiptBatch(get_writer()).cancel(str(request.request_id))
 
     @app.post("/api/fulfillment/receipt/preview")
     def receipt_preview(request: ReceiptInput):

@@ -68,6 +68,17 @@ function textOf(body: unknown, key: string): string {
 }
 const props = { journal, onClose: vi.fn(), onSaved: vi.fn(async () => {}) };
 
+it("配置收货页入口后仍可在补记工作台单独处理账单和退款", async () => {
+  stubFetch();
+  const onOpenOrders = vi.fn();
+  render(<BatchEditor {...props} onOpenOrders={onOpenOrders} />);
+  fireEvent.click(screen.getByRole("button", { name: /淘宝订单/ }));
+  expect(await screen.findByText("订单结算 / 退款")).toBeInTheDocument();
+  expect(screen.getByText("将处理加入草稿")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "打开订单与收货" }));
+  expect(onOpenOrders).toHaveBeenCalledOnce();
+});
+
 it("切换非淘宝快捷模板重置购物付款方式，淘宝保留已选方式", async () => {
   setup({ form: base, items: [], orderMode: "deferred" });
   fireEvent.click(screen.getByRole("button", { name: "淘宝 / 88VIP" }));

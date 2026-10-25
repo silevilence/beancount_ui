@@ -106,7 +106,7 @@ const TASKS: { id: TaskId; label: string; hint: string }[] = [
     hint: "资产负债移动与余额断言",
   },
   { id: "income", label: "余额宝收益", hint: "逐日补录实际收益" },
-  { id: "orders", label: "淘宝订单", hint: "独立收货、结算与退款页面" },
+  { id: "orders", label: "淘宝订单", hint: "补记结算与退款；收货时可一并入库" },
   { id: "advanced", label: "高级分录", hint: "多分录、外币与元数据原文" },
   { id: "templates", label: "模板与推荐", hint: "快捷入口、固定与停用" },
 ];
@@ -1030,25 +1030,24 @@ export default function BatchEditor({
           )}
           {task === "orders" && (
             <fieldset disabled={locked}>
-              {onOpenOrders ? (
+              {onOpenOrders && (
                 <>
                   <p>
-                    结算、退款与实物收货已迁入独立页面。已有订单处理草稿仍可在下方预览保存。
+                    单独补记账单或退款可在下方加入草稿；需要同时收货入库时，打开订单与收货一次完成。
                   </p>
                   <button type="button" onClick={onOpenOrders}>
                     打开订单与收货
                   </button>
                 </>
-              ) : (
-                <Orders
-                  date={orderDate}
-                  onDateChange={setSelectedOrderDate}
-                  accounts={accounts}
-                  onAdd={(item) =>
-                    update({ ...draft, items: [...draft.items, item] })
-                  }
-                />
               )}
+              <Orders
+                date={orderDate}
+                onDateChange={setSelectedOrderDate}
+                accounts={accounts}
+                onAdd={(item) =>
+                  update({ ...draft, items: [...draft.items, item] })
+                }
+              />
             </fieldset>
           )}
           {task === "advanced" && (
