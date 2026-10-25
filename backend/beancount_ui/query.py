@@ -140,5 +140,26 @@ def daily_view(ledger: Ledger, day: date | None = None, payee="", narration="", 
         "expenses": {k: str(v) for k, v in totals.items()},
         "income": {k: str(v) for k, v in income.items()},
         "accounts": accounts_at(snapshot, day),
+        "completions": entry_completions(snapshot),
         "sync": git_info(ledger.settings.ledger_dir)["sync"],
     }
+
+
+def entry_completions(snapshot: Snapshot) -> dict[str, list[str]]:
+    """Distinct history, newest first, independent of the visible day and filters."""
+    values = {key: {} for key in ("payees", "narrations", "currencies", "tags", "links")}
+    if not snapshot.errors:
+        for entry in reversed(snapshot.entries):
+            if not isinstance(entry, data.Transaction):
+                continue
+            for key, items in (
+                ("payees", [entry.payee]),
+                ("narrations", [entry.narration]),
+                ("currencies", [p.units.currency for p in entry.postings]),
+                ("tags", sorted(entry.tags)),
+                ("links", sorted(entry.links)),
+            ):
+                for item in items:
+                    if item:
+                        values[key][item] = None
+    return {key: list(items) for key, items in values.items()}

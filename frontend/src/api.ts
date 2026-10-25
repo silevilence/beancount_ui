@@ -9,6 +9,14 @@ export interface PostingLine {
   currency: string;
   note: string;
   source_index?: number | null;
+  price?: { kind: "unit" | "total"; amount: string; currency: string } | null;
+}
+export interface EntryCompletions {
+  payees: string[];
+  narrations: string[];
+  currencies: string[];
+  tags: string[];
+  links: string[];
 }
 export interface PostingEntry {
   date: string;
@@ -39,6 +47,7 @@ export interface Transaction {
   note: string;
 }
 export interface Journal {
+  completions?: EntryCompletions;
   identity?: string;
   date: string;
   revision: string;

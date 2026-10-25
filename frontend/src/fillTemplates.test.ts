@@ -16,6 +16,43 @@ const fields: EntryFields = {
     { category: "Expenses:Shopping", amount: "-10", note: "折扣" },
   ],
 };
+
+it.each([true, false])(
+  "汇兑快速填充保留价格类型，金额按选择保存：%s",
+  (amounts) => {
+    const data = captureFill(
+      fields,
+      [
+        {
+          account: "Assets:Bitcash",
+          amount: "10000",
+          currency: "JPY",
+          note: "",
+          source_index: 0,
+          price: { kind: "total", amount: "430", currency: "CNY" },
+        },
+        {
+          account: "Assets:Cash",
+          amount: "-430",
+          currency: "CNY",
+          note: "",
+          source_index: 1,
+        },
+      ],
+      undefined,
+      {},
+      amounts,
+    );
+    expect(data.mode).toBe("postings");
+    if (data.mode !== "postings") throw new Error("posting template expected");
+    expect(data.postings[0]).toMatchObject({
+      amount: amounts ? "10000" : "",
+      price: { kind: "total", amount: amounts ? "430" : "", currency: "CNY" },
+    });
+    expect(data.postings[0].source_index).toBeUndefined();
+    expect(readFills(JSON.stringify([item(data)]))[0].data).toEqual(data);
+  },
+);
 const item = (data: unknown) => ({
   name: "购物",
   business: "ordinary",

@@ -180,7 +180,7 @@ def test_duplicate_source_and_unsupported_syntax():
     form["postings"][1]["source_index"] = 0
     with pytest.raises(LedgerError, match="来源"):
         render_form(PostingEntry.model_validate(form), raw)
-    for replacement in ["1 CNY @ 2 USD", "1 CNY {2 USD}"]:
+    for replacement in ["1 CNY {2 USD}", "1 CNY {{2 USD}}"]:
         unsupported = raw.replace("1 CNY\n", replacement + "\n", 1)
         assert read_form(unsupported) is None
         with pytest.raises(LedgerError, match="原文"):
@@ -194,4 +194,84 @@ def test_float_rejected():
     form = budget()
     form["postings"][0]["amount"] = 0.1
     with pytest.raises(ValidationError, match="字符串"):
+        PostingEntry.model_validate(form)
+
+
+@pytest.mark.parametrize("operator,price", [("@@", "430"), ("@", "0.043")])
+def test_exchange_form_roundtrip_create_and_edit(ledger, operator, price):
+    prepare(ledger)
+    raw = (
+        '2026-10-24 * "Bitcash" "充值" #exchange\n'
+        f"  Assets:Bitcash 10000 JPY {operator} {price} CNY ; keep\n"
+        '    memo: "充值备注"\n'
+        "  Assets:Cash -430 CNY\n"
+    )
+    form = read_form(raw)
+    assert form is not None
+    assert form["postings"][0]["price"] == {
+        "kind": "total" if operator == "@@" else "unit",
+        "amount": price,
+        "currency": "CNY",
+    }
+    assert render_form(PostingEntry.model_validate(form), raw) == raw
+    writer = Writer(ledger)
+    writer.commit(writer.preview(mutation(ledger, entry=None, raw=raw))["request_id"])
+    row = next(r for r in transactions(ledger.refresh()) if r["payee"] == "Bitcash")
+    assert row["posting_form"] == form
+    changed = deepcopy(form)
+    changed["postings"][0]["price"]["amount"] = "450" if operator == "@@" else "0.045"
+    changed["postings"][1]["amount"] = "-450"
+    writer.commit(
+        writer.preview(
+            mutation(
+                ledger,
+                entry=None,
+                operation="edit",
+                transaction_id=row["id"],
+                posting_entry=changed,
+            )
+        )["request_id"]
+    )
+    updated = next(r for r in transactions(ledger.refresh()) if r["payee"] == "Bitcash")
+    assert updated["posting_form"]["postings"][0]["price"] == changed["postings"][0]["price"]
+    assert "; keep" in updated["raw"] and "#exchange" in updated["raw"]
+    assert not ledger.refresh().errors
+    for posting in changed["postings"]:
+        posting.pop("source_index")
+    writer.commit(writer.preview(mutation(ledger, entry=None, posting_entry=changed))["request_id"])
+    assert not ledger.refresh().errors
+
+
+@pytest.mark.parametrize("amount", ["-10000", "10000"])
+@pytest.mark.parametrize("operator,price", [("@@", "430"), ("@", "0.043")])
+def test_exchange_preserves_sign_and_price_type(amount, operator, price):
+    raw = (
+        f'2026-10-24 * "exchange"\r\n  Assets:Bitcash {amount} JPY {operator} {price} CNY\r\n'
+        '    memo: "保留"\r\n  Assets:Cash'
+    )
+    form = read_form(raw)
+    assert render_form(PostingEntry.model_validate(form), raw) == raw
+    form["postings"][0]["note"] = "修改"
+    changed = render_form(PostingEntry.model_validate(form), raw)
+    assert f"{amount} JPY {operator} {price} CNY" in changed
+    form["postings"][0]["price"] = None
+    assert "@" not in render_form(PostingEntry.model_validate(form), raw)
+
+
+@pytest.mark.parametrize(
+    "patch", [{"amount": "-1"}, {"amount": 0.1}, {"currency": ""}, {"kind": "bad"}]
+)
+def test_invalid_exchange_prices_rejected(patch):
+    form = budget()
+    form["postings"][0]["price"] = {"kind": "total", "amount": "430", "currency": "CNY", **patch}
+    with pytest.raises(ValidationError):
+        PostingEntry.model_validate(form)
+
+
+def test_price_cannot_be_used_with_inferred_units():
+    form = budget()
+    form["postings"][0].update(
+        amount=None, currency="", price={"kind": "total", "amount": "430", "currency": "CNY"}
+    )
+    with pytest.raises(ValidationError, match="自动推导"):
         PostingEntry.model_validate(form)

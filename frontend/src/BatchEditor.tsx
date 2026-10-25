@@ -1,4 +1,6 @@
 import RecordFields from "./RecordFields";
+import TextComplete from "./TextComplete";
+import RawEditor from "./RawEditor";
 import QuickFill from "./QuickFill";
 import { captureFill } from "./fillTemplates";
 import {
@@ -471,6 +473,10 @@ export default function BatchEditor({
       ...draft,
       task: "daily",
       business: template.business,
+      orderMode:
+        template.payee === "淘宝" || template.name === "淘宝 / 88VIP"
+          ? draft.orderMode
+          : "",
       form: {
         ...draft.form,
         payee: template.payee,
@@ -569,14 +575,26 @@ export default function BatchEditor({
   const field = (name: keyof EntryFields, label: string, type = "text") => (
     <label className="field">
       <span>{label}</span>
-      <input
-        aria-label={label}
-        type={type}
-        inputMode={name === "amount" ? "decimal" : undefined}
-        value={String(draft.form[name] ?? "")}
-        onChange={(e) => change(name, e.target.value)}
-        required={["date", "amount", "currency"].includes(name)}
-      />
+      {name === "payee" || name === "narration" ? (
+        <TextComplete
+          label={label}
+          value={draft.form[name]}
+          options={
+            journal.completions?.[name === "payee" ? "payees" : "narrations"] ||
+            []
+          }
+          onChange={(value) => change(name, value)}
+        />
+      ) : (
+        <input
+          aria-label={label}
+          type={type}
+          inputMode={name === "amount" ? "decimal" : undefined}
+          value={String(draft.form[name] ?? "")}
+          onChange={(e) => change(name, e.target.value)}
+          required={["date", "amount", "currency"].includes(name)}
+        />
+      )}
     </label>
   );
   const quickFill = businessConfig && (!balanceRaw || recordTemplate) && (
@@ -682,6 +700,7 @@ export default function BatchEditor({
       )}
       {recordTemplate ? (
         <RecordFields
+          completions={journal.completions}
           disabled={templateStale}
           template={recordTemplate}
           values={draft.templateValues || {}}
@@ -698,13 +717,12 @@ export default function BatchEditor({
       ) : balanceRaw ? (
         <label className="field">
           <span>Beancount 原文</span>
-          <textarea
-            aria-label="Beancount 原文"
-            className="raw-input"
-            required
-            spellCheck={false}
+          <RawEditor
+            label="Beancount 原文"
+            accounts={accounts}
+            completions={journal.completions}
             value={draft.advancedRaw || ""}
-            onChange={(e) => update({ ...draft, advancedRaw: e.target.value })}
+            onChange={(value) => update({ ...draft, advancedRaw: value })}
           />
           <small>余额业务仅接受一条 balance，不生成补差。</small>
         </label>
@@ -827,15 +845,12 @@ export default function BatchEditor({
         <>
           <label className="field">
             <span>高级 Beancount 原文</span>
-            <textarea
-              className="raw-input"
-              aria-label="高级 Beancount 原文"
-              required
-              spellCheck={false}
+            <RawEditor
+              label="高级 Beancount 原文"
+              accounts={accounts}
+              completions={journal.completions}
               value={draft.advancedRaw || ""}
-              onChange={(e) =>
-                update({ ...draft, advancedRaw: e.target.value })
-              }
+              onChange={(value) => update({ ...draft, advancedRaw: value })}
             />
           </label>
           <p className="muted small">

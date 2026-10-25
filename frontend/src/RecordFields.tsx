@@ -1,5 +1,7 @@
 import { useId } from "react";
 import AccountSelect from "./AccountSelect";
+import TextComplete from "./TextComplete";
+import type { EntryCompletions } from "./api";
 import {
   inputValues,
   templateSummary,
@@ -17,6 +19,7 @@ export default function RecordFields({
   accounts,
   onChange,
   disabled = false,
+  completions,
 }: {
   template: RecordTemplate;
   values: Record<string, string>;
@@ -24,6 +27,7 @@ export default function RecordFields({
   accounts: { name: string; currencies: string[] }[];
   onChange: (values: Record<string, string>) => void;
   disabled?: boolean;
+  completions?: EntryCompletions;
 }) {
   const currenciesId = useId();
   const inputs = inputValues(template, values, day);
@@ -67,6 +71,17 @@ export default function RecordFields({
                 options={accounts.map((account) => ({ value: account.name }))}
                 onChange={(value) => onChange({ ...inputs, [key]: value })}
               />
+            ) : field.type === "text" &&
+              (key === "payee" || key === "narration") ? (
+              <TextComplete
+                label={field.label}
+                value={inputs[key]}
+                maxLength={2000}
+                options={
+                  completions?.[key === "payee" ? "payees" : "narrations"] || []
+                }
+                onChange={(value) => onChange({ ...inputs, [key]: value })}
+              />
             ) : (
               <>
                 <input
@@ -80,7 +95,9 @@ export default function RecordFields({
                   }
                   list={field.type === "currency" ? currenciesId : undefined}
                   value={inputs[key]}
-                  onChange={(e) => onChange({ ...inputs, [key]: e.target.value })}
+                  onChange={(e) =>
+                    onChange({ ...inputs, [key]: e.target.value })
+                  }
                 />
                 {field.type === "currency" && (
                   <datalist id={currenciesId}>

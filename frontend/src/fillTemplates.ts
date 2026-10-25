@@ -52,11 +52,14 @@ export function captureFill(
     return {
       mode: "postings",
       fields: saved,
-      postings: postings.map(({ account, amount, currency, note }) => ({
+      postings: postings.map(({ account, amount, currency, note, price }) => ({
         account,
         amount: amount === null || amounts ? amount : "",
         currency,
         note,
+        ...(price
+          ? { price: { ...price, amount: amounts ? price.amount : "" } }
+          : {}),
       })),
     };
   if (fields.splits?.length)
@@ -134,7 +137,12 @@ export function readFills(text: string | null): QuickFillTemplate[] {
               [line.account, line.currency, line.note].every(
                 (s) => typeof s === "string",
               ) &&
-              (line.amount === null || typeof line.amount === "string"),
+              (line.amount === null || typeof line.amount === "string") &&
+              (line.price == null ||
+                (object(line.price) &&
+                  ["unit", "total"].includes(String(line.price.kind)) &&
+                  typeof line.price.amount === "string" &&
+                  typeof line.price.currency === "string")),
           ))
       );
     })

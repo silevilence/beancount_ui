@@ -11,7 +11,12 @@ import BatchEditor, { draftKey } from "./BatchEditor";
 import type { Journal } from "./api";
 import { shanghaiToday } from "./format";
 
-beforeEach(() => vi.stubGlobal("confirm", vi.fn(() => true)));
+beforeEach(() =>
+  vi.stubGlobal(
+    "confirm",
+    vi.fn(() => true),
+  ),
+);
 
 const journal: Journal = {
   date: "2026-09-29",
@@ -38,11 +43,13 @@ const bad = (detail: string) => ({
 const preview = (requestId: string) => ({
   request_id: requestId,
   revision: journal.revision,
-  items: [{
-    item: 1,
-    target: "txs/2026/09.bean",
-    raw: '2026-09-29 * "预览原文"\n  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n',
-  }],
+  items: [
+    {
+      item: 1,
+      target: "txs/2026/09.bean",
+      raw: '2026-09-29 * "预览原文"\n  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n',
+    },
+  ],
   diffs: { "txs/2026/09.bean": "+new" },
   warnings: ["第 1 笔含零金额"],
 });
@@ -60,6 +67,20 @@ function textOf(body: unknown, key: string): string {
   return "";
 }
 const props = { journal, onClose: vi.fn(), onSaved: vi.fn(async () => {}) };
+
+it("切换非淘宝快捷模板重置购物付款方式，淘宝保留已选方式", async () => {
+  setup({ form: base, items: [], orderMode: "deferred" });
+  fireEvent.click(screen.getByRole("button", { name: "淘宝 / 88VIP" }));
+  expect(screen.getByLabelText("购物付款方式")).toHaveValue("deferred");
+  fireEvent.click(screen.getByRole("button", { name: "超市" }));
+  expect(screen.getByLabelText("购物付款方式")).toHaveValue("");
+  fireEvent.change(screen.getByLabelText("购物付款方式"), {
+    target: { value: "paid" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "工资 / 奖金" }));
+  fireEvent.click(screen.getByRole("button", { name: "淘宝 / 88VIP" }));
+  expect(screen.getByLabelText("购物付款方式")).toHaveValue("");
+});
 const base = {
   date: "2026-09-29",
   amount: "1",

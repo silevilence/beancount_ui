@@ -57,7 +57,10 @@ const row: Transaction = {
 };
 
 function setup() {
-  vi.stubGlobal("confirm", vi.fn(() => true));
+  vi.stubGlobal(
+    "confirm",
+    vi.fn(() => true),
+  );
   const requests: { url: string; body: Record<string, unknown> }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -94,6 +97,125 @@ function setup() {
 function change(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
+
+it.each(["single", "batch"])(
+  "%s 商户摘要支持历史候选并可自由填写",
+  async (mode) => {
+    setup();
+    const withHistory = {
+      ...journal,
+      completions: {
+        payees: ["Bitcash"],
+        narrations: ["充值"],
+        currencies: ["CNY", "JPY"],
+        tags: [],
+        links: [],
+      },
+    };
+    render(
+      mode === "single" ? (
+        <Editor {...props} journal={withHistory} operation="create" />
+      ) : (
+        <BatchEditor {...props} journal={withHistory} />
+      ),
+    );
+    const payee = screen.getByRole("combobox", { name: "商户" });
+    fireEvent.change(payee, { target: { value: "bit" } });
+    fireEvent.keyDown(payee, { key: "ArrowDown" });
+    fireEvent.keyDown(payee, { key: "Enter" });
+    expect(payee).toHaveValue("Bitcash");
+    const narration = screen.getByRole("combobox", { name: "摘要" });
+    fireEvent.focus(narration);
+    fireEvent.click(screen.getByRole("option", { name: "充值" }));
+    expect(narration).toHaveValue("充值");
+    change("商户", "全新商户");
+    fireEvent.blur(payee);
+    expect(payee).toHaveValue("全新商户");
+  },
+);
+
+it("原文编辑高亮账户，并在光标处补全账户", async () => {
+  setup();
+  render(<Editor {...props} operation="create" />);
+  fireEvent.click(screen.getByLabelText("原文高级编辑"));
+  const raw = screen.getByLabelText("Beancount 原文");
+  const text = '2026-10-24 * "Bitcash" "充值"\n  Assets:Ca';
+  fireEvent.change(raw, {
+    target: { value: text, selectionStart: text.length },
+  });
+  expect(document.querySelector(".bean-token-account")).toHaveTextContent(
+    "Assets:Ca",
+  );
+  fireEvent.keyDown(raw, { key: "Enter" });
+  expect(raw).toHaveValue(text.replace("Assets:Ca", "Assets:Cash"));
+});
+
+it("历史汇兑记录可回填修改并以原价格类型提交", async () => {
+  const requests = setup();
+  const exchange: PostingEntry = {
+    ...form,
+    postings: [
+      {
+        account: "Assets:Cash",
+        amount: "10000",
+        currency: "JPY",
+        note: "",
+        source_index: 0,
+        price: { kind: "total", amount: "430", currency: "CNY" },
+      },
+      {
+        account: "Equity:Opening",
+        amount: "-430",
+        currency: "CNY",
+        note: "",
+        source_index: 1,
+      },
+    ],
+  };
+  render(
+    <Editor
+      {...props}
+      operation="edit"
+      row={{ ...row, posting_form: exchange }}
+    />,
+  );
+  expect(screen.getByLabelText("换算总价 1")).toHaveValue("430");
+  change("换算总价 1", "450");
+  change("分录金额 2", "-450");
+  fireEvent.click(screen.getByText("预览并校验"));
+  await waitFor(() =>
+    expect(
+      requests.find((r) => r.url === "/api/preview")?.body.posting_entry,
+    ).toMatchObject({
+      postings: [
+        {
+          source_index: 0,
+          amount: "10000",
+          currency: "JPY",
+          price: { kind: "total", amount: "450", currency: "CNY" },
+        },
+        { source_index: 1, amount: "-450" },
+      ],
+    }),
+  );
+});
+
+it("补记原文使用同一编辑器，并将补全后的完整原文加入草稿", async () => {
+  setup();
+  render(<BatchEditor {...props} />);
+  fireEvent.click(screen.getByRole("button", { name: /高级分录 多分录/ }));
+  const raw = screen.getByLabelText("高级 Beancount 原文");
+  const text = '2026-10-24 * "Bitcash" "充值"\n  Assets:Ca';
+  fireEvent.change(raw, {
+    target: { value: text, selectionStart: text.length },
+  });
+  fireEvent.keyDown(raw, { key: "Tab" });
+  const completed = `${text.replace("Assets:Ca", "Assets:Cash")} 10000 JPY @@ 430 CNY\n  Equity:Opening -430 CNY`;
+  fireEvent.change(raw, { target: { value: completed } });
+  fireEvent.click(screen.getByText("加入草稿"));
+  const stored = JSON.parse(localStorage.getItem(draftKey(journal))!);
+  expect(stored.items[0].raw).toBe(completed);
+});
 afterEach(() => {
   cleanup();
   localStorage.clear();

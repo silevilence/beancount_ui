@@ -44,3 +44,28 @@ def test_account_close_date(ledger):
     assert "Expenses:Food" not in {
         a["name"] for a in daily_view(ledger, date(2026, 10, 1))["accounts"]
     }
+
+
+def test_completions_include_history_outside_selected_day_and_filters(ledger):
+    day = date(2026, 10, 25)
+    original = daily_view(ledger, day, payee="does-not-exist")
+    assert original["transactions"] == []
+    assert "街角食堂" in original["completions"]["payees"]
+    assert "午饭" in original["completions"]["narrations"]
+    path = ledger.settings.ledger_dir / "main.beancount"
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(
+            '\n2026-10-24 * "Bitcash" "充值" #topup ^receipt\n'
+            "  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n"
+        )
+    changed = daily_view(ledger, day)
+    assert changed["completions"]["payees"][0] == "Bitcash"
+    assert "topup" in changed["completions"]["tags"]
+    assert "receipt" in changed["completions"]["links"]
+    assert len(changed["completions"]["currencies"]) == len(
+        set(changed["completions"]["currencies"])
+    )
+    path.write_bytes(path.read_bytes() + b'\n2026-10-25 * "broken"\n  Assets:Missing 1 CNY\n')
+    stale = daily_view(ledger, day)
+    assert stale["stale"]
+    assert stale["completions"] == changed["completions"]

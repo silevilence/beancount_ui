@@ -1,4 +1,6 @@
 import RecordFields from "./RecordFields";
+import TextComplete from "./TextComplete";
+import RawEditor from "./RawEditor";
 import PurchaseItems, { type PurchaseItem } from "./PurchaseItems";
 import type { DraftItem } from "./BatchEditor";
 import QuickFill from "./QuickFill";
@@ -391,14 +393,26 @@ export default function Editor({
   const field = (key: keyof EntryFields, label: string, type = "text") => (
     <label className="field">
       <span>{label}</span>
-      <input
-        aria-label={label}
-        required={["date", "amount", "currency"].includes(key)}
-        type={type}
-        inputMode={key === "amount" ? "decimal" : undefined}
-        value={String(fields[key] ?? "")}
-        onChange={(e) => change(key, e.target.value)}
-      />
+      {key === "payee" || key === "narration" ? (
+        <TextComplete
+          label={label}
+          value={fields[key]}
+          options={
+            journal.completions?.[key === "payee" ? "payees" : "narrations"] ||
+            []
+          }
+          onChange={(value) => change(key, value)}
+        />
+      ) : (
+        <input
+          aria-label={label}
+          required={["date", "amount", "currency"].includes(key)}
+          type={type}
+          inputMode={key === "amount" ? "decimal" : undefined}
+          value={String(fields[key] ?? "")}
+          onChange={(e) => change(key, e.target.value)}
+        />
+      )}
     </label>
   );
   const step = preview ? (uncertain || busy ? 3 : 2) : 1;
@@ -622,6 +636,7 @@ export default function Editor({
             )}
             {recordTemplate ? (
               <RecordFields
+                completions={journal.completions}
                 template={recordTemplate}
                 values={values}
                 day={fields.date}
@@ -635,16 +650,15 @@ export default function Editor({
               <>
                 <label className="field">
                   <span>Beancount 原文</span>
-                  <textarea
-                    aria-label="Beancount 原文"
-                    className="raw-input"
-                    required
+                  <RawEditor
+                    label="Beancount 原文"
+                    accounts={accounts}
+                    completions={journal.completions}
                     value={raw}
-                    onChange={(e) => {
+                    onChange={(value) => {
                       invalidate();
-                      setRaw(e.target.value);
+                      setRaw(value);
                     }}
-                    spellCheck={false}
                   />
                 </label>
                 <p className="muted">

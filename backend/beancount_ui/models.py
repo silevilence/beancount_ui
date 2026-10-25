@@ -42,6 +42,18 @@ class EntryInput(BaseModel):
         return value
 
 
+class PostingPrice(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["unit", "total"]
+    amount: Decimal = Field(ge=0, max_digits=24, decimal_places=8)
+    currency: str = Field(pattern=r"^[A-Z][A-Z0-9._-]{0,23}$")
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def exact_amount(cls, value):
+        return EntryInput.exact_amount(value)
+
+
 class PostingInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     account: str = Field(pattern=r"^(Assets|Liabilities|Expenses|Income|Equity):[^\s\";]+$")
@@ -49,11 +61,18 @@ class PostingInput(BaseModel):
     currency: str = Field(default="", pattern=r"^([A-Z][A-Z0-9._-]{0,23})?$")
     note: str = Field(default="", max_length=2000)
     source_index: int | None = Field(default=None, ge=0)
+    price: PostingPrice | None = None
 
     @field_validator("amount", mode="before")
     @classmethod
     def exact_amount(cls, value):
         return None if value is None else EntryInput.exact_amount(value)
+
+    @model_validator(mode="after")
+    def priced_units(self):
+        if self.price is not None and (self.amount is None or not self.currency):
+            raise ValueError("价格换算需要填写分录金额和币种，不能自动推导")
+        return self
 
 
 class PostingEntry(BaseModel):

@@ -18,6 +18,8 @@ POSTING = re.compile(
     r"(?P<account>(?:Assets|Liabilities|Expenses|Income|Equity):[^\s;]+)"
     r"(?:[ \t]+(?P<amount>[+-]?(?:\d+(?:\.\d*)?|\.\d+))"
     r"[ \t]+(?P<currency>[A-Z][A-Z0-9._-]*))?"
+    r"(?:[ \t]+(?P<price_kind>@@?)[ \t]+(?P<price_amount>[+]?(?:\d+(?:\.\d*)?|\.\d+))"
+    r"[ \t]+(?P<price_currency>[A-Z][A-Z0-9._-]*))?"
     r"[ \t]*(?P<comment>;[^\r\n]*)?(?:\r?\n)?$"
 )
 MEMO = re.compile(rf"^([ \t]+memo:[ \t]*)({STRING})([ \t]*(?:;[^\r\n]*)?)(\r?\n)?$")
@@ -46,7 +48,7 @@ def read_form(
         return None
     if posting_count is not None and posting_count != len(matches):
         return None
-    if any(p.cost is not None or p.price is not None for p in entry.postings):
+    if any(p.cost is not None for p in entry.postings):
         return None
     # Booking may expand or reorder postings. Only reuse a validated entry when
     # source rows still correspond; amounts below always come from the source,
@@ -80,6 +82,15 @@ def read_form(
                 "amount": str(Decimal(match["amount"])) if match["amount"] is not None else None,
                 "currency": match["currency"] or "",
                 "note": (posting.meta or {}).get("memo", ""),
+                "price": (
+                    {
+                        "kind": "total" if match["price_kind"] == "@@" else "unit",
+                        "amount": str(Decimal(match["price_amount"])),
+                        "currency": match["price_currency"],
+                    }
+                    if match["price_kind"]
+                    else None
+                ),
             }
             for index, ((_, match), posting) in enumerate(zip(matches, entry.postings, strict=True))
         ],
@@ -139,15 +150,20 @@ def render_form(entry: PostingEntry, raw: str | None = None) -> str:
         if (posting.amount is None) != (posting.currency == ""):
             raise LedgerError("分录金额和币种必须同时填写；自动推导时两项均留空")
         units = "" if posting.amount is None else f" {posting.amount:f} {posting.currency}"
+        if posting.price:
+            operator = "@@" if posting.price.kind == "total" else "@"
+            units += f" {operator} {posting.price.amount:f} {posting.price.currency}"
         if index is not None:
             block = list(blocks[index])
             old = original["postings"][index]
             old_amount = Decimal(old["amount"]) if old["amount"] is not None else None
             match = POSTING.fullmatch(block[0])
-            if (posting.account, posting.amount, posting.currency) != (
+            price = posting.price.model_dump(mode="json") if posting.price else None
+            if (posting.account, posting.amount, posting.currency, price) != (
                 old["account"],
                 old_amount,
                 old["currency"],
+                old["price"],
             ):
                 comment = " " + match["comment"] if match["comment"] else ""
                 ending = nl if block[0].endswith("\n") else ""

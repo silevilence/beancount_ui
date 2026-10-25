@@ -1354,6 +1354,93 @@ kbd {
   line-height: 1.8;
 }
 
+.raw-editor {
+  min-width: 0;
+  position: relative;
+}
+.raw-surface {
+  position: relative;
+  isolation: isolate;
+}
+.raw-surface .raw-input,
+.raw-highlight {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.8;
+  letter-spacing: normal;
+  tab-size: 2;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.raw-highlight {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  background: #0a1119;
+  color: var(--ink);
+}
+.raw-highlight code {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  font: inherit;
+}
+.raw-surface .raw-input {
+  position: relative;
+  display: block;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--ink);
+  resize: vertical;
+  overflow: auto;
+}
+.raw-surface .raw-input::selection {
+  background: #5173a566;
+}
+.raw-editor .raw-options {
+  position: relative;
+  top: auto;
+  margin-top: 4px;
+}
+.bean-token-comment {
+  color: #9aaabd;
+}
+.bean-token-string {
+  color: #89d6ac;
+}
+.bean-token-account {
+  color: #85b9ff;
+}
+.bean-token-number {
+  color: #f0bd77;
+}
+.bean-token-date,
+.bean-token-keyword {
+  color: #cfacff;
+}
+.bean-token-operator,
+.bean-token-tag {
+  color: #f0cc86;
+}
+@media (forced-colors: active) {
+  .raw-highlight {
+    display: none;
+  }
+  .raw-surface .raw-input {
+    color: CanvasText;
+    background: Canvas;
+  }
+}
+
 .raw-block {
   margin-top: 6px;
 }
