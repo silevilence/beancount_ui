@@ -1,3 +1,4 @@
+import { normalizeAmount } from "./amounts";
 import AccountSelect from "./AccountSelect";
 import { useEffect, useRef, useState } from "react";
 import { api, type Journal, type Transaction } from "./api";
@@ -122,7 +123,7 @@ export default function IncomeDays({
   const recorded = rows.length - blank.length;
   const filled = blank.filter((r) => (values[r.date] ?? "").trim() !== "");
   const valid = filled.filter((r) =>
-    AMOUNT.test((values[r.date] ?? "").trim()),
+    AMOUNT.test(normalizeAmount(values[r.date])),
   );
   const hasInvalid = filled.length !== valid.length;
   const totals = hasInvalid
@@ -184,7 +185,7 @@ export default function IncomeDays({
               business: "yuebao",
               entry: {
                 date: r.date,
-                amount: values[r.date],
+                amount: normalizeAmount(values[r.date]),
                 currency: "CNY",
                 category,
                 payment,
@@ -261,7 +262,14 @@ export default function IncomeDays({
                       <span>实际收益 {r.date}</span>
                       <input
                         aria-label={`实际收益 ${r.date}`}
+                        inputMode="decimal"
                         value={values[r.date] ?? ""}
+                        onBlur={(e) =>
+                          setValues({
+                            ...values,
+                            [r.date]: normalizeAmount(e.target.value),
+                          })
+                        }
                         onChange={(e) =>
                           setValues({ ...values, [r.date]: e.target.value })
                         }

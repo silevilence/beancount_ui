@@ -162,6 +162,18 @@ const fillDaily = (amount: string) => {
 const tray = () =>
   within(screen.getByRole("complementary", { name: "待入账草稿" }));
 
+it("补记金额失焦规范化并持久保留在草稿", async () => {
+  setup();
+  await act(async () => {});
+  const input = screen.getByLabelText("实付金额");
+  fireEvent.change(input, { target: { value: " 2,000.10 " } });
+  fireEvent.blur(input);
+  expect(input).toHaveValue("2000.10");
+  fillDaily("2000.10");
+  const draft = JSON.parse(localStorage.getItem(draftKey(journal))!);
+  expect(draft.items[0].entry.amount).toBe("2000.10");
+});
+
 it("余额宝重新进入默认上海今天，独立于旧日常表单及已有草稿", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-10-05T16:01:00Z"));

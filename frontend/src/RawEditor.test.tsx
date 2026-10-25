@@ -47,6 +47,15 @@ it("原文上下选择与 Tab 补全替换整个光标词，保留后续金额�
     transform: "translate(-20px, -40px)",
   });
 });
+
+it("光标在已完整填写的账户中间时，Tab 采纳后仍移到词尾", () => {
+  render(<Harness />);
+  const text = "  Assets:Bank 2000 CNY";
+  const input = type(text, "  Assets:B".length) as HTMLTextAreaElement;
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input).toHaveValue(text);
+  expect(input.selectionStart).toBe("  Assets:Bank".length);
+});
 it("原文补全支持手动唤起、关闭、鼠标选择及输入法，不占用 Ctrl+Enter", () => {
   const submitKey = vi.fn();
   render(
@@ -85,9 +94,7 @@ it("商户与摘要补全根据引号位置识别，并正确转义", () => {
   render(<Harness />);
   const input = type('2026-10-24 * "店" "充值"', '2026-10-24 * "店'.length);
   fireEvent.click(screen.getByRole("option", { name: '店 "A"' }));
-  expect(input).toHaveValue(
-    `2026-10-24 * ${JSON.stringify('店 "A"')} "充值"`,
-  );
+  expect(input).toHaveValue(`2026-10-24 * ${JSON.stringify('店 "A"')} "充值"`);
   type('2026-10-24 * "Bitcash" "充');
   fireEvent.keyDown(input, { key: "Enter" });
   expect(input).toHaveValue('2026-10-24 * "Bitcash" "充值');
@@ -163,4 +170,109 @@ it("自由文本补全可关闭、键盘重开，输入法和 Ctrl+Enter 不选�
   fireEvent.keyDown(input, { key: "ArrowDown" });
   fireEvent.keyDown(input, { key: "Enter" });
   expect(onChange).toHaveBeenCalledWith("Bitcash");
+});
+
+it.each([
+  ["", 0, false, "  ", 2],
+  ["  Assets:Bank", 1, false, "    Assets:Bank", 3],
+  ["  Assets:Bank", 1, true, "Assets:Bank", 0],
+  [" Assets:Bank", 1, true, "Assets:Bank", 0],
+  ["Assets:Bank", 0, true, "Assets:Bank", 0],
+  ["header\n", 7, false, "header\n  ", 9],
+])(
+  "行首两空格缩进和反缩进：%s",
+  (initial, cursor, shiftKey, expected, position) => {
+    render(<Harness initial={initial} />);
+    const input = screen.getByLabelText("原文") as HTMLTextAreaElement;
+    input.focus();
+    input.setSelectionRange(cursor, cursor);
+    expect(fireEvent.keyDown(input, { key: "Tab", shiftKey })).toBe(false);
+    expect(input).toHaveValue(expected);
+    expect(input.selectionStart).toBe(position);
+    expect(input).toHaveFocus();
+  },
+);
+
+it("反向选区缩进保持范围和方向，末尾行首不参与，Shift+Tab 可还原", () => {
+  render(<Harness initial={"header\n  first\n second\nlast"} />);
+  const input = screen.getByLabelText("原文") as HTMLTextAreaElement;
+  input.focus();
+  input.setSelectionRange(10, 23, "backward");
+  fireEvent.select(input);
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input).toHaveValue("header\n    first\n   second\nlast");
+  expect([
+    input.selectionStart,
+    input.selectionEnd,
+    input.selectionDirection,
+  ]).toEqual([12, 27, "backward"]);
+  fireEvent.keyDown(input, { key: "Tab", shiftKey: true });
+  expect(input).toHaveValue("header\n  first\n second\nlast");
+  expect([
+    input.selectionStart,
+    input.selectionEnd,
+    input.selectionDirection,
+  ]).toEqual([10, 23, "backward"]);
+  expect(input).toHaveFocus();
+});
+
+it("选区覆盖空行时逐行缩进，反缩进最多移除已有两空格", () => {
+  render(<Harness initial={" a\n\n   b"} />);
+  const input = screen.getByLabelText("原文") as HTMLTextAreaElement;
+  input.focus();
+  input.setSelectionRange(0, input.value.length);
+  fireEvent.keyDown(input, { key: "Tab", shiftKey: true });
+  expect(input).toHaveValue("a\n\n b");
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input).toHaveValue("  a\n  \n   b");
+});
+
+it("行首与选区优先缩进，其他位置无候选 Tab 无效且 Shift+Tab 不采纳", () => {
+  render(<Harness />);
+  const input = type("  ") as HTMLTextAreaElement;
+  input.focus();
+  fireEvent.keyDown(input, { key: " ", code: "Space", ctrlKey: true });
+  expect(screen.getByRole("listbox")).toBeInTheDocument();
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input).toHaveValue("    ");
+  type("  Assets:B");
+  expect(fireEvent.keyDown(input, { key: "Tab", shiftKey: true })).toBe(false);
+  expect(input).toHaveValue("  Assets:B");
+  // 即使选择事件尚未送达，也必须按实时选区缩进，不能使用旧候选替换。
+  input.setSelectionRange(3, 6);
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input).toHaveValue("    Assets:B");
+  type("no suggestions");
+  expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(false);
+  expect(input).toHaveValue("no suggestions");
+  fireEvent.keyDown(input, { key: "Tab", isComposing: true });
+  expect(input).toHaveValue("no suggestions");
+  expect(input).toHaveFocus();
+});
+
+it("文本候选 Tab 采纳当前项且保持焦点，关闭、无匹配和 Shift+Tab 保留焦点导航", () => {
+  function Form() {
+    const [value, setValue] = useState("");
+    return (
+      <TextComplete
+        label="摘要"
+        value={value}
+        onChange={setValue}
+        options={history.narrations}
+      />
+    );
+  }
+  render(<Form />);
+  const input = screen.getByLabelText("摘要");
+  input.focus();
+  fireEvent.focus(input);
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(fireEvent.keyDown(input, { key: "Tab", shiftKey: true })).toBe(true);
+  expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(false);
+  expect(input).toHaveValue("购物");
+  expect(input).toHaveFocus();
+  expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+  fireEvent.change(input, { target: { value: "新摘要" } });
+  expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+  expect(input).toHaveValue("新摘要");
 });

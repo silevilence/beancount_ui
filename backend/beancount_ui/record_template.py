@@ -9,6 +9,8 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .amounts import normalize_amount
+
 SLOT = re.compile(r"\{\{(-?)([a-z][a-z0-9_]*)\}\}")
 
 
@@ -44,6 +46,7 @@ def encode_value(kind: str, value: str) -> str:
             raise ValueError("日期应为 YYYY-MM-DD")
         return date.fromisoformat(value).isoformat()
     if kind == "amount":
+        value = normalize_amount(value)
         if not re.fullmatch(r"-?\d{1,16}(?:\.\d{1,8})?", value):
             raise ValueError("金额应为有限十进制数（最多 16 位整数、8 位小数）")
         try:

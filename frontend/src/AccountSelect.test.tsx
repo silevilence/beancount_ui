@@ -8,6 +8,24 @@ const options = [
   { value: "Assets:Cash", label: "现金 · Assets:Cash" },
   { value: "Liabilities:Card" },
 ];
+
+it("Tab 采纳当前账户并保持焦点，无候选或 Shift+Tab 允许导航", () => {
+  render(<Harness />);
+  const input = screen.getByRole("combobox");
+  input.focus();
+  fireEvent.change(input, { target: { value: "Assets" } });
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(fireEvent.keyDown(input, { key: "Tab", shiftKey: true })).toBe(true);
+  expect(fireEvent.keyDown(input, { key: "Tab", isComposing: true })).toBe(
+    true,
+  );
+  expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(false);
+  expect(input).toHaveValue("Assets:Cash");
+  expect(input).toHaveFocus();
+  expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+  fireEvent.change(input, { target: { value: "missing" } });
+  expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+});
 function Harness() {
   const [value, setValue] = useState("Assets:Cash");
   return (

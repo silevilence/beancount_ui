@@ -1,3 +1,4 @@
+import { normalizeAmount } from "./amounts";
 import RecordFields from "./RecordFields";
 import TextComplete from "./TextComplete";
 import RawEditor from "./RawEditor";
@@ -590,6 +591,11 @@ export default function BatchEditor({
           aria-label={label}
           type={type}
           inputMode={name === "amount" ? "decimal" : undefined}
+          onBlur={
+            name === "amount"
+              ? (e) => change(name, normalizeAmount(e.target.value))
+              : undefined
+          }
           value={String(draft.form[name] ?? "")}
           onChange={(e) => change(name, e.target.value)}
           required={["date", "amount", "currency"].includes(name)}

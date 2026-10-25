@@ -8,6 +8,7 @@ export default function TextComplete({
   onChange,
   disabled,
   maxLength,
+  required,
 }: {
   label: string;
   value: string;
@@ -15,6 +16,7 @@ export default function TextComplete({
   onChange: (value: string) => void;
   disabled?: boolean;
   maxLength?: number;
+  required?: boolean;
 }) {
   const id = useId();
   const [open, setOpen] = useState(false);
@@ -47,6 +49,7 @@ export default function TextComplete({
         value={value}
         disabled={disabled}
         maxLength={maxLength}
+        required={required}
         onFocus={() => {
           setOpen(true);
           setActive(0);
@@ -76,9 +79,10 @@ export default function TextComplete({
               ),
             );
           } else if (
-            e.key === "Enter" &&
+            (e.key === "Enter" || (e.key === "Tab" && !e.shiftKey)) &&
             expanded &&
             !e.ctrlKey &&
+            !e.altKey &&
             !e.metaKey
           ) {
             e.preventDefault();

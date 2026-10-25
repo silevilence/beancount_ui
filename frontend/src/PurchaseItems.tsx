@@ -1,3 +1,4 @@
+import { normalizeAmount } from "./amounts";
 import { useEffect, useState } from "react";
 import { api, reasonOf } from "./api";
 import { nameOf, type InventoryData, type Product } from "./Inventory";
@@ -114,11 +115,11 @@ export default function PurchaseItems({
     return rows.map((item) => {
       const allocation =
         rows.length === 1 && amount !== ""
-          ? amount
+          ? normalizeAmount(amount)
           : (item.allocated_amount ??
             (item.unit_price != null
               ? (
-                  Number(item.unit_price) *
+                  Number(normalizeAmount(item.unit_price)) *
                   Number(item.quantity) *
                   Number(item.factor)
                 )
@@ -129,8 +130,8 @@ export default function PurchaseItems({
       const valid =
         allocation != null &&
         allocation !== "" &&
-        Number.isFinite(Number(allocation)) &&
-        Number(allocation) >= 0 &&
+        Number.isFinite(Number(normalizeAmount(allocation))) &&
+        Number(normalizeAmount(allocation)) >= 0 &&
         Number.isFinite(quantity) &&
         quantity > 0;
       return {
@@ -139,7 +140,9 @@ export default function PurchaseItems({
         currency,
         unit_price:
           item.product_id && valid
-            ? (Number(allocation) / quantity).toFixed(8).replace(/\.?0+$/, "")
+            ? (Number(normalizeAmount(allocation)) / quantity)
+                .toFixed(8)
+                .replace(/\.?0+$/, "")
             : null,
         price_confirmed: !!item.product_id && valid,
       };
@@ -157,7 +160,7 @@ export default function PurchaseItems({
     change(items.map((item, i) => (i === index ? next : item)));
   }
   const allocated = items.reduce(
-    (sum, item) => sum + Number(item.allocated_amount || 0),
+    (sum, item) => sum + Number(normalizeAmount(item.allocated_amount || "0")),
     0,
   );
 
@@ -283,6 +286,13 @@ export default function PurchaseItems({
               inputMode="decimal"
               readOnly={items.length === 1 && amount !== ""}
               value={item.allocated_amount ?? ""}
+              onBlur={(e) => {
+                if (!e.target.readOnly)
+                  update(index, {
+                    ...item,
+                    allocated_amount: normalizeAmount(e.target.value),
+                  });
+              }}
               onChange={(e) =>
                 update(index, { ...item, allocated_amount: e.target.value })
               }
@@ -313,7 +323,7 @@ export default function PurchaseItems({
       {items.length > 1 && amount !== "" && (
         <p role="status">
           已分配 {allocated.toFixed(2)} / {amount} {currency} · 剩余{" "}
-          {(Number(amount) - allocated).toFixed(2)}
+          {(Number(normalizeAmount(amount)) - allocated).toFixed(2)}
         </p>
       )}
       <button

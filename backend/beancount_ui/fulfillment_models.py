@@ -14,6 +14,8 @@ from pydantic import (
     model_validator,
 )
 
+from .amounts import normalize_amount
+
 
 class ItemInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -46,7 +48,7 @@ class ItemInput(BaseModel):
     def exact(cls, value):
         if value is not None and not isinstance(value, (str, Decimal)):
             raise ValueError("数量与价格必须使用十进制字符串")
-        return value
+        return normalize_amount(value) if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def linked(self):

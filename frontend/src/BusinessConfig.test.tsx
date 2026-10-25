@@ -26,7 +26,12 @@ import {
 } from "./businessConfig";
 import type { Journal } from "./api";
 
-beforeEach(() => vi.stubGlobal("confirm", vi.fn(() => true)));
+beforeEach(() =>
+  vi.stubGlobal(
+    "confirm",
+    vi.fn(() => true),
+  ),
+);
 
 const journal: Journal = {
   date: "2026-09-30",
@@ -90,11 +95,13 @@ function mockApi(
         revision: journal.revision,
         target: "a.bean",
         diffs: { "a.bean": "+记录" },
-        items: [{
-          item: 1,
-          target: "a.bean",
-          raw: '2026-09-30 * "预览原文"\n  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n',
-        }],
+        items: [
+          {
+            item: 1,
+            target: "a.bean",
+            raw: '2026-09-30 * "预览原文"\n  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n',
+          },
+        ],
       });
     return ok({ status: "done", revision: journal.revision });
   });
@@ -593,9 +600,13 @@ it("动态字段提供账户选择与币种候选，并说明模板生成的内�
   expect(change).toHaveBeenCalledWith(
     expect.objectContaining({ payment: "Assets:Cash" }),
   );
-  const list = document.querySelector("datalist")!;
-  expect(screen.getByLabelText("币种")).toHaveAttribute("list", list.id);
-  expect(list.querySelectorAll("option")).toHaveLength(2);
+  fireEvent.change(screen.getByLabelText("币种"), { target: { value: "" } });
+  fireEvent.focus(screen.getByLabelText("币种"));
+  expect(
+    screen
+      .getByRole("listbox", { name: "币种候选" })
+      .querySelectorAll('[role="option"]'),
+  ).toHaveLength(2);
   expect(
     inputValues(template, { payee: "伪造" }, journal.date),
   ).not.toHaveProperty("payee");

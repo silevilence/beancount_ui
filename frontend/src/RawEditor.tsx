@@ -1,5 +1,6 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { EntryCompletions, Journal } from "./api";
+import { indentRaw } from "./rawIndentation";
 import {
   completeBeancount,
   emptyCompletions,
@@ -23,7 +24,11 @@ export default function RawEditor({
   const id = useId();
   const input = useRef<HTMLTextAreaElement>(null);
   const highlight = useRef<HTMLElement>(null);
-  const nextCursor = useRef<number | null>(null);
+  const nextSelection = useRef<{
+    start: number;
+    end: number;
+    direction?: "forward" | "backward" | "none";
+  } | null>(null);
   const composing = useRef(false);
   const [cursor, setCursor] = useState(0);
   const [open, setOpen] = useState(false);
@@ -49,11 +54,12 @@ export default function RawEditor({
     : undefined;
   const index = Math.min(active, (result?.options.length || 1) - 1);
   useLayoutEffect(() => {
-    if (nextCursor.current !== null) {
-      input.current?.setSelectionRange(nextCursor.current, nextCursor.current);
-      nextCursor.current = null;
+    if (nextSelection.current !== null) {
+      const { start, end, direction } = nextSelection.current;
+      input.current?.setSelectionRange(start, end, direction);
+      nextSelection.current = null;
     }
-  }, [value]);
+  }, [value, open]);
   useLayoutEffect(() => {
     if (result)
       document
@@ -63,7 +69,8 @@ export default function RawEditor({
   function choose(index: number) {
     if (!result) return;
     const option = result.options[index];
-    nextCursor.current = result.from + option.insert.length;
+    const position = result.from + option.insert.length;
+    nextSelection.current = { start: position, end: position };
     onChange(
       value.slice(0, result.from) + option.insert + value.slice(result.to),
     );
@@ -130,13 +137,40 @@ export default function RawEditor({
             }
           }}
           onKeyDown={(e) => {
+            const tab =
+              e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey;
+            if (tab) e.preventDefault();
             if (
               e.nativeEvent.isComposing ||
               e.keyCode === 229 ||
               composing.current
             )
               return;
-            if ((e.ctrlKey || e.metaKey) && e.code === "Space") {
+            if (tab) {
+              e.stopPropagation();
+              const { selectionStart, selectionEnd, selectionDirection } =
+                e.currentTarget;
+              const edit = indentRaw(
+                value,
+                selectionStart,
+                selectionEnd,
+                e.shiftKey,
+              );
+              if (edit) {
+                if (edit.text !== value) {
+                  nextSelection.current = {
+                    ...edit,
+                    direction: selectionDirection,
+                  };
+                  onChange(edit.text);
+                  setCursor(edit.start);
+                }
+                setOpen(false);
+                setExplicit(false);
+              } else if (!e.shiftKey && result) {
+                choose(index);
+              }
+            } else if ((e.ctrlKey || e.metaKey) && e.code === "Space") {
               e.preventDefault();
               setOpen(true);
               setExplicit(true);
@@ -162,7 +196,7 @@ export default function RawEditor({
               );
             } else if (
               result &&
-              (e.key === "Enter" || (e.key === "Tab" && !e.shiftKey)) &&
+              e.key === "Enter" &&
               !e.ctrlKey &&
               !e.metaKey
             ) {
@@ -198,7 +232,9 @@ export default function RawEditor({
         </div>
       )}
       <small id={`${id}-help`} className="muted">
-        输入时显示候选；Ctrl+Space 唤起，↑↓ 选择，Enter / Tab 补全，Esc 关闭。
+        输入时显示候选；Ctrl+Space 唤起，↑↓ 选择，Enter 采纳，Esc 关闭。 Tab /
+        Shift+Tab 在行首或选区增减两空格；其他位置 Tab
+        采纳候选，无候选时不移动焦点。
       </small>
     </div>
   );

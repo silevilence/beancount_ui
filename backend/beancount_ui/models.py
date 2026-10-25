@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .amounts import normalize_amount
 from .fulfillment_models import ItemInput
 
 
@@ -19,7 +20,7 @@ class SplitInput(BaseModel):
     def exact_amount(cls, value):
         if not isinstance(value, str):
             raise ValueError("金额必须以十进制字符串提交")
-        return value
+        return normalize_amount(value)
 
 
 class EntryInput(BaseModel):
@@ -39,7 +40,7 @@ class EntryInput(BaseModel):
     def exact_amount(cls, value):
         if not isinstance(value, str):
             raise ValueError("金额必须以十进制字符串提交")
-        return value
+        return normalize_amount(value)
 
 
 class PostingPrice(BaseModel):

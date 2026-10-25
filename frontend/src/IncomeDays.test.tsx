@@ -64,6 +64,24 @@ function stub(data: unknown, ok = true, status = 200) {
   return mock;
 }
 
+it("逐日收益支持空白与千位逗号，合计和草稿使用完整金额", async () => {
+  stub(payload(false));
+  const onAdd = vi.fn();
+  render(<IncomeDays date="2026-09-30" accounts={accounts} onAdd={onAdd} />);
+  const input = await screen.findByLabelText("实际收益 2026-09-24");
+  fireEvent.change(input, { target: { value: " 2,000.01 " } });
+  const button = screen.getByRole("button", { name: "将已填收益加入草稿" });
+  expect(button).toBeEnabled();
+  fireEvent.blur(input);
+  expect(input).toHaveValue("2000.01");
+  fireEvent.click(button);
+  expect(onAdd).toHaveBeenCalledWith([
+    expect.objectContaining({
+      entry: expect.objectContaining({ amount: "2000.01" }),
+    }),
+  ]);
+});
+
 it("默认账户随候选加载，只选择唯一余额宝账户，失效后禁止提交", async () => {
   stub(payload(false));
   const onAdd = vi.fn();

@@ -20,6 +20,19 @@ function Harness() {
 function change(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
+it("带空白及逗号的分录实时汇总，失焦规范化，币种候选可 Tab 采纳", () => {
+  render(<Harness />);
+  change("分录金额 1", " 2,000.01 ");
+  change("分录金额 2", " -2,000.01 ");
+  expect(screen.getByText(/已平衡/)).toBeInTheDocument();
+  fireEvent.blur(screen.getByLabelText("分录金额 1"));
+  expect(screen.getByLabelText("分录金额 1")).toHaveValue("2000.01");
+  change("分录账户 1", "Assets:Bank");
+  const currency = screen.getByLabelText("分录币种 1");
+  fireEvent.change(currency, { target: { value: "U" } });
+  expect(fireEvent.keyDown(currency, { key: "Tab" })).toBe(false);
+  expect(currency).toHaveValue("USD");
+});
 it("账户币种自动切换，多币种账户保留有效币种，未声明账户不改变币种", () => {
   render(<Harness />);
   change("分录账户 1", "Assets:Bitcash");

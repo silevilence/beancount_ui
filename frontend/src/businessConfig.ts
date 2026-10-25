@@ -1,3 +1,4 @@
+import { normalizeAmount } from "./amounts";
 import { useEffect, useState } from "react";
 import { api, reasonOf } from "./api";
 
@@ -197,7 +198,7 @@ function valueIssue(type: TemplateField["type"], value: string): string {
     case "date":
       return /^\d{4}-\d{2}-\d{2}$/.test(value) ? "" : "日期应为 YYYY-MM-DD";
     case "amount":
-      return /^-?\d{1,16}(?:\.\d{1,8})?$/.test(value)
+      return /^-?\d{1,16}(?:\.\d{1,8})?$/.test(normalizeAmount(value))
         ? ""
         : "金额应为最多 16 位整数、8 位小数的十进制数";
     case "account":

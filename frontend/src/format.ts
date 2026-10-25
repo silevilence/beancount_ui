@@ -1,3 +1,4 @@
+import { normalizeAmount } from "./amounts";
 /** 金额、日期与差异的纯展示工具；金额始终按精确十进制字符串处理，不经过浮点数。 */
 
 export interface AmountLine {
@@ -95,6 +96,7 @@ export function untilWhen(epochSeconds?: number, now = Date.now()): string {
 
 /** 千分位分组，小数至少两位、更多位保留原样；精确值不丢失。 */
 export function money(amount: string, currency = ""): string {
+  amount = normalizeAmount(amount);
   const negative = amount.startsWith("-");
   const [whole = "0", fraction = ""] = (
     negative ? amount.slice(1) : amount
@@ -120,6 +122,7 @@ function scaled(value: string, scale: number): bigint {
 
 /** 十进制字符串求和，位数按输入最大小数位对齐，结果不带多余尾零以外的修饰。 */
 export function decimalSum(values: string[]): string {
+  values = values.map(normalizeAmount);
   const scale = values.reduce((max, value) => Math.max(max, scaleOf(value)), 0);
   const total = values.reduce((sum, value) => sum + scaled(value, scale), 0n);
   const negative = total < 0n;

@@ -1,3 +1,4 @@
+import { normalizeAmount } from "./amounts";
 import AccountSelect from "./AccountSelect";
 import type { Journal } from "./api";
 import type { EntryFields } from "./Editor";
@@ -6,6 +7,7 @@ import { Chip, Empty } from "./ui";
 
 /** 明细金额的精确十进制合计；任一项无法解析时返回提示文本。 */
 export function decimalTotal(values: string[]): string {
+  values = values.map(normalizeAmount);
   if (values.some((v) => !/^-?\d+(\.\d{1,8})?$/.test(v)))
     return "待填写有效金额";
   return decimalSum(values);
@@ -29,7 +31,9 @@ export default function SplitFields({
     .map((account) => account.name)
     .filter((name) => name.startsWith("Expenses:"));
   const total = splits.length ? decimalTotal(splits.map((s) => s.amount)) : "";
-  const paid = /^-?\d+(\.\d{1,8})?$/.test(fields.amount) ? fields.amount : "";
+  const paid = /^-?\d+(\.\d{1,8})?$/.test(normalizeAmount(fields.amount))
+    ? normalizeAmount(fields.amount)
+    : "";
   /** 差额 = 实付 − 明细合计；按十进制精确比较，避免 68.5 与 68.50 被判不等。 */
   const difference =
     /^-?\d/.test(total) && paid ? decimalSum([paid, flip(total)]) : "";
@@ -52,7 +56,8 @@ export default function SplitFields({
       <div className="work-head">
         <h3>商品明细与折扣</h3>
         <p>
-          88VIP 只填实付金额；展开明细时优惠填负项，合计必须等于实付，系统不会额外扣减。
+          88VIP
+          只填实付金额；展开明细时优惠填负项，合计必须等于实付，系统不会额外扣减。
         </p>
       </div>
       <button
@@ -90,6 +95,9 @@ export default function SplitFields({
               required
               value={s.amount}
               onChange={(e) => update(i, "amount", e.target.value)}
+              onBlur={(e) =>
+                update(i, "amount", normalizeAmount(e.target.value))
+              }
             />
           </label>
           <label className="field">

@@ -99,8 +99,16 @@ export default function AccountSelect({
                 ),
               ),
             );
-          } else if (e.key === "Enter" && open) {
+          } else if (
+            open &&
+            (e.key === "Enter" ||
+              (e.key === "Tab" && !e.shiftKey && filtered.length > 0)) &&
+            !e.ctrlKey &&
+            !e.metaKey &&
+            !e.altKey
+          ) {
             e.preventDefault();
+            e.stopPropagation();
             if (filtered[index]) choose(filtered[index].value);
           }
         }}

@@ -1,3 +1,4 @@
+import { normalizeAmount } from "./amounts";
 import RecordFields from "./RecordFields";
 import TextComplete from "./TextComplete";
 import RawEditor from "./RawEditor";
@@ -409,6 +410,11 @@ export default function Editor({
           required={["date", "amount", "currency"].includes(key)}
           type={type}
           inputMode={key === "amount" ? "decimal" : undefined}
+          onBlur={
+            key === "amount"
+              ? (e) => change(key, normalizeAmount(e.target.value))
+              : undefined
+          }
           value={String(fields[key] ?? "")}
           onChange={(e) => change(key, e.target.value)}
         />
@@ -713,18 +719,13 @@ export default function Editor({
                   {field("narration", "摘要")}
                   <label className="field">
                     <span>币种</span>
-                    <input
-                      aria-label="币种"
-                      list="currency-options"
+                    <TextComplete
+                      label="币种"
+                      options={currencies}
                       required
                       value={fields.currency}
-                      onChange={(e) => change("currency", e.target.value)}
+                      onChange={(value) => change("currency", value)}
                     />
-                    <datalist id="currency-options">
-                      {currencies.map((currency) => (
-                        <option value={currency} key={currency} />
-                      ))}
-                    </datalist>
                   </label>
                   <label className="field">
                     <span>{income ? "收入账户" : "支出分类"}</span>

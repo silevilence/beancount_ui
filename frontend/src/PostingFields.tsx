@@ -1,5 +1,6 @@
+import { normalizeAmount } from "./amounts";
 import AccountSelect from "./AccountSelect";
-import { useId } from "react";
+import TextComplete from "./TextComplete";
 import type { Journal, PostingLine } from "./api";
 import { decimalSum, money, signedTone } from "./format";
 
@@ -16,9 +17,10 @@ export default function PostingFields({
   accounts: Journal["accounts"];
   onChange: (postings: PostingLine[]) => void;
 }) {
-  const id = useId();
   const valid = postings.every(
-    (p) => p.amount === null || /^-?\d+(\.\d{1,8})?$/.test(p.amount),
+    (p) =>
+      p.amount === null ||
+      /^-?\d+(\.\d{1,8})?$/.test(normalizeAmount(p.amount)),
   );
   const inferred = postings.some((p) => p.amount === null);
   const priced = postings.some((p) => p.price);
@@ -80,25 +82,23 @@ export default function PostingFields({
               disabled={p.amount === null}
               value={p.amount ?? ""}
               onChange={(e) => update(i, { amount: e.target.value })}
+              onBlur={(e) =>
+                update(i, { amount: normalizeAmount(e.target.value) })
+              }
             />
           </label>
           <label className="field">
             <span>分录币种 {i + 1}</span>
-            <input
-              aria-label={`分录币种 ${i + 1}`}
+            <TextComplete
+              label={`分录币种 ${i + 1}`}
               required
               disabled={p.amount === null}
-              list={`${id}-currencies-${i}`}
-              value={p.currency}
-              onChange={(e) => update(i, { currency: e.target.value })}
-            />
-            <datalist id={`${id}-currencies-${i}`}>
-              {(
+              options={
                 accounts.find((a) => a.name === p.account)?.currencies || []
-              ).map((currency) => (
-                <option key={currency} value={currency} />
-              ))}
-            </datalist>
+              }
+              value={p.currency}
+              onChange={(value) => update(i, { currency: value })}
+            />
           </label>
           <label className="field">
             <span>分录备注 {i + 1}</span>
@@ -142,6 +142,14 @@ export default function PostingFields({
                   inputMode="decimal"
                   required
                   value={p.price.amount}
+                  onBlur={(e) =>
+                    update(i, {
+                      price: {
+                        ...p.price!,
+                        amount: normalizeAmount(e.target.value),
+                      },
+                    })
+                  }
                   onChange={(e) =>
                     update(i, {
                       price: { ...p.price!, amount: e.target.value },

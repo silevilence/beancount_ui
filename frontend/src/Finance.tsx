@@ -1,3 +1,5 @@
+import TextComplete from "./TextComplete";
+import { normalizeAmount } from "./amounts";
 import AccountSelect from "./AccountSelect";
 import { useState } from "react";
 import { ApiError, api, type Journal } from "./api";
@@ -153,23 +155,25 @@ export default function Finance({
     }
   }
 
-  const fee = form.fee.trim() || "0";
+  const fee = normalizeAmount(form.fee) || "0";
   const summable =
     form.kind !== "balance" &&
-    DECIMAL.test(form.amount.trim()) &&
+    DECIMAL.test(normalizeAmount(form.amount)) &&
     DECIMAL.test(fee);
   const currency = form.currency.trim();
   // 实时合计只作预览，最终金额仍由后端按十进制字符串核对。
   const estimate: Fact[] = [
     {
       label: spec.amount,
-      value: summable ? money(form.amount.trim(), currency) : "待填写",
+      value: summable
+        ? money(normalizeAmount(form.amount), currency)
+        : "待填写",
     },
     { label: "手续费", value: summable ? money(fee, currency) : "待填写" },
     {
       label: "转出账户合计（转入金额 + 手续费）",
       value: summable
-        ? money(decimalSum([form.amount.trim(), fee]), currency)
+        ? money(decimalSum([normalizeAmount(form.amount), fee]), currency)
         : "待填写",
     },
   ];
@@ -227,16 +231,19 @@ export default function Finance({
                 required
                 value={form.amount}
                 onChange={(e) => change("amount", e.target.value)}
+                onBlur={(e) =>
+                  change("amount", normalizeAmount(e.target.value))
+                }
               />
             </label>
             <label className="field">
               <span>账户币种</span>
-              <input
-                aria-label="账户币种"
-                list="finance-currency"
+              <TextComplete
+                label="账户币种"
+                options={currencies}
                 required
                 value={form.currency}
-                onChange={(e) => change("currency", e.target.value)}
+                onChange={(value) => change("currency", value)}
               />
             </label>
             {form.kind !== "balance" && (
@@ -249,6 +256,9 @@ export default function Finance({
                     placeholder="0"
                     value={form.fee}
                     onChange={(e) => change("fee", e.target.value)}
+                    onBlur={(e) =>
+                      change("fee", normalizeAmount(e.target.value))
+                    }
                   />
                 </label>
                 {select("fee_account", "手续费分类", FEE)}
@@ -264,11 +274,6 @@ export default function Finance({
               />
             </label>
           </div>
-          <datalist id="finance-currency">
-            {currencies.map((item) => (
-              <option key={item} value={item} />
-            ))}
-          </datalist>
           {form.kind !== "balance" && <Facts items={estimate} />}
           <Toolbar>
             <button className="cta">{spec.button}</button>
@@ -291,7 +296,9 @@ export default function Finance({
                 items={[
                   {
                     label: "预期",
-                    value: shown.expected ? money(shown.expected, currency) : "—",
+                    value: shown.expected
+                      ? money(shown.expected, currency)
+                      : "—",
                   },
                   {
                     label: "账面实际",
@@ -312,7 +319,8 @@ export default function Finance({
                 ]}
               />
               <p className="muted small">
-                差额为正说明账面比预期多，为负说明少了；这里不会自动补差或增加 pad。
+                差额为正说明账面比预期多，为负说明少了；这里不会自动补差或增加
+                pad。
               </p>
             </>
           )}
@@ -330,7 +338,9 @@ export default function Finance({
             >
               将核对结果加入草稿
             </button>
-            <span className="muted small">先在草稿托盘核对原文，再统一提交。</span>
+            <span className="muted small">
+              先在草稿托盘核对原文，再统一提交。
+            </span>
           </Toolbar>
         </section>
       ) : (

@@ -75,6 +75,20 @@ function fill() {
   });
 }
 
+it("金额失焦去除空白和千位逗号，预览提交规范化字符串", async () => {
+  const { requests } = setup();
+  fill();
+  const amount = screen.getByLabelText("金额");
+  fireEvent.change(amount, { target: { value: " 2,000.12345678 " } });
+  fireEvent.blur(amount);
+  expect(amount).toHaveValue("2000.12345678");
+  fireEvent.click(screen.getByText("预览并校验"));
+  await screen.findByText("保存预览");
+  expect(
+    requests.find((r) => r.path.endsWith("/preview"))?.body.entry,
+  ).toMatchObject({ amount: "2000.12345678" });
+});
+
 it("普通记一笔添加商品后自动保存为可收货订单", async () => {
   const { requests } = setup();
   fill();

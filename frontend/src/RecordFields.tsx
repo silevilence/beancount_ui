@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { normalizeAmount } from "./amounts";
 import AccountSelect from "./AccountSelect";
 import TextComplete from "./TextComplete";
 import type { EntryCompletions } from "./api";
@@ -29,7 +29,6 @@ export default function RecordFields({
   disabled?: boolean;
   completions?: EntryCompletions;
 }) {
-  const currenciesId = useId();
   const inputs = inputValues(template, values, day);
   const summary = templateSummary(template);
   const currencies = [
@@ -82,30 +81,40 @@ export default function RecordFields({
                 }
                 onChange={(value) => onChange({ ...inputs, [key]: value })}
               />
+            ) : field.type === "currency" ? (
+              <TextComplete
+                label={field.label}
+                required
+                maxLength={2000}
+                value={inputs[key]}
+                options={currencies}
+                onChange={(value) => onChange({ ...inputs, [key]: value })}
+              />
             ) : (
               <>
                 <input
                   aria-label={field.label}
                   type={field.type === "date" ? "date" : "text"}
                   inputMode={field.type === "amount" ? "decimal" : undefined}
+                  onBlur={
+                    field.type === "amount"
+                      ? (e) =>
+                          onChange({
+                            ...inputs,
+                            [key]: normalizeAmount(e.target.value),
+                          })
+                      : undefined
+                  }
                   maxLength={2000}
                   required={field.type !== "text"}
                   placeholder={
                     field.type === "token" ? "*、!、#tag 或 ^link" : undefined
                   }
-                  list={field.type === "currency" ? currenciesId : undefined}
                   value={inputs[key]}
                   onChange={(e) =>
                     onChange({ ...inputs, [key]: e.target.value })
                   }
                 />
-                {field.type === "currency" && (
-                  <datalist id={currenciesId}>
-                    {currencies.map((currency) => (
-                      <option value={currency} key={currency} />
-                    ))}
-                  </datalist>
-                )}
               </>
             )}
           </label>
