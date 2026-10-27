@@ -201,6 +201,10 @@ export default function Inventory({
   const [manage, setManage] = useState(false);
   const [operations, setOperations] = useState<StockOperation[]>([]);
   const sequence = useRef(0);
+  const detailPanel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (detailPanel.current) detailPanel.current.scrollTop = 0;
+  }, [selected?.id]);
   async function refresh() {
     setBusy(true);
     setError("");
@@ -412,7 +416,12 @@ export default function Inventory({
               })}
             </div>
           </section>
-          <section className="panel card">
+          <section
+            ref={detailPanel}
+            className="panel card inventory-detail"
+            aria-label="库存操作与批次详情"
+            tabIndex={0}
+          >
             <h2>{selected?.name ?? "批次详情"}</h2>
             {!selected && (
               <p className="muted">
