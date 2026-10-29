@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import time
 from datetime import UTC, datetime
+from io import BytesIO
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -185,6 +186,36 @@ class Sync:
             head = self.remote_head(remote)
             return {"message": "仓库和目标分支可读取；推送权限将在实际备份时验证", "head": head}
 
+    def read_blobs(self, object_ids):
+        """Read immutable Git objects in one process, preserving raw bytes."""
+        ids = list(dict.fromkeys(object_ids))
+        if not ids:
+            return {}
+        output = self.git(
+            "cat-file", "--batch", data=("\n".join(ids) + "\n").encode("ascii"), binary=True
+        )
+        stream = BytesIO(output)
+        blobs = {}
+        for oid in ids:
+            header = stream.readline().split()
+            if (
+                len(header) != 3
+                or header[0] != oid.encode("ascii")
+                or header[1] != b"blob"
+                or not header[2].isdigit()
+            ):
+                raise GitFailure("Git 对象缺失或类型不符，请检查仓库")
+            size = int(header[2])
+            if size > len(output):
+                raise GitFailure("Git 对象内容不完整，请检查仓库")
+            content = stream.read(size)
+            if len(content) != size or stream.read(1) != b"\n":
+                raise GitFailure("Git 对象内容不完整，请检查仓库")
+            blobs[oid] = content
+        if stream.read(1):
+            raise GitFailure("Git 对象响应不匹配，请检查仓库")
+        return blobs
+
     def tree_files(self, ref):
         files = {}
         for item in self.git("ls-tree", "-rz", ref).split("\0"):
@@ -196,8 +227,9 @@ class Sync:
             mode, kind, oid = meta.split()
             if mode != "100644" or kind != "blob":
                 raise LedgerError("账本只允许普通文本文件")
-            files[name] = self.git("cat-file", "blob", oid, binary=True)
-        return files
+            files[name] = oid
+        blobs = self.read_blobs(files.values())
+        return {name: blobs[oid] for name, oid in files.items()}
 
     def require_connected(self):
         remote = self.repository()

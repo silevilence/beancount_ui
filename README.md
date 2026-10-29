@@ -38,7 +38,7 @@ Vite 代理 `/api`，无需跨域配置。默认仅监听本机；已提供单�
 
 ```powershell
 uv run ruff check .
-uv run pytest --cov=beancount_ui --cov-report=term-missing
+uv run pytest -n 2 --dist worksteal --cov=beancount_ui --cov-report=term-missing --cov-fail-under=90 --durations=25
 npm --prefix frontend run check
 npm --prefix frontend test
 npm --prefix frontend run build
@@ -46,6 +46,8 @@ npm --prefix frontend run build
 
 运行时账本与状态目录必须独立于源代码。状态目录不得提交，保存后本地账本是否同步由 Git 状态单独表示。
 开发服务的 `--reload` 用于后端调试；React 自动热更新。测试始终复制脱敏夹具到临时目录。
+
+后端测试使用两个独立进程执行，覆盖率合并后仍须达到 90%；末尾列出最慢 25 项用例。排查顺序或并发相关问题时，将 `-n 2 --dist worksteal` 改为 `-n 0`，可使用相同用例串行复核。
 
 ## VS Code：F5 前后端联调
 

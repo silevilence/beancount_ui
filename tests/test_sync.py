@@ -342,8 +342,19 @@ def die(path, content):
 git_recovery.atomic_write=die
 sync.backup(BackupInput(revision=p['revision'],head=p['head']))
 """
+    # Reuse the test environment; parallel workers must not resync the shared venv.
     result = subprocess.run(
-        ["uv", "run", "--frozen", "python", "-c", script, str(sync.root), str(sync.writer.state)],
+        [
+            "uv",
+            "run",
+            "--frozen",
+            "--no-sync",
+            "python",
+            "-c",
+            script,
+            str(sync.root),
+            str(sync.writer.state),
+        ],
         capture_output=True,
         timeout=45,
     )

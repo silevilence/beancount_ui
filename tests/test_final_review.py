@@ -40,10 +40,12 @@ def die(*args):
 writer.write_part=die
 writer.commit(sys.argv[3])
 """
+    # Reuse the test environment; parallel workers must not resync the shared venv.
     completed = subprocess.run(
         [
             "uv",
             "run",
+            "--no-sync",
             "python",
             "-c",
             script,

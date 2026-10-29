@@ -18,6 +18,7 @@ dev = [
   "httpx>=0.28,<1",
   "ruff>=0.11,<1",
   "debugpy>=1.8,<2",
+  "pytest-xdist>=3.8,<4",
 ]
 
 [build-system]

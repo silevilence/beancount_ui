@@ -47,10 +47,14 @@ def tree(sync, ref):
 
 def prepare(sync, head, target):
     before, after = tree(sync, head), tree(sync, target)
+    names = [
+        name for name in sorted(before.keys() | after.keys()) if before.get(name) != after.get(name)
+    ]
+    blobs = sync.read_blobs(
+        entries[name]["oid"] for name in names for entries in (before, after) if name in entries
+    )
     changes = {}
-    for name in sorted(before.keys() | after.keys()):
-        if before.get(name) == after.get(name):
-            continue
+    for name in names:
         path = checkout_path(sync.root, name)
         if name not in before and path.exists():
             raise LedgerError("远端新文件与本地忽略文件重名，请人工核对")
@@ -58,16 +62,14 @@ def prepare(sync, head, target):
             raise LedgerError("远端文件与目录布局冲突，请人工核对")
         content = path.read_bytes() if path.is_file() else None
         if name in before:
-            expected = sync.git("cat-file", "blob", before[name]["oid"], binary=True)
+            expected = blobs[before[name]["oid"]]
             if content is None or content.replace(b"\r\n", b"\n") != expected.replace(
                 b"\r\n", b"\n"
             ):
                 raise LedgerError("本地存在未处理文件修改，请保留内容并人工核对")
         changes[name] = {
             "before": encode(content),
-            "after": encode(sync.git("cat-file", "blob", after[name]["oid"], binary=True))
-            if name in after
-            else None,
+            "after": encode(blobs[after[name]["oid"]]) if name in after else None,
             "mode": after.get(name, {}).get("mode"),
         }
     journal = {
