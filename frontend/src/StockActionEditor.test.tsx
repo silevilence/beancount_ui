@@ -75,6 +75,172 @@ const data = {
     { id: 2, name: "冰箱" },
   ],
 } as InventoryData;
+
+it("消耗优先选择已开封库存的位置，预览保留自动选批次", async () => {
+  const fetch = vi.fn(async (_path: string, _init?: RequestInit) => ({
+    ok: true,
+    json: async () => ({ id: "consume-opened", status: "draft" }),
+  }));
+  vi.stubGlobal("fetch", fetch);
+  render(
+    <StockActionEditor
+      product={product}
+      data={data}
+      entries={
+        [
+          { id: 1, stock_id: "sealed", amount: "3", location_id: 1, open: 0 },
+          { id: 2, stock_id: "opened", amount: "1", location_id: 2, open: 1 },
+          {
+            id: 3,
+            stock_id: "sealed-fridge",
+            amount: "3",
+            location_id: 2,
+            open: 0,
+          },
+        ] as StockEntry[]
+      }
+      onChanged={async () => {}}
+    />,
+  );
+  expect(screen.getByLabelText("来源位置")).toHaveValue("2");
+  expect(
+    screen.getByRole("option", { name: "自动选择（已开封优先）" }),
+  ).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("数量（瓶）"), {
+    target: { value: "2" },
+  });
+  fireEvent.click(screen.getByText("预览库存动作"));
+  await screen.findByText("确认库存操作");
+  expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+    action: "consume",
+    location_id: 2,
+    stock_id: "",
+    amount: "2",
+  });
+  expect(
+    screen.getByText("批次自动选择：所选位置内优先消耗已开封库存"),
+  ).toBeInTheDocument();
+});
+
+it("开封自动转移后切回消耗选择开封位置，刷新后随已开封库存变化", () => {
+  const sealed = {
+    id: 1,
+    stock_id: "sealed",
+    amount: "3",
+    location_id: 1,
+    open: 0,
+  } as StockEntry;
+  const opened = {
+    id: 2,
+    stock_id: "opened",
+    amount: "1",
+    location_id: 2,
+    open: 1,
+  } as StockEntry;
+  const props = { product, data, onChanged: async () => {} };
+  const { rerender } = render(
+    <StockActionEditor {...props} entries={[sealed]} />,
+  );
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "open" },
+  });
+  rerender(<StockActionEditor {...props} entries={[sealed, opened]} />);
+  expect(screen.getByLabelText("来源位置")).toHaveValue("1");
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "consume" },
+  });
+  expect(screen.getByLabelText("来源位置")).toHaveValue("2");
+  rerender(
+    <StockActionEditor {...props} entries={[sealed, { ...opened, open: 0 }]} />,
+  );
+  expect(screen.getByLabelText("来源位置")).toHaveValue("1");
+  rerender(<StockActionEditor {...props} entries={[sealed, opened]} />);
+  expect(screen.getByLabelText("来源位置")).toHaveValue("2");
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "add" },
+  });
+  expect(screen.getByLabelText("入库位置")).toHaveValue("1");
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "consume" },
+  });
+  expect(screen.getByLabelText("来源位置")).toHaveValue("2");
+});
+
+it("消耗保留手选位置和批次，所选位置耗尽才恢复自动选择", () => {
+  const sealed = {
+    id: 1,
+    stock_id: "sealed",
+    amount: "3",
+    location_id: 1,
+    open: 0,
+  } as StockEntry;
+  const opened = {
+    id: 2,
+    stock_id: "opened",
+    amount: "1",
+    location_id: 2,
+    open: 1,
+  } as StockEntry;
+  const props = { product, data, onChanged: async () => {} };
+  const { rerender } = render(
+    <StockActionEditor {...props} entries={[sealed, opened]} />,
+  );
+  fireEvent.change(screen.getByLabelText("来源位置"), {
+    target: { value: "1" },
+  });
+  fireEvent.change(screen.getByLabelText("批次（开封必须选择）"), {
+    target: { value: "sealed" },
+  });
+  rerender(
+    <StockActionEditor
+      {...props}
+      entries={[{ ...sealed, amount: "2" }, opened]}
+    />,
+  );
+  expect(screen.getByLabelText("来源位置")).toHaveValue("1");
+  expect(screen.getByLabelText("批次（开封必须选择）")).toHaveValue("sealed");
+  rerender(
+    <StockActionEditor
+      {...props}
+      entries={[{ ...sealed, amount: "0" }, opened]}
+    />,
+  );
+  expect(screen.getByLabelText("来源位置")).toHaveValue("2");
+  expect(screen.getByLabelText("批次（开封必须选择）")).toHaveValue("");
+});
+it("手选批次同时固定其位置，刷新出现其他位置的已开封库存时不覆盖", () => {
+  const sealed = {
+    id: 1,
+    stock_id: "sealed",
+    amount: "3",
+    location_id: 1,
+    open: 0,
+  } as StockEntry;
+  const opened = {
+    id: 2,
+    stock_id: "opened",
+    amount: "0",
+    location_id: 2,
+    open: 1,
+  } as StockEntry;
+  const props = { product, data, onChanged: async () => {} };
+  const { rerender } = render(
+    <StockActionEditor {...props} entries={[sealed, opened]} />,
+  );
+  expect(screen.getByLabelText("来源位置")).toHaveValue("1");
+  fireEvent.change(screen.getByLabelText("批次（开封必须选择）"), {
+    target: { value: "sealed" },
+  });
+  rerender(
+    <StockActionEditor
+      {...props}
+      entries={[sealed, { ...opened, amount: "1" }]}
+    />,
+  );
+  expect(screen.getByLabelText("来源位置")).toHaveValue("1");
+  expect(screen.getByLabelText("批次（开封必须选择）")).toHaveValue("sealed");
+});
+
 it.each([true, false])(
   "人工核对保存后更新当前操作结果 applied=%s",
   async (applied) => {

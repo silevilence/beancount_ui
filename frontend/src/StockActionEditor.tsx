@@ -47,7 +47,8 @@ export default function StockActionEditor({
   const [action, setAction] = useState("consume");
   const [amount, setAmount] = useState(() => defaultAmount(product, "consume"));
   const [stockId, setStockId] = useState("");
-  const [location, setLocation] = useState(String(product.location_id));
+  // Empty means automatic; only an explicit user choice pins the source location.
+  const [location, setLocation] = useState("");
   const [target, setTarget] = useState("");
   const [price, setPrice] = useState("");
   const [date, setDate] = useState(shanghaiToday);
@@ -67,9 +68,21 @@ export default function StockActionEditor({
       : data.locations.filter((l) =>
           availableEntries.some((e) => String(e.location_id) === String(l.id)),
         );
+  const openedLocation =
+    action === "consume"
+      ? availableEntries.find(
+          (entry) =>
+            Number(entry.open) &&
+            locations.some((l) => String(l.id) === String(entry.location_id)),
+        )?.location_id
+      : undefined;
+  const defaultLocation =
+    openedLocation ??
+    locations.find((l) => String(l.id) === String(product.location_id))?.id ??
+    locations[0]?.id;
   const selectedLocation = locations.some((l) => String(l.id) === location)
     ? location
-    : String(locations[0]?.id ?? "");
+    : String(defaultLocation ?? "");
   const batches = availableEntries.filter(
     (e) => String(e.location_id) === selectedLocation,
   );
@@ -147,7 +160,8 @@ export default function StockActionEditor({
                 setAction(e.target.value);
                 setAmount(defaultAmount(product, e.target.value));
                 setStockId("");
-                if (e.target.value === "add")
+                if (e.target.value === "consume") setLocation("");
+                else if (e.target.value === "add")
                   setLocation(String(product.location_id));
               }}
             >
@@ -188,12 +202,17 @@ export default function StockActionEditor({
                 批次（开封必须选择）
                 <select
                   value={selectedStockId}
-                  onChange={(e) => setStockId(e.target.value)}
+                  onChange={(e) => {
+                    setStockId(e.target.value);
+                    if (e.target.value) setLocation(selectedLocation);
+                  }}
                 >
                   <option value="">
                     {action === "open"
                       ? "请选择未开封批次"
-                      : "由 Grocy 按顺序选择"}
+                      : action === "consume"
+                        ? "自动选择（已开封优先）"
+                        : "由 Grocy 按顺序选择"}
                   </option>
                   {batches.map((e) => (
                     <option key={e.id} value={e.stock_id}>
@@ -308,6 +327,8 @@ export default function StockActionEditor({
           )}
           {pending.body.stock_id ? (
             <p>批次：{String(pending.body.stock_id)}</p>
+          ) : pending.body.action === "consume" ? (
+            <p>批次自动选择：所选位置内优先消耗已开封库存</p>
           ) : (
             <p>批次由 Grocy 选择</p>
           )}

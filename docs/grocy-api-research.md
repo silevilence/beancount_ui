@@ -28,6 +28,8 @@
 
 库存页快速消耗和开封分别使用产品的 `quick_consume_amount`、`quick_open_amount`，二者均为库存单位数量；Grocy 模板另用 `_qu_consume` 字段展示消费单位。本项目库存表单已经使用库存单位，直接应用产品原字段，不再二次换算。Grocy 独立消耗页另有用户偏好，本项目按库存页产品设置预填。来源：[库存页默认数量](https://github.com/grocy/grocy/blob/v4.7.1/views/stockoverview.blade.php#L199-L233)、[库存页请求构造](https://github.com/grocy/grocy/blob/v4.7.1/public/viewjs/stockoverview.js#L128-L191)。
 
+2026-10-29 复核自动消耗顺序：`ConsumeProduct` 按 `stock_next_use` 取批次，传入 `location_id` 时只消耗该位置；该视图先按默认消耗位置、再按开封状态降序、保质期和购买日期升序排列。因此在同一位置内，无需指定批次就会先消耗已开封库存，数量不足时继续消耗该位置后续批次。本项目默认来源位置改为当前有正数已开封库存的位置（多个候选沿用 Grocy 返回顺序），没有已开封库存时回退到有库存的产品默认位置或首个可操作位置；用户手选位置或批次后保留选择。来源：[v4.7.1 ConsumeProduct 与 GetProductStockEntriesForLocation](https://github.com/grocy/grocy/blob/v4.7.1/services/StockService.php)、[stock_next_use 排序定义](https://github.com/grocy/grocy/blob/v4.7.1/migrations/0200.sql)。
+
 入库请求支持 `amount`、`price`、`best_before_date`、`location_id`、`shopping_location_id`、`note` 等。`price` 明确是 **Grocy 配置币种下，每库存单位的单价**。产品详情提供采购单位、库存单位以及采购到库存的换算系数，因此订单“2 箱、总计 120 元”不能直接提交为 `amount: 2, price: 120`；需要按产品的单位换算，再分摊到库存单位。不同币种、优惠及运费分摊规则需由本项目明确。来源：[OpenAPI 的 add 和 ProductDetailsResponse 定义](https://github.com/grocy/grocy/blob/v4.7.1/grocy.openapi.json)。
 
 控制器实际还接受 `purchased_date`，默认当天；该字段未列在当前 add 的 OpenAPI 请求属性中。缺省保质期的实际服务逻辑会考虑产品默认天数及冷冻设置，不能只依赖 OpenAPI 中“默认当天”的简化描述。确认收货时最好提供明确的日期字段，接入测试应覆盖真实部署版本。来源：[AddProduct 控制器](https://github.com/grocy/grocy/blob/v4.7.1/controllers/Api/StockApiController.php#L84-L168)、[AddProduct 服务](https://github.com/grocy/grocy/blob/v4.7.1/services/StockService.php#L124-L190)。

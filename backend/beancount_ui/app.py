@@ -75,7 +75,7 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
                 app.state.stock_reconciler.stop()
 
     app = FastAPI(
-        title="日用账本", version="0.7.2", lifespan=lifespan, docs_url=None, redoc_url=None
+        title="日用账本", version="0.7.3", lifespan=lifespan, docs_url=None, redoc_url=None
     )
     app.state.scheduler = None
     app.state.stock_reconciler = None

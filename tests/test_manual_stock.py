@@ -98,6 +98,14 @@ def test_lost_movement_response_is_not_reconstructed_from_stock(manual):
     assert len(remote["posts"]) == 1
 
 
+def test_automatic_consume_leaves_batch_order_to_grocy_at_selected_location(manual):
+    service, body, remote = manual
+    p = service.preview(StockAction(**(body | {"stock_id": ""})))
+    assert p["payload"] == {"amount": "1", "location_id": 1, "transaction_type": "consume"}
+    assert service.commit(p["id"])["status"] == "success"
+    assert remote["posts"] == [("stock/products/1/consume", p["payload"])]
+
+
 def test_open_with_automatic_transfer_is_successful_and_sent_once(manual):
     service, body, remote = manual
     remote["move_on_open"] = 1
