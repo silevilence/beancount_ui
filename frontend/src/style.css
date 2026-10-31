@@ -2661,6 +2661,8 @@ kbd {
 .grocy-form label:has(input[type="checkbox"]) { display: flex; align-items: center; }
 .grocy-form input[type="checkbox"] { width: auto; }
 .grocy-form .toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.stock-amount-field { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; }
+.stock-amount-field > label { flex: 1 1 120px; min-width: 0; }
 .inventory-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin-top: 20px; }
 /* Keep actions reachable beside long product lists without stretching the rail. */
 @media (min-width: 761px) {

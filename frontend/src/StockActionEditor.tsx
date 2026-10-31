@@ -5,6 +5,7 @@ import { post } from "./api";
 import { requestId } from "./requestId";
 import { reasonOf } from "./api";
 import { shanghaiToday } from "./format";
+import { expiryDate } from "./receiptDraft";
 import { Notice } from "./ui";
 import OperationStatus, { type StockOperation } from "./OperationStatus";
 
@@ -52,7 +53,10 @@ export default function StockActionEditor({
   const [target, setTarget] = useState("");
   const [price, setPrice] = useState("");
   const [date, setDate] = useState(shanghaiToday);
-  const [expiry, setExpiry] = useState("");
+  // Undefined follows product defaults; an explicit value (including blank) is manual.
+  const [manualExpiry, setManualExpiry] = useState<string>();
+  const expiry =
+    manualExpiry ?? expiryDate(date, product.default_best_before_days);
   const [independent, setIndependent] = useState(false);
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
@@ -89,6 +93,11 @@ export default function StockActionEditor({
   const selectedStockId = batches.some((e) => e.stock_id === stockId)
     ? stockId
     : "";
+  // Grocy returns entries in next-use order. Pin the resolved batch when filling
+  // its full quantity so a later preview cannot spread that amount across batches.
+  const quantityBatch = selectedStockId
+    ? batches.find((entry) => entry.stock_id === selectedStockId)
+    : batches[0];
   const canPreview =
     Boolean(selectedLocation) &&
     (action !== "open" || Boolean(selectedStockId));
@@ -124,7 +133,7 @@ export default function StockActionEditor({
         target_location_id: target ? Number(target) : null,
         price: price || null,
         purchased_date: action === "add" ? date : null,
-        best_before_date: expiry || null,
+        best_before_date: action === "add" ? expiry || null : null,
         currency: data.currency,
         independent_purchase: independent,
       };
@@ -171,14 +180,32 @@ export default function StockActionEditor({
               <option value="add">手动入库</option>
             </select>
           </label>
-          <label>
-            数量（{nameOf(data.units, product.qu_id_stock)}）
-            <input
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-          </label>
+          <div className="stock-amount-field">
+            <label>
+              数量（{nameOf(data.units, product.qu_id_stock)}）
+              <input
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </label>
+            {(action === "consume" || action === "open") && (
+              <button
+                type="button"
+                className="ghost"
+                disabled={!quantityBatch}
+                title="填写当前批次全部数量；未选批次时选定默认批次"
+                onClick={() => {
+                  if (!quantityBatch) return;
+                  setAmount(String(quantityBatch.amount));
+                  setStockId(quantityBatch.stock_id);
+                  setLocation(selectedLocation);
+                }}
+              >
+                {action === "consume" ? "全部消耗" : "全部开封"}
+              </button>
+            )}
+          </div>
           <label>
             {action === "add" ? "入库位置" : "来源位置"}
             <select
@@ -265,7 +292,7 @@ export default function StockActionEditor({
                 <input
                   type="date"
                   value={expiry}
-                  onChange={(e) => setExpiry(e.target.value)}
+                  onChange={(e) => setManualExpiry(e.target.value)}
                 />
               </label>
               <label>

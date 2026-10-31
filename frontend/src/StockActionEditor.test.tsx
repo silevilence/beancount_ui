@@ -8,6 +8,7 @@ import {
 import { expect, it, vi } from "vitest";
 import StockActionEditor from "./StockActionEditor";
 import type { InventoryData, Product, StockEntry } from "./Inventory";
+import { shanghaiToday, shiftDay } from "./format";
 
 it("手动库存操作先预览再确认，未知结果保留核对入口", async () => {
   const paths: string[] = [];
@@ -76,6 +77,75 @@ const data = {
   ],
 } as InventoryData;
 
+it("手动入库自动计算到期日期，购买日期变化时联动且保留手动覆盖", async () => {
+  const fetch = vi.fn(async (_path: string, _init?: RequestInit) => ({
+    ok: true,
+    json: async () => ({ id: "expiry", status: "draft" }),
+  }));
+  vi.stubGlobal("fetch", fetch);
+  render(
+    <StockActionEditor
+      product={{ ...product, default_best_before_days: 7 }}
+      data={data}
+      entries={[]}
+      onChanged={async () => {}}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "add" },
+  });
+  expect(screen.getByLabelText("保质期日期")).toHaveValue(
+    shiftDay(shanghaiToday(), 7),
+  );
+  fireEvent.change(screen.getByLabelText("购买日期"), {
+    target: { value: "2026-12-29" },
+  });
+  expect(screen.getByLabelText("保质期日期")).toHaveValue("2027-01-05");
+  fireEvent.click(screen.getByText("预览库存动作"));
+  await screen.findByText("确认库存操作");
+  expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+    purchased_date: "2026-12-29",
+    best_before_date: "2027-01-05",
+  });
+  fireEvent.click(screen.getByText("取消库存预览"));
+  fireEvent.change(screen.getByLabelText("保质期日期"), {
+    target: { value: "2027-02-01" },
+  });
+  fireEvent.change(screen.getByLabelText("购买日期"), {
+    target: { value: "2027-01-01" },
+  });
+  expect(screen.getByLabelText("保质期日期")).toHaveValue("2027-02-01");
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "consume" },
+  });
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "add" },
+  });
+  expect(screen.getByLabelText("保质期日期")).toHaveValue("2027-02-01");
+});
+
+it.each([
+  [undefined, ""],
+  [0, "2026-10-31"],
+  [-1, "2999-12-31"],
+] as const)("手动入库兼容默认保质期 %s", (days, expected) => {
+  render(
+    <StockActionEditor
+      product={{ ...product, default_best_before_days: days }}
+      data={data}
+      entries={[]}
+      onChanged={async () => {}}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "add" },
+  });
+  fireEvent.change(screen.getByLabelText("购买日期"), {
+    target: { value: "2026-10-31" },
+  });
+  expect(screen.getByLabelText("保质期日期")).toHaveValue(expected);
+});
+
 it("消耗优先选择已开封库存的位置，预览保留自动选批次", async () => {
   const fetch = vi.fn(async (_path: string, _init?: RequestInit) => ({
     ok: true,
@@ -120,6 +190,107 @@ it("消耗优先选择已开封库存的位置，预览保留自动选批次", a
   expect(
     screen.getByText("批次自动选择：所选位置内优先消耗已开封库存"),
   ).toBeInTheDocument();
+});
+
+it.each(["consume", "open"])(
+  "%s 全部按钮支持默认及手选单批次，只填写且预览固定批次",
+  async (action) => {
+    const fetch = vi.fn(async (_path: string, _init?: RequestInit) => ({
+      ok: true,
+      json: async () => ({ id: "all", status: "draft" }),
+    }));
+    vi.stubGlobal("fetch", fetch);
+    // Entries are returned in Grocy's next-use order, including opened first.
+    const entries = [
+      { id: 1, stock_id: "opened", amount: "0.125", location_id: 2, open: 1 },
+      {
+        id: 2,
+        stock_id: "default",
+        amount: "2.345678",
+        location_id: 2,
+        open: 0,
+      },
+      { id: 3, stock_id: "other", amount: "9", location_id: 2, open: 0 },
+      { id: 4, stock_id: "kitchen", amount: "20", location_id: 1, open: 0 },
+    ] as StockEntry[];
+    const props = { product, data, onChanged: async () => {} };
+    const { rerender } = render(
+      <StockActionEditor {...props} entries={entries} />,
+    );
+    fireEvent.change(screen.getByLabelText("库存动作"), {
+      target: { value: action },
+    });
+    fireEvent.change(screen.getByLabelText("来源位置"), {
+      target: { value: "2" },
+    });
+    const button = screen.getByRole("button", {
+      name: action === "open" ? "全部开封" : "全部消耗",
+    });
+    fireEvent.click(button);
+    expect(screen.getByLabelText("数量（瓶）")).toHaveValue(
+      action === "open" ? "2.345678" : "0.125",
+    );
+    expect(screen.getByLabelText("批次（开封必须选择）")).toHaveValue(
+      action === "open" ? "default" : "opened",
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("批次（开封必须选择）"), {
+      target: { value: "other" },
+    });
+    fireEvent.click(button);
+    expect(screen.getByLabelText("数量（瓶）")).toHaveValue("9");
+    rerender(
+      <StockActionEditor
+        {...props}
+        entries={entries.map((e) =>
+          e.stock_id === "other" ? { ...e, amount: "7.5" } : e,
+        )}
+      />,
+    );
+    fireEvent.click(button);
+    expect(screen.getByLabelText("数量（瓶）")).toHaveValue("7.5");
+    fireEvent.change(screen.getByLabelText("来源位置"), {
+      target: { value: "1" },
+    });
+    fireEvent.click(button);
+    expect(screen.getByLabelText("数量（瓶）")).toHaveValue("20");
+    fireEvent.click(screen.getByText("预览库存动作"));
+    await screen.findByText("确认库存操作");
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+      action,
+      amount: "20",
+      stock_id: "kitchen",
+      location_id: 1,
+    });
+  },
+);
+
+it("全部数量按钮在无可操作批次时禁用，入库和转移不显示", () => {
+  render(
+    <StockActionEditor
+      product={product}
+      data={data}
+      entries={
+        [
+          { id: 1, stock_id: "empty", amount: "0", location_id: 1, open: 0 },
+          { id: 2, stock_id: "opened", amount: "1", location_id: 1, open: 1 },
+        ] as StockEntry[]
+      }
+      onChanged={async () => {}}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("库存动作"), {
+    target: { value: "open" },
+  });
+  expect(screen.getByRole("button", { name: "全部开封" })).toBeDisabled();
+  for (const action of ["add", "transfer"]) {
+    fireEvent.change(screen.getByLabelText("库存动作"), {
+      target: { value: action },
+    });
+    expect(
+      screen.queryByRole("button", { name: /全部消耗|全部开封/ }),
+    ).not.toBeInTheDocument();
+  }
 });
 
 it("开封自动转移后切回消耗选择开封位置，刷新后随已开封库存变化", () => {
