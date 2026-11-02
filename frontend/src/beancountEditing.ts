@@ -81,6 +81,7 @@ export function completeBeancount(
   let candidates: string[];
   let query: string;
   let quoted = false;
+  let accountCompletion = false;
   if (quote >= 0) {
     if (!/^\d{4}-\d{2}-\d{2}\s+\S\s/.test(before) || strings > 1) return;
     quoted = true;
@@ -109,9 +110,13 @@ export function completeBeancount(
       token.includes(":") ||
       /^\s+(?:[*!]\s+)?$/.test(prefix) ||
       /\b(?:balance|open|close|pad|note|document)\s+$/.test(prefix)
-    )
+    ) {
       candidates = accounts;
-    else if (/[\d.]\s+$/.test(prefix) && !/^\d{4}-\d{2}-\d{2}\s+$/.test(prefix))
+      accountCompletion = true;
+    } else if (
+      /[\d.]\s+$/.test(prefix) &&
+      !/^\d{4}-\d{2}-\d{2}\s+$/.test(prefix)
+    )
       candidates = history.currencies;
     else if (/^\d{4}-\d{2}-\d{2}\s+$/.test(prefix))
       candidates = [
@@ -128,14 +133,25 @@ export function completeBeancount(
     else return;
     while (to < value.length && /[^\s";{}@]/.test(value[to])) to++;
   }
+  const needle = query.toLocaleLowerCase();
+  const score = (text: string) => {
+    const haystack = text.toLocaleLowerCase();
+    if (haystack.includes(needle)) return 0;
+    if (!accountCompletion) return -1;
+    let offset = 0;
+    for (const character of needle) {
+      const found = haystack.indexOf(character, offset);
+      if (found < 0) return -1;
+      offset = found + 1;
+    }
+    return 1;
+  };
   const options = [...new Set(candidates)]
-    .filter(
-      (text) =>
-        text.toLocaleLowerCase().includes(query.toLocaleLowerCase()) &&
-        text !== query,
-    )
+    .map((text) => ({ text, rank: score(text) }))
+    .filter(({ text, rank }) => rank >= 0 && text !== query)
+    .sort((a, b) => a.rank - b.rank)
     .slice(0, 50)
-    .map((label) => ({
+    .map(({ text: label }) => ({
       label,
       insert: quoted ? JSON.stringify(label).slice(1, -1) : label,
     }));

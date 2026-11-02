@@ -22,6 +22,12 @@ export interface ReportStatus {
   errors: Diagnostic[];
 }
 export interface Report extends ReportStatus {
+  filters?: {
+    payee: string;
+    narration: string;
+    match: string;
+    group_by: string;
+  };
   categories: Record<
     "income" | "expenses",
     { account: string; amount: string }[]

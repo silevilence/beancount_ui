@@ -90,6 +90,7 @@ class Snapshot:
     records: list[dict] | None = None
     business_files: dict[str, list[str]] = field(default_factory=default_business_files)
     operating_currencies: list[str] = field(default_factory=list)
+    options: dict = field(default_factory=dict)
 
 
 def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Snapshot:
@@ -97,6 +98,7 @@ def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Sna
     errors = []
     edges = {}
     operating_currencies = []
+    options = {}
     with tempfile.TemporaryDirectory(prefix="beancount-ui-") as folder:
         # Windows temporary directories may use 8.3 aliases while Beancount
         # source paths resolve to long names. Compare canonical paths throughout.
@@ -186,6 +188,7 @@ def load_snapshot(files: dict[str, bytes], entry: str = "main.beancount") -> Sna
     return Snapshot(
         files, digest(files), entries, errors, included, edges,
         operating_currencies=operating_currencies,
+        options=options,
     )
 
 

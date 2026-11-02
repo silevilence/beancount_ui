@@ -3,6 +3,7 @@ import { money } from "./format";
 import { Empty, Notice, Segmented } from "./ui";
 import { useToday } from "./useToday";
 import StatisticsRanking from "./StatisticsRanking";
+import AdvancedQuery from "./AdvancedQuery";
 import {
   presetRange,
   useReportResource,
@@ -277,6 +278,7 @@ function Details({
   onRefresh: () => void;
 }) {
   const params = new URLSearchParams({
+    ...report.filters,
     start: selected.start,
     end: selected.end,
     currency: report.currency,
@@ -378,18 +380,47 @@ function Details({
 }
 
 export default function Statistics({ revision = "" }: { revision?: string }) {
+  const [mode, setMode] = useState("charts");
+  return (
+    <div>
+      <Segmented
+        label="统计模式"
+        value={mode}
+        onChange={setMode}
+        options={[
+          { value: "charts", label: "统计图表" },
+          { value: "query", label: "高级查询" },
+        ]}
+      />
+      {mode === "query" ? (
+        <AdvancedQuery revision={revision} />
+      ) : (
+        <StatisticsCharts revision={revision} />
+      )}
+    </div>
+  );
+}
+
+function StatisticsCharts({ revision }: { revision: string }) {
   const today = useToday();
   const [preset, setPreset] = useState<Preset>("month");
   const [custom, setCustom] = useState(() => presetRange("month", today));
   const range = preset === "custom" ? custom : presetRange(preset, today);
   const [grain, setGrain] = useState<Grain>("day");
   const [currency, setCurrency] = useState("");
+  const [filters, setFilters] = useState({
+    payee: "",
+    narration: "",
+    match: "contains",
+    group_by: "account",
+  });
+  const [draftFilters, setDraftFilters] = useState(filters);
   const [selection, setSelection] = useState<{
     key: string;
     value: DetailSelection;
   }>();
   const invalid = !range.start || !range.end || range.start > range.end;
-  const params = new URLSearchParams({ ...range, grain, currency });
+  const params = new URLSearchParams({ ...range, grain, currency, ...filters });
   const key = params.toString();
   const resource = useReportResource<Report>(
     invalid ? null : `/statistics?${key}`,
@@ -497,6 +528,83 @@ export default function Statistics({ revision = "" }: { revision?: string }) {
             </select>
           </label>
         </div>
+        <form
+          className="stats-filter-fields"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setFilters(draftFilters);
+            setSelection(undefined);
+          }}
+        >
+          <label>
+            商家匹配
+            <input
+              value={draftFilters.payee}
+              maxLength={500}
+              onChange={(e) =>
+                setDraftFilters({ ...draftFilters, payee: e.target.value })
+              }
+            />
+          </label>
+          <label>
+            摘要匹配
+            <input
+              value={draftFilters.narration}
+              maxLength={500}
+              onChange={(e) =>
+                setDraftFilters({ ...draftFilters, narration: e.target.value })
+              }
+            />
+          </label>
+          <label>
+            匹配方式
+            <select
+              value={draftFilters.match}
+              onChange={(e) =>
+                setDraftFilters({ ...draftFilters, match: e.target.value })
+              }
+            >
+              <option value="contains">包含文字</option>
+              <option value="wildcard">通配符</option>
+              <option value="regex">正则表达式</option>
+            </select>
+          </label>
+          <label>
+            分组依据
+            <select
+              value={draftFilters.group_by}
+              onChange={(e) =>
+                setDraftFilters({ ...draftFilters, group_by: e.target.value })
+              }
+            >
+              <option value="account">科目</option>
+              <option value="payee">商家</option>
+              <option value="narration">摘要</option>
+            </select>
+          </label>
+          <button type="submit">应用筛选</button>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => {
+              const empty = {
+                payee: "",
+                narration: "",
+                match: "contains",
+                group_by: "account",
+              };
+              setDraftFilters(empty);
+              setFilters(empty);
+              setSelection(undefined);
+            }}
+          >
+            清除文字筛选
+          </button>
+        </form>
+        <p className="muted">
+          留空匹配全部；商家与摘要同时填写时须同时匹配，忽略大小写。通配符匹配整个字段：*
+          表示任意文字，? 表示一个字符；正则匹配字段中的片段。
+        </p>
       </section>
       {invalid && (
         <Notice tone="error">

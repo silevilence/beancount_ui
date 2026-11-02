@@ -3,6 +3,7 @@ import { api, reasonOf } from "./api";
 import { stampOf } from "./format";
 import { Chip, Notice } from "./ui";
 import MasterData from "./MasterData";
+import StockLog from "./StockLog";
 import StockActionEditor from "./StockActionEditor";
 import OperationStatus, { type StockOperation } from "./OperationStatus";
 
@@ -199,6 +200,7 @@ export default function Inventory({
   const [detailError, setDetailError] = useState("");
   const [busy, setBusy] = useState(false);
   const [manage, setManage] = useState(false);
+  const [showLog, setShowLog] = useState(false);
   const [operations, setOperations] = useState<StockOperation[]>([]);
   const sequence = useRef(0);
   const detailPanel = useRef<HTMLElement>(null);
@@ -269,6 +271,10 @@ export default function Inventory({
         </button>
         {data && <small> · 更新于 {stampOf(data.updated_at)}</small>}
       </header>
+      <button className="ghost" aria-expanded={showLog} onClick={() => setShowLog(!showLog)}>
+        {showLog ? "收起服务端日志" : "查看服务端库存日志"}
+      </button>
+      {showLog && <StockLog products={data?.products || []} />}
       {error && (
         <Notice tone="error">
           {error}

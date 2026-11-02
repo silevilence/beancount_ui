@@ -28,7 +28,7 @@ class EntryInput(BaseModel):
     date: date
     payee: str = Field(default="", max_length=200)
     narration: str = Field(default="", max_length=500)
-    amount: Decimal = Field(gt=0, max_digits=24, decimal_places=8)
+    amount: Decimal = Field(ge=0, max_digits=24, decimal_places=8)
     currency: str = Field(default="CNY", pattern=r"^[A-Z][A-Z0-9._-]{0,23}$")
     category: str = Field(pattern=r"^(Expenses|Income):[^\s\";]+$")
     payment: str = Field(pattern=r"^(Assets|Liabilities):[^\s\";]+$")
@@ -91,7 +91,7 @@ class OrderInput(BaseModel):
     purchase: EntryInput | None = None
     source_id: str = ""
     date: date
-    amount: Decimal = Field(gt=0, max_digits=24, decimal_places=8)
+    amount: Decimal = Field(ge=0, max_digits=24, decimal_places=8)
     account: str = Field(pattern=r"^(Assets|Liabilities):[^\s\";]+$")
     category: str = ""
     note: str = Field(default="", max_length=2000)
@@ -99,6 +99,8 @@ class OrderInput(BaseModel):
 
     @model_validator(mode="after")
     def allocated_prices(self):
+        if self.kind not in ("paid", "deferred") and self.amount == 0:
+            raise ValueError("结算与退款金额必须大于 0")
         if any(item.allocated_amount is not None for item in self.items):
             if any(item.allocated_amount is None for item in self.items):
                 raise ValueError("请为每个商品填写分配金额")

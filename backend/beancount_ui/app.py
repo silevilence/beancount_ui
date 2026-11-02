@@ -2,8 +2,9 @@ import os
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Query, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.docs import (
@@ -18,6 +19,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .access import Access
+from .advanced_query import QueryInput, advanced_query
 from .config import Settings
 from .finance import FinanceInput, compose_finance
 from .fulfillment import Fulfillment
@@ -37,7 +39,7 @@ from .query import daily_view
 from .receipt_batch import ReceiptBatch
 from .receipt_flow import ReceiptFlow
 from .scheduler import ScheduleInput, Scheduler, configure
-from .statistics import Granularity, statistics, statistics_details
+from .statistics import Granularity, StatisticsFilter, statistics, statistics_details
 from .stock_operations import StockOperations, StockReconciler
 from .sync import BackupInput, ConnectInput, Sync
 from .templates import recommendations
@@ -75,7 +77,7 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
                 app.state.stock_reconciler.stop()
 
     app = FastAPI(
-        title="日用账本", version="0.7.4", lifespan=lifespan, docs_url=None, redoc_url=None
+        title="日用账本", version="0.7.5", lifespan=lifespan, docs_url=None, redoc_url=None
     )
     app.state.scheduler = None
     app.state.stock_reconciler = None
@@ -158,6 +160,13 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     @app.get("/api/grocy/products/{product_id}")
     def grocy_product(product_id: int):
         return get_grocy().product(product_id)
+
+    @app.get("/api/grocy/stock-log")
+    def grocy_stock_log(
+        before: int | None = Query(default=None, ge=1),
+        product_id: int | None = Query(default=None, ge=1),
+    ):
+        return get_grocy().stock_log(before, product_id)
 
     @app.post("/api/grocy/master")
     def grocy_master(request: EntityChange):
@@ -372,14 +381,26 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
             return result
 
     @app.get("/api/statistics")
-    def report(start: date, end: date, grain: Granularity = "day", currency: str = ""):
+    def report(
+        start: date, end: date, filters: Annotated[StatisticsFilter, Depends()],
+        grain: Granularity = "day", currency: str = "",
+    ):
         with get_writer().guard():
-            return statistics(get_ledger(), start, end, grain, currency)
+            return statistics(get_ledger(), start, end, grain, currency, filters)
+
+    @app.post("/api/query")
+    def query(request: QueryInput):
+        return advanced_query(get_ledger(), request)
 
     @app.get("/api/statistics/details")
-    def report_details(start: date, end: date, currency: str, revision: str, account: str = ""):
+    def report_details(
+        start: date, end: date, currency: str, revision: str,
+        filters: Annotated[StatisticsFilter, Depends()], account: str = "",
+    ):
         with get_writer().guard():
-            return statistics_details(get_ledger(), start, end, currency, revision, account)
+            return statistics_details(
+                get_ledger(), start, end, currency, revision, account, filters,
+            )
 
     @app.post("/api/finance/compose")
     def finance(request: FinanceInput):

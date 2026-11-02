@@ -34,6 +34,66 @@ export default function RawEditor({
   const [open, setOpen] = useState(false);
   const [explicit, setExplicit] = useState(false);
   const [active, setActive] = useState(0);
+  const [anchor, setAnchor] = useState({
+    left: 12,
+    top: 40,
+    maxHeight: 180,
+    transform: "none",
+    visibility: "visible" as "visible" | "hidden",
+  });
+  function positionOptions() {
+    const element = input.current;
+    if (!element) return;
+    const style = getComputedStyle(element);
+    const mirror = document.createElement("div");
+    for (const key of [
+      "font",
+      "letterSpacing",
+      "tabSize",
+      "padding",
+      "border",
+      "lineHeight",
+    ] as const)
+      mirror.style[key] = style[key];
+    Object.assign(mirror.style, {
+      position: "absolute",
+      visibility: "hidden",
+      whiteSpace: "pre",
+      left: "0",
+      top: "0",
+    });
+    mirror.textContent = element.value.slice(0, element.selectionStart);
+    const marker = document.createElement("span");
+    marker.textContent = "\u200b";
+    mirror.append(marker);
+    element.parentElement!.append(mirror);
+    const lineHeight = parseFloat(style.lineHeight) || 24;
+    const y = marker.offsetTop - element.scrollTop;
+    const x = marker.offsetLeft - element.scrollLeft;
+    mirror.remove();
+    const height = element.clientHeight || 230;
+    const below = height - y - lineHeight - 8;
+    const above = y - 8;
+    const flip = below < 120 && above > below;
+    const maxHeight = Math.max(48, Math.min(180, flip ? above : below));
+    setAnchor({
+      left: Math.max(8, Math.min(x, (element.clientWidth || 460) - 428)),
+      top: Math.max(4, flip ? y - 4 : y + lineHeight + 4),
+      maxHeight,
+      transform: flip ? "translateY(-100%)" : "none",
+      visibility: y < 0 || y + lineHeight > height ? "hidden" : "visible",
+    });
+  }
+  useLayoutEffect(() => {
+    if (!result) return;
+    positionOptions();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(positionOptions);
+    if (input.current) observer?.observe(input.current);
+    return () => observer?.disconnect();
+  }, [value, cursor, open, explicit]);
   const history = {
     ...completions,
     currencies: [
@@ -131,6 +191,7 @@ export default function RawEditor({
             setOpen(true);
           }}
           onScroll={(e) => {
+            if (result) positionOptions();
             if (highlight.current) {
               // 直接同步位移，避免两层滚动条宽度不同导致末端文字错位。
               highlight.current.style.transform = `translate(${-e.currentTarget.scrollLeft}px, ${-e.currentTarget.scrollTop}px)`;
@@ -216,6 +277,7 @@ export default function RawEditor({
           role="listbox"
           aria-label={`${label}候选`}
           className="raw-options account-options"
+          style={{ position: "absolute", ...anchor }}
         >
           {result.options.map((option, i) => (
             <div

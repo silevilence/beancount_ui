@@ -17,7 +17,14 @@ export default function StatisticsRanking({
           1,
           ...items.map((item) => Math.abs(Number(item.amount))),
         );
-        const title = kind === "expenses" ? "支出分类" : "收入来源";
+        const grouping = report.filters?.group_by;
+        const suffix =
+          grouping === "payee"
+            ? " · 按商家"
+            : grouping === "narration"
+              ? " · 按摘要"
+              : "";
+        const title = (kind === "expenses" ? "支出分类" : "收入来源") + suffix;
         return (
           <section
             key={kind}

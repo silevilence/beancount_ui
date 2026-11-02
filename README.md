@@ -9,6 +9,7 @@ Python / FastAPI + React / TypeScript 的本地 Beancount 记账界面。账务�
 默认镜像：`ghcr.io/silevilence/beancount_ui:latest`；可通过 `BEANCOUNT_IMAGE` 固定版本或摘要。
 [容器部署、升级与恢复](docs/deployment.md) · [版本说明](changelog.md)。
 [Grocy 库存联动、独立订单收货与恢复](docs/grocy-workflows.md)：统一设置、可选商品关联、分批收货、日常库存操作及异常核对。
+[统计与高级查询](docs/statistics.md)：商家／摘要匹配与分组、通配符／正则筛选、只读 bean-query 查询；库存页可查看 Grocy 服务端完整库存操作日志。
 绿联 NAS 请使用独立的 [compose.nas.yaml](compose.nas.yaml)，按[部署说明](docs/deployment.md#绿联-nas项目部署)准备权限、访问地址与转发。
 
 ## Windows 开发（不需要 Docker）

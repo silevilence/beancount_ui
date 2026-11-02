@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlencode, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 from uuid import uuid4
 
@@ -236,6 +236,28 @@ class Grocy:
                 "details": self.request(f"stock/products/{product_id}"),
                 "entries": self.request(f"stock/products/{product_id}/entries"),
                 "updated_at": datetime.now(UTC).isoformat(),
+            }
+
+    def stock_log(self, before: int | None = None, product_id: int | None = None):
+        """Read every source of stock history, newest ID first, without offset drift."""
+        params = [("order", "id:desc"), ("limit", "101")]
+        if before is not None:
+            params.append(("query[]", f"id<{before}"))
+        if product_id is not None:
+            params.append(("query[]", f"product_id={product_id}"))
+        with self.lock:
+            rows = self.request("objects/stock_log?" + urlencode(params))
+            if not isinstance(rows, list) or any(
+                not isinstance(row, dict) or not str(row.get("id", "")).isdigit()
+                for row in rows
+            ):
+                raise LedgerError("Grocy 库存日志响应格式无效")
+            page = rows[:100]
+            return {
+                "entries": page,
+                "next_before": int(page[-1]["id"]) if len(rows) > 100 else None,
+                "updated_at": datetime.now(UTC).isoformat(),
+                "instance_id": self.read()["instance_id"],
             }
 
     def validate_items(self, documents, *, bind=False):

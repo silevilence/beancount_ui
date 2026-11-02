@@ -3,14 +3,63 @@
 from calendar import monthrange
 from datetime import date, timedelta
 from decimal import Decimal
+from fnmatch import translate
+from time import monotonic
 from typing import Literal
 
+import regex
 from beancount.core import data
+from pydantic import BaseModel, Field
 
 from .ledger import Ledger, LedgerError
 from .query import transactions
 
 Granularity = Literal["day", "week", "month"]
+
+
+class StatisticsFilter(BaseModel):
+    payee: str = Field(default="", max_length=500)
+    narration: str = Field(default="", max_length=500)
+    match: Literal["contains", "wildcard", "regex"] = "contains"
+    group_by: Literal["account", "payee", "narration"] = "account"
+
+    def matcher(self):
+        patterns = []
+        for value in (self.payee, self.narration):
+            expression = translate(value) if self.match == "wildcard" else value
+            if self.match == "contains":
+                expression = regex.escape(value)
+            if not value:
+                expression = ""
+            try:
+                patterns.append(regex.compile(expression, regex.IGNORECASE))
+            except regex.error as exc:
+                raise ValueError(f"匹配表达式无效：{exc}") from exc
+        elapsed = 0
+
+        def matches(payee, narration):
+            nonlocal elapsed
+            started = monotonic()
+            try:
+                if elapsed > 2:
+                    raise TimeoutError
+                return all(
+                    pattern.search(value or "", timeout=0.02) is not None
+                    for pattern, value in zip(patterns, (payee, narration), strict=True)
+                )
+            except TimeoutError as exc:
+                raise ValueError("匹配耗时过长，请简化表达式或缩小日期范围") from exc
+            finally:
+                elapsed += monotonic() - started
+
+        return matches
+
+    def group(self, account, payee, narration):
+        if self.group_by == "payee":
+            return payee or "（未填写商家）"
+        if self.group_by == "narration":
+            return narration or "（未填写摘要）"
+        return account
 
 
 def period_start(day: date, grain: Granularity) -> date:
@@ -69,7 +118,16 @@ def report_snapshot(ledger: Ledger):
     }
 
 
-def statistics(ledger: Ledger, start: date, end: date, grain: Granularity, currency=""):
+def statistics(
+    ledger: Ledger,
+    start: date,
+    end: date,
+    grain: Granularity,
+    currency="",
+    filters: StatisticsFilter | None = None,
+):
+    filters = filters or StatisticsFilter()
+    matches = filters.matcher()
     intervals = periods(start, end, grain)
     snapshot, status = report_snapshot(ledger)
     entries = (
@@ -90,7 +148,7 @@ def statistics(ledger: Ledger, start: date, end: date, grain: Granularity, curre
     }
     categories = {"income": {}, "expenses": {}}
     for entry in entries:
-        if not start <= entry.date <= end:
+        if not start <= entry.date <= end or not matches(entry.payee, entry.narration):
             continue
         bucket = buckets[str(period_start(entry.date, grain))]
         matched = False
@@ -99,14 +157,14 @@ def statistics(ledger: Ledger, start: date, end: date, grain: Granularity, curre
             if kind and posting.units.currency == currency:
                 amount = posting.units.number * (-1 if kind == "income" else 1)
                 bucket[kind] += amount
-                categories[kind][posting.account] = (
-                    categories[kind].get(posting.account, Decimal(0)) + amount
-                )
+                group = filters.group(posting.account, entry.payee, entry.narration)
+                categories[kind][group] = categories[kind].get(group, Decimal(0)) + amount
                 matched = True
         bucket["count"] += int(matched)
     values = list(buckets.values())
     return {
         **status,
+        "filters": filters.model_dump(),
         "start": str(start),
         "end": str(end),
         "grain": grain,
@@ -135,7 +193,10 @@ def statistics_details(
     currency: str,
     revision: str,
     account="",
+    filters: StatisticsFilter | None = None,
 ):
+    filters = filters or StatisticsFilter()
+    matches = filters.matcher()
     if start > end:
         raise ValueError("开始日期不能晚于结束日期")
     snapshot, status = report_snapshot(ledger)
@@ -145,6 +206,8 @@ def statistics_details(
     for row in [] if snapshot.errors else transactions(snapshot):
         if not str(start) <= row["date"] <= str(end):
             continue
+        if not matches(row["payee"], row["narration"]):
+            continue
         contributions = []
         income, expenses = Decimal(0), Decimal(0)
         for posting in row["postings"]:
@@ -152,7 +215,10 @@ def statistics_details(
             if (
                 not kind
                 or posting["currency"] != currency
-                or (account and posting["account"] != account)
+                or (
+                    account
+                    and filters.group(posting["account"], row["payee"], row["narration"]) != account
+                )
             ):
                 continue
             amount = Decimal(posting["amount"]) * (-1 if kind == "income" else 1)

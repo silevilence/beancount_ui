@@ -3,7 +3,8 @@ from uuid import uuid4
 
 import pytest
 from beancount_ui.fulfillment_models import ItemInput, SettlementInput
-from beancount_ui.models import EntryInput, PostingInput, PostingPrice, SplitInput
+from beancount_ui.models import EntryInput, OrderInput, PostingInput, PostingPrice, SplitInput
+from beancount_ui.orders import orders
 from beancount_ui.record_template import encode_value
 from beancount_ui.writer import Writer
 from pydantic import ValidationError
@@ -68,3 +69,37 @@ def test_normalization_preserves_limits_and_inferred_postings():
         PostingInput(account="Assets:Cash", amount="1,000.000000001")
     with pytest.raises(ValueError):
         encode_value("amount", "10,000,000,000,000,000")
+
+
+def test_zero_form_amount_can_preview_and_save_with_warning(ledger):
+    fields = mutation(ledger).entry.model_dump(mode="json")
+    fields["amount"] = "0"
+    writer = Writer(ledger)
+    preview = writer.preview(mutation(ledger, entry=fields))
+    assert any("零金额" in warning for warning in preview["warnings"])
+    writer.commit(preview["request_id"])
+    assert not ledger.refresh().errors
+
+
+@pytest.mark.parametrize("kind", ["paid", "deferred"])
+def test_zero_purchase_remains_visible_as_an_order(ledger, kind):
+    fields = mutation(ledger).entry.model_dump(mode="json")
+    fields.update(amount="0", payment="Liabilities:Card")
+    request = mutation(
+        ledger,
+        entry=None,
+        order={
+            "kind": kind,
+            "purchase": fields,
+            "date": fields["date"],
+            "amount": "0",
+            "account": fields["payment"],
+        },
+    )
+    writer = Writer(ledger)
+    preview = writer.preview(request)
+    assert any("零金额" in warning for warning in preview["warnings"])
+    writer.commit(preview["request_id"])
+    assert any(Decimal(row["total"]) == 0 and row["identified"] for row in orders(ledger.refresh()))
+    with pytest.raises(ValidationError, match="结算与退款金额"):
+        OrderInput(kind="settle", date=fields["date"], amount="0", account="Assets:Cash")

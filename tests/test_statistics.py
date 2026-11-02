@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from beancount_ui.app import create_app
 from beancount_ui.query import daily_view
-from beancount_ui.statistics import periods, statistics, statistics_details
+from beancount_ui.statistics import StatisticsFilter, periods, statistics, statistics_details
 from fastapi.testclient import TestClient
 
 
@@ -102,6 +102,51 @@ def test_report_totals_and_contributions(report_ledger, grain):
     assert all(row["raw"] and row["file"] == "reports.bean" for row in details["transactions"])
     for kind, total in report["totals"].items():
         assert sum(Decimal(r[kind]) for r in details["transactions"]) == Decimal(total)
+
+
+@pytest.mark.parametrize(
+    ("filters", "count", "expenses"),
+    [
+        ({"payee": "商*", "match": "wildcard"}, 1, "100"),
+        ({"narration": "退款|手续费", "match": "regex"}, 2, "-18"),
+        ({"payee": "商户", "narration": "退款"}, 0, "0"),
+        ({"narration": "*分类*", "match": "wildcard", "group_by": "narration"}, 1, "20"),
+        ({"payee": "商", "group_by": "payee"}, 1, "100"),
+    ],
+)
+def test_text_filters_keep_totals_rankings_and_details_consistent(
+    report_ledger, filters, count, expenses
+):
+    client = TestClient(create_app(report_ledger.settings))
+    params = {"start": "2025-12-31", "end": "2026-01-31", **filters}
+    response = client.get("/api/statistics", params=params)
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["count"] == count
+    assert report["totals"]["expenses"] == expenses
+    for category in report["categories"]["expenses"]:
+        details = client.get(
+            "/api/statistics/details",
+            params={
+                **params,
+                "currency": "CNY",
+                "revision": report["view_revision"],
+                "account": category["account"],
+            },
+        ).json()
+        assert sum(Decimal(row["expenses"]) for row in details["transactions"]) == Decimal(
+            category["amount"]
+        )
+
+
+def test_invalid_and_expensive_matching_reports_errors(report_ledger):
+    client = TestClient(create_app(report_ledger.settings))
+    params = {"start": "2026-01-01", "end": "2026-01-31", "match": "regex", "payee": "["}
+    assert client.get("/api/statistics", params=params).status_code == 422
+    assert client.get("/api/statistics", params={**params, "payee": "a" * 501}).status_code == 422
+    match = StatisticsFilter(payee="(a+)+$", match="regex").matcher()
+    with pytest.raises(ValueError, match="耗时"):
+        match("a" * 100000 + "!", "")
 
 
 def test_daily_agrees_and_foreign_units_not_payment_value(report_ledger):

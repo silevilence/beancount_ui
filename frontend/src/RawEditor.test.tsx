@@ -13,6 +13,45 @@ const history = {
   links: ["receipt"],
 };
 const accounts = ["Assets:Bank", "Assets:Bitcash"];
+it("账户补全支持有序非连续字母，连续匹配优先", () => {
+  const value = "  LJiao";
+  const result = completeBeancount(
+    value,
+    value.length,
+    ["Liabilities:Credit:Jiao2166", "Assets:LJiao", "Assets:JiaoL"],
+    history,
+  );
+  expect(result?.options.map((option) => option.label)).toEqual([
+    "Assets:LJiao",
+    "Liabilities:Credit:Jiao2166",
+  ]);
+});
+
+it("候选浮层定位在编辑器内的光标附近", () => {
+  render(<Harness />);
+  type("  Assets:B");
+  expect(screen.getByRole("listbox").style.position).toBe("absolute");
+  expect(screen.getByRole("listbox").style.top).not.toBe("");
+});
+
+it("光标接近底部时向上展开，滚出编辑区时隐藏候选", () => {
+  const position = vi
+    .spyOn(HTMLElement.prototype, "offsetTop", "get")
+    .mockReturnValue(190);
+  try {
+    render(<Harness />);
+    const input = type("  Assets:B");
+    expect(screen.getByRole("listbox")).toHaveStyle({
+      transform: "translateY(-100%)",
+    });
+    fireEvent.scroll(input, { target: { scrollTop: 220 } });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    fireEvent.scroll(input, { target: { scrollTop: 0 } });
+    expect(screen.getByRole("listbox")).toBeVisible();
+  } finally {
+    position.mockRestore();
+  }
+});
 function Harness({ initial = "" }) {
   const [value, setValue] = useState(initial);
   return (

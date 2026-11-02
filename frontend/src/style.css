@@ -1407,10 +1407,21 @@ kbd {
   background: #5173a566;
 }
 .raw-editor .raw-options {
-  position: relative;
-  top: auto;
-  margin-top: 4px;
+  right: auto;
+  width: 420px;
+  max-width: calc(100% - 16px);
+  margin: 0;
+  overscroll-behavior: contain;
+  box-shadow: 0 8px 24px #0006;
 }
+.data-table-scroll { overflow-x: auto; max-width: 100%; }
+.data-table-scroll table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table-scroll th, .data-table-scroll td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 90px; }
+.data-table-scroll th { color: var(--ink-2); }
+.data-table-scroll dd { margin: 0 0 8px; }
+.data-table-scroll dt { font-weight: 600; }
+.query-input { min-height: 190px; font-family: var(--mono); }
+.advanced-query, .stock-log { margin-top: 16px; min-width: 0; }
 .bean-token-comment {
   color: #9aaabd;
 }

@@ -35,6 +35,48 @@ def test_switch_clears_key_and_changes_identity(grocy):
     assert not state["key_configured"] and state["instance_id"] != before
 
 
+def test_full_stock_log_keyset_paging_preserves_external_and_undone(grocy, monkeypatch):
+    from urllib.parse import parse_qs, urlsplit
+
+    history = [
+        {"id": str(i), "product_id": "8", "note": "来自 Grocy", "undone": "1"}
+        for i in range(201, 0, -1)
+    ]
+
+    def request(path, method="GET", payload=None):
+        assert method == "GET" and payload is None
+        assert path.startswith("objects/stock_log?")
+        params = parse_qs(urlsplit(path).query)
+        assert params["order"] == ["id:desc"] and params["limit"] == ["101"]
+        filters = params.get("query[]", [])
+        assert "product_id=8" in filters
+        before = next((int(value[3:]) for value in filters if value.startswith("id<")), 999)
+        return [row for row in history if int(row["id"]) < before][:101]
+
+    monkeypatch.setattr(grocy, "request", request)
+    first = grocy.stock_log(product_id=8)
+    assert len(first["entries"]) == 100 and first["next_before"] == 102
+    history.insert(0, {"id": "202", "product_id": "8"})
+    second = grocy.stock_log(before=first["next_before"], product_id=8)
+    third = grocy.stock_log(before=second["next_before"], product_id=8)
+    assert len(second["entries"]) == 100 and len(third["entries"]) == 1
+    assert third["next_before"] is None
+    assert first["entries"][0]["note"] == "来自 Grocy"
+    assert first["entries"][0]["undone"] == "1"
+
+
+def test_stock_log_query_validation_and_transport_error(ledger, monkeypatch):
+    client = TestClient(create_app(ledger.settings))
+    assert client.get("/api/grocy/stock-log?before=0").status_code == 422
+    assert client.get("/api/grocy/stock-log?product_id=-1").status_code == 422
+
+    def unavailable(*args, **kwargs):
+        raise GrocyError("unreachable", "日志不可用")
+
+    monkeypatch.setattr(Grocy, "stock_log", unavailable)
+    assert "日志不可用" in client.get("/api/grocy/stock-log").text
+
+
 @pytest.mark.parametrize("url", ["ftp://nas", "http://user:secret@nas", "http://nas/?key=secret"])
 def test_url_secrets_rejected(url):
     with pytest.raises(ValueError):

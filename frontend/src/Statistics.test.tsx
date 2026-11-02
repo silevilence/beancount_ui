@@ -139,6 +139,60 @@ function routing(handler?: (url: URL) => unknown) {
   return fetcher;
 }
 
+it("商家摘要筛选提交后用于汇总与分组明细，清除后恢复全部", async () => {
+  const fetcher = routing((url) => {
+    if (url.pathname.endsWith("details")) return ok(details);
+    const filters = {
+      payee: url.searchParams.get("payee") || "",
+      narration: url.searchParams.get("narration") || "",
+      match: url.searchParams.get("match") || "contains",
+      group_by: url.searchParams.get("group_by") || "account",
+    };
+    return ok(
+      report({
+        filters,
+        categories: {
+          expenses: [{ account: "测试商户", amount: "-20" }],
+          income: [],
+        },
+      }),
+    );
+  });
+  render(<Statistics />);
+  await screen.findByRole("region", { name: "支出分类" });
+  fireEvent.change(screen.getByLabelText("商家匹配"), {
+    target: { value: "测试.*" },
+  });
+  fireEvent.change(screen.getByLabelText("摘要匹配"), {
+    target: { value: "退款|购物" },
+  });
+  fireEvent.change(screen.getByLabelText("匹配方式"), {
+    target: { value: "regex" },
+  });
+  fireEvent.change(screen.getByLabelText("分组依据"), {
+    target: { value: "payee" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "应用筛选" }));
+  const ranking = await screen.findByRole("region", {
+    name: "支出分类 · 按商家",
+  });
+  fireEvent.click(within(ranking).getByRole("button"));
+  await screen.findByRole("region", { name: "统计流水" });
+  await waitFor(() =>
+    expect(fetcher.mock.calls.at(-1)![0]).toContain("/statistics/details?"),
+  );
+  const params = new URL(fetcher.mock.calls.at(-1)![0], "http://local")
+    .searchParams;
+  expect(params.get("payee")).toBe("测试.*");
+  expect(params.get("narration")).toBe("退款|购物");
+  expect(params.get("group_by")).toBe("payee");
+  fireEvent.click(screen.getByRole("button", { name: "清除文字筛选" }));
+  expect(screen.getByLabelText("商家匹配")).toHaveValue("");
+  expect(
+    screen.queryByRole("region", { name: "统计流水" }),
+  ).not.toBeInTheDocument();
+});
+
 it("日期预设使用自然周月和上海当天，包括闰月和跨年", () => {
   expect(presetRange("week", "2026-01-01")).toEqual({
     start: "2025-12-29",

@@ -25,7 +25,7 @@ def orders(snapshot):
         funding = [
             p for p in row["postings"] if p["account"].startswith(("Assets:", "Liabilities:"))
         ]
-        if not expense or len(funding) != 1 or Decimal(funding[0]["amount"]) >= 0:
+        if not expense or len(funding) != 1 or Decimal(funding[0]["amount"]) > 0:
             continue
         if len({p["currency"] for p in row["postings"]}) != 1:
             continue
