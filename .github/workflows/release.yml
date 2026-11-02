@@ -103,7 +103,8 @@ jobs:
           docker tag beancount-ui:candidate "$latest"
           docker push "$latest"
           docker pull "$image"
-          digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')
+          digest=$(docker image inspect "$image" --format '{{json .RepoDigests}}' |
+            jq -er --arg prefix "${image%:*}@" '[.[] | select(startswith($prefix))] | first // error("Published repository digest not found")')
           printf '%s\n%s\ncommit=%s\nplatform=linux/amd64\n' "$image" "$digest" "$GITHUB_SHA" > image.txt
           printf '### Published image\n\n`%s`\n\n`%s`\n' "$image" "$digest" >> "$GITHUB_STEP_SUMMARY"
           gh release create "$VERSION" --verify-tag --title "$VERSION" --notes-file release-notes.md image.txt
