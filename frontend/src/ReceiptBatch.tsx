@@ -1,3 +1,4 @@
+import { useActionDialog } from "./useActionDialog";
 import { useEffect, useRef, useState } from "react";
 import { post, reasonOf, type Journal } from "./api";
 import { requestId } from "./requestId";
@@ -48,6 +49,7 @@ export default function ReceiptBatch({
     }
   });
   const [error, setError] = useState("");
+  const { confirm, actionDialog } = useActionDialog();
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   useEffect(() => {
@@ -90,6 +92,7 @@ export default function ReceiptBatch({
   if (!drafts.length && !pending) return null;
   return (
     <section className="panel card" aria-label="批量收货草稿">
+      {actionDialog}
       <h2>
         批量收货 · {pending?.body.receipts.length ?? drafts.length} 个订单
       </h2>
@@ -233,7 +236,7 @@ export default function ReceiptBatch({
                 if (
                   !pending!.uncertain &&
                   result.financial &&
-                  !confirmEntryDates(result.financial.items)
+                  !(await confirmEntryDates(result.financial.items, confirm))
                 )
                   return;
                 const next = { ...pending!, uncertain: true };

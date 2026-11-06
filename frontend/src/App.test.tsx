@@ -621,7 +621,6 @@ it("原文可复制，剪贴板不可用时保持原提示", async () => {
 });
 
 it("从工作台完成一笔录入并刷新当日视图", async () => {
-  vi.stubGlobal("confirm", vi.fn(() => true));
   const requests: Record<string, unknown>[] = [];
   let journalCalls = 0;
   const fetcher = vi.fn(async (path: string, options?: RequestInit) => {
@@ -646,7 +645,9 @@ it("从工作台完成一笔录入并刷新当日视图", async () => {
       request_id: body.request_id,
       target: "txs/2026/09.bean",
       items: [
-        { raw: '2026-09-30 * "消费"\n  Expenses:Food 12.30 CNY\n  Assets:Cash -12.30 CNY\n' },
+        {
+          raw: '2026-09-30 * "消费"\n  Expenses:Food 12.30 CNY\n  Assets:Cash -12.30 CNY\n',
+        },
       ],
       diffs: { "txs/2026/09.bean": "+  Expenses:Food 12.30 CNY" },
       status: "committed",
@@ -667,6 +668,8 @@ it("从工作台完成一笔录入并刷新当日视图", async () => {
   });
   fireEvent.click(screen.getByText("预览并校验"));
   fireEvent.click(await screen.findByText("确认保存"));
+  if (screen.queryByRole("button", { name: "按这些日期入账" }))
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
   expect(await screen.findByText("本次已录入")).toBeInTheDocument();
   expect(screen.getByText("12.30 CNY")).toBeInTheDocument();
   expect(requests[1].request_id).toBe(requests[0].request_id);

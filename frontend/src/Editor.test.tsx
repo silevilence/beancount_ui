@@ -6,17 +6,10 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 import Editor, { PENDING_KEY } from "./Editor";
 import { blankItem } from "./PurchaseItems";
 import type { Journal, Transaction } from "./api";
-
-beforeEach(() =>
-  vi.stubGlobal(
-    "confirm",
-    vi.fn(() => true),
-  ),
-);
 
 type Reply = { ok: boolean; status?: number; json: () => Promise<unknown> };
 
@@ -172,6 +165,8 @@ it("局域网 HTTP 可预览保存，防止重复点击，保存后保留日期�
   expect(screen.getByText("填写")).toHaveAttribute("aria-current", "step");
   fireEvent.click(screen.getByText("预览并校验"));
   fireEvent.click(await screen.findByText("确认保存"));
+  if (screen.queryByRole("button", { name: "按这些日期入账" }))
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
   fireEvent.click(screen.getByText("正在保存…"));
   await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
   expect(requests.filter((r) => r.path.endsWith("/commit"))).toHaveLength(1);
@@ -201,6 +196,8 @@ it("保存超时后锁定内容，用原请求重试且不重复入账", async (
   fill();
   fireEvent.click(screen.getByText("预览并校验"));
   fireEvent.click(await screen.findByText("确认保存"));
+  if (screen.queryByRole("button", { name: "按这些日期入账" }))
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("不要重新录入");
   expect(screen.getByLabelText("金额")).toBeDisabled();
   expect(screen.getByText("写入")).toHaveAttribute("aria-current", "step");
@@ -247,6 +244,8 @@ it("保存超时后刷新页面仍能完成原请求", async () => {
   fill();
   fireEvent.click(screen.getByText("预览并校验"));
   fireEvent.click(await screen.findByText("确认保存"));
+  if (screen.queryByRole("button", { name: "按这些日期入账" }))
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
   await screen.findByRole("alert");
   cleanup();
   const onClose = vi.fn();
@@ -314,6 +313,8 @@ it("已知失效的预览会被取消，不会当作保存成功", async () => {
   await screen.findByText("确认保存");
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(fail("预览后账本已被修改")));
   fireEvent.click(screen.getByText("确认保存"));
+  if (screen.queryByRole("button", { name: "按这些日期入账" }))
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "预览后账本已被修改",
   );

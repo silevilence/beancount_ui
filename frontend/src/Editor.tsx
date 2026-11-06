@@ -1,3 +1,4 @@
+import { useActionDialog } from "./useActionDialog";
 import { normalizeAmount } from "./amounts";
 import RecordFields from "./RecordFields";
 import TextComplete from "./TextComplete";
@@ -168,6 +169,7 @@ export default function Editor({
   );
   const [preview, setPreview] = useState(pending.current?.preview);
   const [uncertain, setUncertain] = useState(!!pending.current?.uncertain);
+  const { confirm, actionDialog } = useActionDialog();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -314,7 +316,7 @@ export default function Editor({
       if (
         op === "create" &&
         !pending.current.uncertain &&
-        !confirmEntryDates(preview.items)
+        !(await confirmEntryDates(preview.items, confirm))
       )
         return;
       persist({ ...pending.current, uncertain: true });
@@ -432,6 +434,7 @@ export default function Editor({
       className="editor-dialog"
       aria-labelledby="editor-title"
     >
+      {actionDialog}
       <header className="editor-head">
         <div>
           <p className="eyebrow">LOCAL JOURNAL / 逐笔确认</p>

@@ -147,11 +147,12 @@ it("已付款商品收货先预览，取消不写入，确认不调用账务提�
   expect(calls.filter((p) => p.endsWith("commit"))).toEqual([
     "/api/fulfillment/receipt/commit",
   ]);
-  vi.spyOn(window, "prompt").mockReturnValue(
-    "已人工核实收货日志与批次并确认原执行停止",
-  );
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   fireEvent.click(screen.getByText("记录人工核实成功"));
+  fireEvent.change(screen.getByLabelText("核对依据"), {
+    target: { value: "已核对远端完整日志与批次并确认原执行停止" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+  fireEvent.click(await screen.findByRole("button", { name: "确认继续" }));
   expect(await screen.findByText("已人工核实")).toBeInTheDocument();
   expect(screen.queryByText("结果待确认")).not.toBeInTheDocument();
 });
@@ -227,7 +228,6 @@ it("分批收货过滤未到货商品，结算失败保留原请求，恢复不�
           : preview,
   }));
   vi.stubGlobal("fetch", fetch);
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   render(
     <ReceiptEditor
       order={order}
@@ -271,6 +271,8 @@ it("分批收货过滤未到货商品，结算失败保留原请求，恢复不�
   });
   fireEvent.click(screen.getByText("预览收货与入库"));
   fireEvent.click(await screen.findByText("确认收货：记账并入库"));
+  if (screen.queryByRole("button", { name: "按这些日期入账" }))
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
   await screen.findByText(/账单未保存，已暂停入库：账本发生变化/);
   expect(
     JSON.parse(
@@ -343,7 +345,6 @@ it("保留实收并结束旧结算后恢复剩余收货表单", async () => {
     json: async () => ({ ...preview, settlement_status: "abandoned" }),
   }));
   vi.stubGlobal("fetch", fetch);
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   render(
     <ReceiptEditor
       order={
@@ -360,12 +361,13 @@ it("保留实收并结束旧结算后恢复剩余收货表单", async () => {
     />,
   );
   fireEvent.click(screen.getByText("核对并重新填写账单"));
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
   expect(fetch).not.toHaveBeenCalled();
   await waitFor(() =>
     expect(screen.getByText("核对并重新填写账单")).toBeEnabled(),
   );
-  confirm.mockReturnValue(true);
   fireEvent.click(screen.getByText("核对并重新填写账单"));
+  fireEvent.click(screen.getByRole("button", { name: "确认继续" }));
   expect(await screen.findByText(/原账单请求已结束/)).toBeInTheDocument();
   expect(localStorage.getItem(key)).toBeNull();
   expect(screen.getByText("预览收货与入库")).toBeInTheDocument();

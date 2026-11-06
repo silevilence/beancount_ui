@@ -1,3 +1,4 @@
+import { useActionDialog } from "./useActionDialog";
 import { useState } from "react";
 import type { ManagedOrder } from "./OrderPage";
 import { api, reasonOf } from "./api";
@@ -23,6 +24,7 @@ export default function OrderCorrections({
     operations: StockOperation[];
     guidance: string;
   }>();
+  const { confirm, actionDialog } = useActionDialog();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const key = `beancount-ui.correction.${order.id}`;
@@ -51,9 +53,9 @@ export default function OrderCorrections({
   async function submit() {
     if (busy) return;
     if (
-      !window.confirm(
+      !(await confirm(
         "确认执行所选更正？取消待收不退款；作废实收会先核对并尝试撤销其入库，已有后续操作时会停止。",
-      )
+      ))
     )
       return;
     setBusy(true);
@@ -109,6 +111,7 @@ export default function OrderCorrections({
   }
   return (
     <details className="inventory-row">
+      {actionDialog}
       <summary>取消、退货与误录更正</summary>
       <p className="muted small">
         仅退款和差价返还请使用结算与退款页，不扣库存。实际退货先核对批次，再在库存页执行对应消耗并保留说明。
@@ -122,9 +125,9 @@ export default function OrderCorrections({
           </button>
           <button
             disabled={busy}
-            onClick={() => {
+            onClick={async () => {
               if (
-                window.confirm(
+                await confirm(
                   "已核对可能已经发生的库存撤销和本地更正？关闭此请求不会恢复任何库存。",
                 )
               ) {

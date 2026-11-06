@@ -125,8 +125,16 @@ it.each(["single", "batch"] as const)(
     const { key, commits, onSaved, save } = setup(mode, ["2026-10-13"]);
     const before = localStorage.getItem(key);
     save();
-    expect(window.confirm).toHaveBeenCalledExactlyOnceWith(
-      expect.stringContaining("2026-10-13：1 笔"),
+    expect(
+      screen.getByRole("dialog", { name: "确认入账日期" }),
+    ).toHaveTextContent("2026-10-13：1 笔");
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", {
+          name: mode === "single" ? "确认保存" : "确认整批入账",
+        }),
+      ).toBeEnabled(),
     );
     expect(commits).toEqual([]);
     expect(onSaved).not.toHaveBeenCalled();
@@ -134,11 +142,11 @@ it.each(["single", "batch"] as const)(
     expect(
       screen.getByLabelText(mode === "single" ? "金额" : "实付金额"),
     ).toHaveValue("12");
-    vi.mocked(window.confirm).mockReturnValue(true);
     save();
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
     expect(commits).toEqual([JSON.stringify({ request_id: "saved-preview" })]);
-    expect(window.confirm).toHaveBeenCalledTimes(2);
+    expect(window.confirm).not.toHaveBeenCalled();
   },
 );
 
@@ -161,9 +169,9 @@ it.each(["single", "batch"] as const)(
     const { save, commits } = setup(mode, [today]);
     vi.setSystemTime(new Date("2026-10-14T16:00:00Z"));
     save();
-    expect(window.confirm).toHaveBeenCalledExactlyOnceWith(
-      expect.stringContaining("今日（2026-10-15，上海时间）"),
-    );
+    expect(
+      screen.getByRole("dialog", { name: "确认入账日期" }).textContent,
+    ).toContain("今日（2026-10-15，上海时间）");
     expect(commits).toEqual([]);
   },
 );
@@ -172,9 +180,9 @@ it("单笔的未来日期原文与表单今日不同时，以实际预览日期�
   const { save, commits } = setup("single", ["2026-10-16"]);
   expect(screen.getByLabelText("交易日期")).toHaveValue(today);
   save();
-  expect(window.confirm).toHaveBeenCalledExactlyOnceWith(
-    expect.stringContaining("2026-10-16：1 笔"),
-  );
+  expect(
+    screen.getByRole("dialog", { name: "确认入账日期" }).textContent,
+  ).toContain("2026-10-16：1 笔");
   expect(commits).toEqual([]);
 });
 
@@ -201,9 +209,9 @@ it("整批混合日期统一弹一次，按各日期统计笔数", () => {
     "2026-10-16",
   ]);
   save();
-  expect(window.confirm).toHaveBeenCalledExactlyOnceWith(
-    expect.stringContaining("2026-10-13：2 笔\n2026-10-16：1 笔"),
-  );
+  expect(
+    screen.getByRole("dialog", { name: "确认入账日期" }).textContent,
+  ).toContain("2026-10-13：2 笔\n2026-10-16：1 笔");
   expect(commits).toEqual([]);
 });
 
@@ -211,12 +219,11 @@ it.each(["single", "batch"] as const)(
   "%s 确认后超时，刷新并重试原请求不重复确认",
   async (mode) => {
     const { save, mount, commits, onSaved } = setup(mode, ["2026-10-13"], true);
-    vi.mocked(window.confirm).mockReturnValue(true);
     save();
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
     await screen.findByText(/network timeout/);
     cleanup();
     mount();
-    vi.mocked(window.confirm).mockReturnValue(false);
     fireEvent.click(
       screen.getByRole("button", {
         name: mode === "single" ? "使用原请求重试保存" : "重试原批次保存",
@@ -225,6 +232,9 @@ it.each(["single", "batch"] as const)(
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
     expect(commits).toHaveLength(2);
     expect(commits[0]).toBe(commits[1]);
-    expect(window.confirm).toHaveBeenCalledOnce();
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("dialog", { name: "确认入账日期" }),
+    ).not.toBeInTheDocument();
   },
 );

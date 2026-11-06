@@ -57,10 +57,6 @@ const row: Transaction = {
 };
 
 function setup() {
-  vi.stubGlobal(
-    "confirm",
-    vi.fn(() => true),
-  );
   const requests: { url: string; body: Record<string, unknown> }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -244,6 +240,8 @@ it("creates four budget postings, previews and clears fields after saving", asyn
     form.postings.map(({ source_index: _index, ...p }) => p),
   );
   fireEvent.click(await screen.findByText("确认保存"));
+  if (screen.queryByRole("button", { name: "按这些日期入账" }))
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
   await screen.findByText("已保存 4 行分录");
   expect(screen.getByLabelText("分录金额 1")).toHaveValue("");
   expect(screen.queryByLabelText("分录金额 3")).not.toBeInTheDocument();

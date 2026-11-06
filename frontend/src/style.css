@@ -2704,3 +2704,51 @@ kbd {
 @media (max-width: 760px) { .order-filters { grid-template-columns: minmax(0, 1fr); } }
 
 .order-note { white-space: pre-wrap; overflow-wrap: anywhere; margin-block: 0.5rem; }
+
+/* Page-owned confirmations also sit above an already open editor dialog. */
+.action-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 24px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 24px 64px #00000080;
+}
+
+.action-dialog::backdrop {
+  background: #04070cb3;
+}
+
+.action-dialog h2 {
+  margin: 0 0 16px;
+  font-size: 1.25rem;
+}
+
+.action-dialog-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+  line-height: 1.7;
+}
+
+.action-dialog textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.action-dialog [role="alert"] {
+  color: var(--expense);
+}
+
+.action-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+}

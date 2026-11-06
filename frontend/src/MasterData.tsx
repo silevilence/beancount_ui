@@ -1,3 +1,4 @@
+import { useActionDialog } from "./useActionDialog";
 import { useState } from "react";
 import { nameOf, type InventoryData, type Product } from "./Inventory";
 import { post } from "./api";
@@ -91,6 +92,7 @@ export default function MasterData({
       : {}),
     ...(initialConversion ? { factor: String(initialConversion.factor) } : {}),
   });
+  const { confirm, actionDialog } = useActionDialog();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const key = `beancount-ui.master.pending.${data.instance_id}${conversionFor ? `.conversion.${conversionFor.id}` : ""}`;
@@ -144,9 +146,9 @@ export default function MasterData({
     if (busy) return;
     if (
       remove &&
-      !window.confirm(
+      !(await confirm(
         "删除此资料？Grocy 会检查库存与历史引用，不能绕过引用限制。",
-      )
+      ))
     )
       return;
     setBusy(true);
@@ -202,6 +204,7 @@ export default function MasterData({
   }
   return (
     <section className="panel card">
+      {actionDialog}
       <h2>
         {conversionFor ? `${conversionFor.name} · 单位换算` : "产品与基础资料"}
       </h2>
@@ -218,9 +221,9 @@ export default function MasterData({
           </button>
           <button
             disabled={busy}
-            onClick={() => {
+            onClick={async () => {
               if (
-                window.confirm(
+                await confirm(
                   "已在 Grocy 核对本次操作实际结果？关闭后才能发起新的资料修改。",
                 )
               ) {

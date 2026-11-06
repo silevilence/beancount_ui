@@ -1,7 +1,14 @@
 import { shanghaiToday } from "./format";
 
 /** 使用服务器已校验、已展开模板的预览原文，避免表单日期与实际入账日期不一致。 */
-export function confirmEntryDates(items: { raw: string }[]): boolean {
+export async function confirmEntryDates(
+  items: { raw: string }[],
+  confirm: (
+    message: string,
+    title?: string,
+    acceptLabel?: string,
+  ) => Promise<boolean>,
+): Promise<boolean> {
   if (!items?.length) throw new Error("预览缺少条目日期，请重新预览后保存。");
   const today = shanghaiToday();
   const counts = new Map<string, number>();
@@ -17,7 +24,9 @@ export function confirmEntryDates(items: { raw: string }[]): boolean {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([day, count]) => `${day}：${count} 笔`)
     .join("\n");
-  return window.confirm(
+  return confirm(
     `本次有 ${total} 笔条目的日期不是今日（${today}，上海时间）：\n\n${details}\n\n确认按这些日期入账吗？取消将保留填写内容与草稿。`,
+    "确认入账日期",
+    "按这些日期入账",
   );
 }

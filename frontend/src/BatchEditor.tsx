@@ -1,3 +1,4 @@
+import { useActionDialog } from "./useActionDialog";
 import { normalizeAmount } from "./amounts";
 import RecordFields from "./RecordFields";
 import TextComplete from "./TextComplete";
@@ -266,6 +267,7 @@ export default function BatchEditor({
         );
   const [error, setError] = useState(initial.error);
   const [message, setMessage] = useState("");
+  const { confirm, actionDialog } = useActionDialog();
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -427,7 +429,7 @@ export default function BatchEditor({
     try {
       if (
         !draft.pending.uncertain &&
-        !confirmEntryDates(draft.pending.preview.items)
+        !(await confirmEntryDates(draft.pending.preview.items, confirm))
       )
         return;
       persist({ ...draft, pending });
@@ -878,6 +880,7 @@ export default function BatchEditor({
         if (!busy) onClose();
       }}
     >
+      {actionDialog}
       <header className="editor-head">
         <div>
           <p className="eyebrow">BATCH JOURNAL / 集中补记</p>

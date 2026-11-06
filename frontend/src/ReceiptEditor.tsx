@@ -1,3 +1,4 @@
+import { useActionDialog } from "./useActionDialog";
 import { useEffect, useRef, useState } from "react";
 import type { Journal } from "./api";
 import { api, reasonOf } from "./api";
@@ -111,6 +112,7 @@ export default function ReceiptEditor({
     draft?.body.settlement?.amount ?? order.source.unpaid,
   );
   const [account, setAccount] = useState(draft?.body.settlement?.account ?? "");
+  const { confirm, actionDialog } = useActionDialog();
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   const [error, setError] = useState("");
@@ -205,6 +207,7 @@ export default function ReceiptEditor({
   const preview = pending?.preview;
   return (
     <section className="inventory-row">
+      {actionDialog}
       <h3>确认收货并入库</h3>
       {error && <Notice tone="error">{error}</Notice>}
       {optionsError && (
@@ -482,9 +485,9 @@ export default function ReceiptEditor({
                 onClick={() =>
                   void work(async () => {
                     if (
-                      !window.confirm(
+                      !(await confirm(
                         "核对并结束尚未写入的账单请求，返回本页重新填写？已保存的账单不会撤销；如账单已保存但尚未入库，需继续恢复原收货请求。",
-                      )
+                      ))
                     )
                       return;
                     const closed = await post<ReceiptPreview>(
@@ -523,7 +526,10 @@ export default function ReceiptEditor({
                     if (
                       !pending.uncertain &&
                       preview.financial &&
-                      !confirmEntryDates(preview.financial.items)
+                      !(await confirmEntryDates(
+                        preview.financial.items,
+                        confirm,
+                      ))
                     )
                       return;
                     persist({ ...pending, uncertain: true });

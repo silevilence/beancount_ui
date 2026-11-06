@@ -6,17 +6,10 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 import BatchEditor, { draftKey } from "./BatchEditor";
 import type { Journal } from "./api";
 import { shanghaiToday } from "./format";
-
-beforeEach(() =>
-  vi.stubGlobal(
-    "confirm",
-    vi.fn(() => true),
-  ),
-);
 
 const journal: Journal = {
   date: "2026-09-29",
@@ -449,6 +442,8 @@ it.each([false, true])(
       fireEvent.click(screen.getByText("整批预览并校验"));
       await screen.findByText("第 1 笔含零金额");
       fireEvent.click(screen.getByText("确认整批入账"));
+      if (screen.queryByRole("button", { name: "按这些日期入账" }))
+        fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
       if (offline) {
         await screen.findByText(/offline/);
         expect(
@@ -526,6 +521,8 @@ it("十笔草稿恢复、固定日期、整批请求重试保持身份", async (
   expect(screen.getAllByText("txs/2026/09.bean")).toHaveLength(2);
   expect(screen.getByText("第 1 笔含零金额")).toBeInTheDocument();
   fireEvent.click(screen.getByText("确认整批入账"));
+  if (screen.queryByRole("button", { name: "按这些日期入账" }))
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
   expect(await screen.findByText(/offline/)).toBeInTheDocument();
   failures.offline = false;
   fireEvent.click(screen.getByText("重试原批次保存"));
@@ -638,6 +635,8 @@ it("预览失败保留草稿，版本冲突允许重新预览，模板日期保�
   await screen.findByText("确认整批入账");
   failures.commit = true;
   fireEvent.click(screen.getByText("确认整批入账"));
+  if (screen.queryByRole("button", { name: "按这些日期入账" }))
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
   await screen.findByText(/预览后账本已修改/);
   fireEvent.click(screen.getByText("取消预览并修改"));
   fireEvent.click(screen.getByRole("button", { name: "工资 / 奖金" }));

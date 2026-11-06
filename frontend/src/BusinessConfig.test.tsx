@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 import Editor from "./Editor";
 import BatchEditor, { draftKey } from "./BatchEditor";
 import RecordFields from "./RecordFields";
@@ -25,13 +25,6 @@ import {
   type RecordTemplate,
 } from "./businessConfig";
 import type { Journal } from "./api";
-
-beforeEach(() =>
-  vi.stubGlobal(
-    "confirm",
-    vi.fn(() => true),
-  ),
-);
 
 const journal: Journal = {
   date: "2026-09-30",
@@ -348,6 +341,8 @@ it("单笔只呈现开放字段，提交模板值及配置版本，并支持当�
   expect(sent.raw).toBeUndefined();
   expect(sent.entry).toBeUndefined();
   fireEvent.click(screen.getByText("确认保存"));
+  if (screen.queryByRole("button", { name: "按这些日期入账" }))
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
   await screen.findByText("已保存到本地账本，可以继续记下一笔。");
   expect(screen.getByText("已按模板保存")).toBeInTheDocument();
   expect(screen.getByLabelText("交易日期")).toHaveValue("2026-09-29");

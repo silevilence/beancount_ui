@@ -10,7 +10,6 @@ it("全部作废的商品可更正，仍有有效收货的商品不可选", asyn
     json: async () => ({ message: "更正已记录" }),
   }));
   vi.stubGlobal("fetch", fetch);
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   const item = {
     ...blankItem(),
     name: "原商品",
@@ -54,6 +53,7 @@ it("全部作废的商品可更正，仍有有效收货的商品不可选", asyn
     target: { value: "原收货已作废并核实" },
   });
   fireEvent.click(screen.getByText("确认所选更正"));
+  fireEvent.click(screen.getByRole("button", { name: "确认继续" }));
   await screen.findByText("更正已记录");
   const sent = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
   expect(sent.replacement).toMatchObject({ id: item.id, name: "正确商品" });
@@ -66,7 +66,6 @@ it("取消剩余只提交显式更正，不触发退款", async () => {
     json: async () => ({ message: "更正已记录" }),
   }));
   vi.stubGlobal("fetch", fetch);
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   const order = {
     id: "cancel-test",
     source: { currency: "CNY" },
@@ -81,6 +80,7 @@ it("取消剩余只提交显式更正，不触发退款", async () => {
     target: { value: "未发货取消剩余" },
   });
   fireEvent.click(screen.getByText("确认所选更正"));
+  fireEvent.click(screen.getByRole("button", { name: "确认继续" }));
   expect(await screen.findByText("更正已记录")).toBeInTheDocument();
   expect(fetch).toHaveBeenCalledTimes(1);
   expect(fetch.mock.calls[0]?.[0]).toBe("/api/fulfillment/corrections");
@@ -99,7 +99,6 @@ it("作废实收前必须核对，失败保留原请求与历史", async () => {
           : { message: "已记录更正" },
   }));
   vi.stubGlobal("fetch", fetch);
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   const order = {
     id: "void-test",
     source: { currency: "CNY" },
@@ -124,10 +123,12 @@ it("作废实收前必须核对，失败保留原请求与历史", async () => {
   fireEvent.click(screen.getByText("先核对关联批次与后续操作"));
   await screen.findByText("批次已有消耗，需要人工核对");
   fireEvent.click(screen.getByText("确认所选更正"));
+  fireEvent.click(screen.getByRole("button", { name: "确认继续" }));
   await screen.findByText("撤销结果待确认");
   expect(screen.getByText("恢复原更正")).toBeInTheDocument();
   fail = false;
   fireEvent.click(screen.getByText("恢复原更正"));
+  fireEvent.click(screen.getByRole("button", { name: "确认继续" }));
   await screen.findByText("已记录更正");
   expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual(
     JSON.parse(String(fetch.mock.calls[2]?.[1]?.body)),
@@ -144,7 +145,6 @@ it("检查失败不允许作废；取消确认和关闭旧请求不写入", asyn
     json: async () => ({ detail: "日志不可用" }),
   }));
   vi.stubGlobal("fetch", fetch);
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   render(
     <OrderCorrections
       order={
@@ -159,11 +159,16 @@ it("检查失败不允许作废；取消确认和关闭旧请求不写入", asyn
     />,
   );
   fireEvent.click(screen.getByText("恢复原更正"));
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
   expect(fetch).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText("核对后关闭"));
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
   expect(screen.getByText("恢复原更正")).toBeInTheDocument();
-  confirm.mockReturnValue(true);
   fireEvent.click(screen.getByText("核对后关闭"));
+  fireEvent.click(screen.getByRole("button", { name: "确认继续" }));
+  await waitFor(() =>
+    expect(screen.queryByText("恢复原更正")).not.toBeInTheDocument(),
+  );
   fireEvent.change(screen.getByLabelText("更正类型"), {
     target: { value: "return_note" },
   });

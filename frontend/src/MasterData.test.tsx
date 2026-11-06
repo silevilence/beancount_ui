@@ -81,7 +81,6 @@ it("产品更新保留 ID，删除先确认，未知结果不发起新请求", a
       };
     }),
   );
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   const data = {
     instance_id: "one",
     products: [
@@ -104,6 +103,7 @@ it("产品更新保留 ID，删除先确认，未知结果不发起新请求", a
   });
   expect(screen.getByLabelText("名称")).toHaveValue("牛奶");
   fireEvent.click(screen.getByText("删除资料"));
+  fireEvent.click(screen.getByRole("button", { name: "确认继续" }));
   expect(await screen.findByText("引用限制，请核对")).toBeInTheDocument();
   fireEvent.click(screen.getByText("读取原请求结果"));
   await screen.findByText("引用限制，请核对");

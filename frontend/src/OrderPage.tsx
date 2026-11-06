@@ -1,3 +1,4 @@
+import { useActionDialog } from "./useActionDialog";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, reasonOf, type Journal } from "./api";
 import Orders, { type Order } from "./Orders";
@@ -111,6 +112,7 @@ export default function OrderPage({
   const [items, setItems] = useState<PurchaseItem[]>([blankItem()]);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const { confirm, actionDialog } = useActionDialog();
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   const pendingRef = useRef<HTMLElement>(null);
@@ -224,6 +226,7 @@ export default function OrderPage({
   }, [pending?.preview]);
   return (
     <section className="settings-page orders-page">
+      {actionDialog}
       <header className="page-heading">
         <p className="eyebrow">ORDERS / 购买与到货</p>
         <h1>订单与收货</h1>
@@ -295,9 +298,9 @@ export default function OrderPage({
                 onClick={() =>
                   void work(async () => {
                     if (
-                      !window.confirm(
+                      !(await confirm(
                         "先由后端核对原写入：已保存的保持不变，尚未写入的预览将取消。结束后可重新预览账务。",
-                      )
+                      ))
                     )
                       return;
                     const closed = await post<{ status: string }>(
@@ -332,7 +335,10 @@ export default function OrderPage({
                   void work(async () => {
                     if (
                       !pending.uncertain &&
-                      !confirmEntryDates(pending.preview!.items)
+                      !(await confirmEntryDates(
+                        pending.preview!.items,
+                        confirm,
+                      ))
                     )
                       return;
                     persist({ ...pending, uncertain: true });

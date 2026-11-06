@@ -73,7 +73,6 @@ it("列表显示备注并可搜索，多订单填写后统一预览提交且草�
             : result,
   }));
   vi.stubGlobal("fetch", fetch);
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   const journal = {
     identity: "batch-ui",
     revision: "a",
@@ -115,6 +114,8 @@ it("列表显示备注并可搜索，多订单填写后统一预览提交且草�
   expect(body.receipts[0].settlement).toBeNull();
   expect(body.receipts[1].settlement.account).toBe("Assets:Cash");
   fireEvent.click(screen.getByText("确认整批记账与入库"));
+  if (screen.queryByRole("button", { name: "按这些日期入账" }))
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
   await screen.findByText(/整批收货已保存/);
   expect(fetch.mock.calls.filter((c) => c[0].endsWith("/commit"))).toHaveLength(
     1,
@@ -258,7 +259,6 @@ it("独立页面保留收货和付款状态，结算预览后直接保存", asyn
       };
     }),
   );
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<OrderPage journal={journal} onChanged={async () => {}} />);
   expect(await screen.findByText("已付款")).toBeInTheDocument();
   expect(screen.getByText("尚无库存操作")).toBeInTheDocument();
@@ -268,6 +268,8 @@ it("独立页面保留收货和付款状态，结算预览后直接保存", asyn
   fireEvent.click(screen.getByText("结算与退款"));
   fireEvent.click(screen.getByText("预览账务处理"));
   fireEvent.click(await screen.findByText("确认保存账务"));
+  if (screen.queryByRole("button", { name: "按这些日期入账" }))
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
   expect(await screen.findByText("账务处理已保存")).toBeInTheDocument();
   expect(calls.filter((p) => p === "/api/commit")).toHaveLength(1);
   expect(calls.some((p) => p.includes("receive"))).toBe(false);
@@ -295,7 +297,6 @@ it("过期账务原请求经后端核对取消后可继续操作", async () => {
           : [],
   }));
   vi.stubGlobal("fetch", fetch);
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   render(
     <OrderPage
       journal={
@@ -309,8 +310,11 @@ it("过期账务原请求经后端核对取消后可继续操作", async () => {
     />,
   );
   fireEvent.click(screen.getByText("确认保存账务"));
+  if (screen.queryByRole("button", { name: "按这些日期入账" }))
+    fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
   await screen.findByText("预览后账本已修改");
   fireEvent.click(screen.getByText("核对并结束原账务请求"));
+  fireEvent.click(screen.getByRole("button", { name: "确认继续" }));
   await screen.findByText("原预览已取消，可重新处理账务");
   expect(localStorage.getItem(key)).toBeNull();
   fireEvent.click(screen.getByText("结算与退款"));

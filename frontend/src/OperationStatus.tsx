@@ -1,3 +1,4 @@
+import { useActionDialog } from "./useActionDialog";
 import { Chip } from "./ui";
 import { useState } from "react";
 import { post } from "./api";
@@ -54,32 +55,21 @@ export default function OperationStatus({
   onChanged?: (operation: StockOperation) => Promise<void>;
   title?: string;
 }) {
+  const { confirm, prompt, actionDialog } = useActionDialog();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  function requestReason(message: string) {
-    setError("");
-    const reason = window.prompt(message);
-    if (reason === null) return null;
-    if (reason.trim().length < 10) {
-      setError(
-        "核对依据至少 10 字，请补充远端日志、批次和原执行已停止的核对结果后重试。此次未提交。",
-      );
-      return null;
-    }
-    return reason.trim();
-  }
   async function resolve(id: string, applied: boolean) {
     if (busy) return;
-    const reason = requestReason(
+    const reason = await prompt(
       "请填写人工核对依据（至少 10 字），说明远端日志、批次及原执行已停止的证据：",
     );
     if (
       !reason ||
-      !window.confirm(
+      !(await confirm(
         applied
           ? "确认已经核实远端操作完整生效？这里只保存结论，不操作库存。"
           : "确认原执行已停止？这里只关闭追踪，不操作库存；已有库存需另行更正。",
-      )
+      ))
     )
       return;
     setBusy(true);
@@ -104,14 +94,14 @@ export default function OperationStatus({
     if (busy) return;
     let body: Record<string, unknown> = {};
     if (retry) {
-      const reason = requestReason(
+      const reason = await prompt(
         "仅在已核实原请求停止、没有任何入库时重发。查无日志本身不是证明；仍有重复入库风险。请填写核对依据（至少 10 字）：",
       );
       if (!reason) return;
       if (
-        !window.confirm(
+        !(await confirm(
           "确认已核实原执行不会继续，且没有产生库存写入？系统将再次查日志，再沿用原编号发送。",
-        )
+        ))
       )
         return;
       body = { reason, original_stopped: true, no_effect: true };
@@ -132,6 +122,7 @@ export default function OperationStatus({
   }
   return (
     <section>
+      {actionDialog}
       <h3>{title}</h3>
       {error && <Notice tone="error">{error}</Notice>}
       {!operations.length && <p className="muted">暂无库存操作。</p>}

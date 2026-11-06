@@ -142,3 +142,45 @@ it("批量预览可返回编辑，提交不确定时取消被拒绝仍保留原�
     localStorage.getItem("beancount-ui.receipt-batch.cancel"),
   ).not.toBeNull();
 });
+
+it("整批收货的非今日账单先在页面内确认，取消保留预览，重复点击只提交一次", async () => {
+  const preview = {
+    ...result,
+    financial: {
+      request_id: "finance",
+      items: [{ raw: '2000-01-01 * "历史结算"\n' }],
+      diffs: {},
+    },
+  };
+  const fetch = vi.fn(async (path: string) => ({
+    ok: true,
+    json: async () =>
+      path.endsWith("/commit") ? { ...preview, status: "done" } : preview,
+  }));
+  vi.stubGlobal("fetch", fetch);
+  const p = props("dates");
+  render(<ReceiptBatch {...p} />);
+  fireEvent.click(screen.getByText("批量预览收货与入库"));
+  const save = await screen.findByRole("button", {
+    name: "确认整批记账与入库",
+  });
+  const before = localStorage.getItem("beancount-ui.receipt-batch.dates");
+  fireEvent.click(save);
+  expect(
+    screen.getByRole("dialog", { name: "确认入账日期" }),
+  ).toHaveTextContent("2000-01-01：1 笔");
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  await waitFor(() => expect(save).toBeEnabled());
+  expect(localStorage.getItem("beancount-ui.receipt-batch.dates")).toBe(before);
+  expect(
+    fetch.mock.calls.filter(([path]) => path.endsWith("/commit")),
+  ).toHaveLength(0);
+  fireEvent.click(save);
+  fireEvent.click(save);
+  fireEvent.click(screen.getByRole("button", { name: "按这些日期入账" }));
+  await waitFor(() => expect(p.onChanged).toHaveBeenCalledOnce());
+  expect(
+    fetch.mock.calls.filter(([path]) => path.endsWith("/commit")),
+  ).toHaveLength(1);
+  expect(window.confirm).not.toHaveBeenCalled();
+});

@@ -433,10 +433,6 @@ it.each([true, false])(
         }),
       })),
     );
-    vi.spyOn(window, "prompt").mockReturnValue(
-      "已经核对远端完整日志与批次并停止原执行",
-    );
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(
       <StockActionEditor
         product={product}
@@ -459,6 +455,11 @@ it.each([true, false])(
     fireEvent.click(
       screen.getByText(applied ? "记录人工核实成功" : "人工核对后停止"),
     );
+    fireEvent.change(screen.getByLabelText("核对依据"), {
+      target: { value: "已核对远端完整日志与批次并确认原执行停止" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认继续" }));
     expect(
       await screen.findByText(applied ? "已人工核实" : "已停止操作"),
     ).toBeInTheDocument();
