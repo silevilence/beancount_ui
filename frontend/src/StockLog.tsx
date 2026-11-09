@@ -18,15 +18,18 @@ const actions: Record<string, string> = {
   "stock-edit-new": "编辑后",
 };
 export default function StockLog({
-  products,
+  product,
 }: {
-  products: { id: number; name: string }[];
+  product: { id: number; name: string };
 }) {
-  const [product, setProduct] = useState("");
+  return <ProductLog key={product.id} product={product} />;
+}
+
+function ProductLog({ product }: { product: { id: number; name: string } }) {
   const [cursors, setCursors] = useState<(number | null)[]>([null]);
   const before = cursors[cursors.length - 1];
   const params = new URLSearchParams();
-  if (product) params.set("product_id", product);
+  params.set("product_id", String(product.id));
   if (before !== null) params.set("before", String(before));
   const resource = useReportResource<LogPage>(`/grocy/stock-log?${params}`, "");
   const page = resource.data;
@@ -35,7 +38,7 @@ export default function StockLog({
   return (
     <section className="panel stock-log" aria-label="服务端库存日志">
       <div className="stats-panel-head">
-        <h2>服务端库存日志</h2>
+        <h3>{product.name} · 库存日志</h3>
         <button
           className="ghost"
           disabled={resource.loading}
@@ -48,26 +51,10 @@ export default function StockLog({
         </button>
       </div>
       <p className="muted">
-        包含 Grocy 和其他客户端产生的全部库存操作，按日志编号倒序，每页 100
+        仅显示该产品在 Grocy
+        和其他客户端产生的库存操作，不含子产品。按日志编号倒序，每页 100
         条。时间按服务端原值显示；历史范围以服务端保留的数据为准。
       </p>
-      <label>
-        日志产品
-        <select
-          value={product}
-          onChange={(e) => {
-            setProduct(e.target.value);
-            setCursors([null]);
-          }}
-        >
-          <option value="">全部产品</option>
-          {products.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </label>
       {resource.error && (
         <Notice tone="error">
           {resource.error}
@@ -90,11 +77,9 @@ export default function StockLog({
             <table>
               <thead>
                 <tr>
-                  {["编号 / 时间", "产品", "动作", "数量", "状态", "详情"].map(
-                    (s) => (
-                      <th key={s}>{s}</th>
-                    ),
-                  )}
+                  {["编号 / 时间", "动作", "数量", "状态", "详情"].map((s) => (
+                    <th key={s}>{s}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -106,11 +91,6 @@ export default function StockLog({
                       {display(
                         row.transaction_date || row.row_created_timestamp,
                       )}
-                    </td>
-                    <td>
-                      {products.find(
-                        (p) => String(p.id) === String(row.product_id),
-                      )?.name || `产品 #${display(row.product_id)}`}
                     </td>
                     <td>
                       {actions[String(row.transaction_type)] ||

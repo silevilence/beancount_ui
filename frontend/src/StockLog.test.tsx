@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import StockLog from "./StockLog";
 
-it("服务端日志可翻页、筛选、刷新并展开完整字段", async () => {
+it("产品日志可翻页、刷新并展开完整字段，切换产品从首页读取", async () => {
   const fetcher = vi.fn(async (input: string) => {
     const params = new URL(input, "http://local").searchParams;
     return {
@@ -25,8 +25,9 @@ it("服务端日志可翻页、筛选、刷新并展开完整字段", async () =
     };
   });
   vi.stubGlobal("fetch", fetcher);
-  render(<StockLog products={[{ id: 1, name: "牛奶" }]} />);
+  const view = render(<StockLog product={{ id: 1, name: "牛奶" }} />);
   await screen.findByText("已撤销");
+  expect(fetcher.mock.calls.at(-1)![0]).toContain("product_id=1");
   expect(screen.getByRole("cell", { name: "0.12345678" })).toBeInTheDocument();
   fireEvent.click(screen.getByText("完整字段 #5"));
   expect(screen.getByText("Grocy 外部入库")).toBeInTheDocument();
@@ -36,15 +37,22 @@ it("服务端日志可翻页、筛选、刷新并展开完整字段", async () =
   expect(screen.getByRole("button", { name: "下一页日志" })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "上一页日志" }));
   await screen.findByText("完整字段 #5");
-  fireEvent.change(screen.getByLabelText("日志产品"), {
-    target: { value: "1" },
-  });
-  await waitFor(() =>
-    expect(fetcher.mock.calls.at(-1)![0]).toContain("product_id=1"),
-  );
-  await screen.findByText("完整字段 #5");
+  fireEvent.click(screen.getByRole("button", { name: "下一页日志" }));
+  await screen.findByText("完整字段 #4");
   fireEvent.click(screen.getByRole("button", { name: "刷新日志" }));
-  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(5));
+  await screen.findByText("完整字段 #5");
+  fireEvent.click(screen.getByRole("button", { name: "下一页日志" }));
+  await screen.findByText("完整字段 #4");
+  view.rerender(<StockLog product={{ id: 2, name: "面包" }} />);
+  await waitFor(() =>
+    expect(fetcher.mock.calls.at(-1)![0]).toContain("product_id=2"),
+  );
+  expect(fetcher.mock.calls.at(-1)![0]).not.toContain("before=");
+  expect(screen.getByRole("button", { name: "上一页日志" })).toBeDisabled();
+  await screen.findByText("完整字段 #5");
+  const calls = fetcher.mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "刷新日志" }));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(calls + 1));
 });
 
 it("日志错误可重试，空结果与未知动作仍可查看", async () => {
@@ -60,7 +68,7 @@ it("日志错误可重试，空结果与未知动作仍可查看", async () => {
           : { detail: "服务端无法连接" },
     })),
   );
-  render(<StockLog products={[]} />);
+  render(<StockLog product={{ id: 2, name: "面包" }} />);
   await screen.findByText("服务端无法连接");
   ok = true;
   fireEvent.click(screen.getByRole("button", { name: "刷新日志" }));
@@ -76,6 +84,8 @@ it("日志错误可重试，空结果与未知动作仍可查看", async () => {
   ];
   fireEvent.click(screen.getByRole("button", { name: "刷新日志" }));
   await screen.findByRole("cell", { name: "custom-action" });
-  expect(screen.getByText("产品 #2")).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "面包 · 库存日志" }),
+  ).toBeInTheDocument();
   expect(screen.getByText("撤销记录")).toBeInTheDocument();
 });

@@ -26,6 +26,19 @@ export interface PostingEntry {
   postings: PostingLine[];
 }
 export interface Transaction {
+  metadata?: Record<string, string>;
+  related_order?: {
+    key: string;
+    date: string;
+    payee: string;
+    narration: string;
+    note: string;
+    total: string;
+    currency: string;
+    file: string;
+    line: number;
+    raw: string;
+  } | null;
   id: string;
   date: string;
   payee: string;

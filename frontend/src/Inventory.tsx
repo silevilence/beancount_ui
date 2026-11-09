@@ -271,10 +271,6 @@ export default function Inventory({
         </button>
         {data && <small> · 更新于 {stampOf(data.updated_at)}</small>}
       </header>
-      <button className="ghost" aria-expanded={showLog} onClick={() => setShowLog(!showLog)}>
-        {showLog ? "收起服务端日志" : "查看服务端库存日志"}
-      </button>
-      {showLog && <StockLog products={data?.products || []} />}
       {error && (
         <Notice tone="error">
           {error}
@@ -429,6 +425,23 @@ export default function Inventory({
             tabIndex={0}
           >
             <h2>{selected?.name ?? "批次详情"}</h2>
+            {selected && (
+              <>
+                <button
+                  className="ghost"
+                  aria-expanded={showLog}
+                  aria-controls="product-stock-log"
+                  onClick={() => setShowLog(!showLog)}
+                >
+                  {showLog ? "收起库存日志" : "查看该产品库存日志"}
+                </button>
+                {showLog && (
+                  <div id="product-stock-log">
+                    <StockLog product={selected} />
+                  </div>
+                )}
+              </>
+            )}
             {!selected && (
               <p className="muted">
                 选择产品，查看每个位置的数量、开封与保质期。

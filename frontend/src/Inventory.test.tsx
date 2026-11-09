@@ -1,6 +1,69 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import Inventory, { inventoryTree, type InventoryData } from "./Inventory";
+
+it("从产品详情打开日志，切换产品重置日志分页且不读取全部产品日志", async () => {
+  const products = [
+    { id: 1, name: "牛奶", qu_id_stock: 1 },
+    { id: 2, name: "面包", qu_id_stock: 1 },
+  ];
+  const fetcher = vi.fn(async (path: string) => ({
+    ok: true,
+    json: async () => {
+      if (path.includes("/stock-log?")) {
+        const params = new URL(path, "http://local").searchParams;
+        return {
+          entries: [
+            {
+              id: params.has("before") ? 9 : 10,
+              transaction_type: "purchase",
+              amount: params.get("product_id"),
+            },
+          ],
+          next_before: params.has("before") ? null : 10,
+          updated_at: "2026-11-09T00:00:00Z",
+        };
+      }
+      if (path.endsWith("/operations")) return [];
+      if (path.includes("/products/")) return { details: {}, entries: [] };
+      return {
+        products,
+        stock: products.map((p) => ({ product_id: p.id, amount: "1" })),
+        units: [],
+        locations: [],
+        alerts: {},
+      };
+    },
+  }));
+  vi.stubGlobal("fetch", fetcher);
+  render(<Inventory />);
+  fireEvent.click(await screen.findByRole("button", { name: "牛奶" }));
+  expect(fetcher.mock.calls.some(([p]) => p.includes("stock-log"))).toBe(false);
+  const detail = within(
+    screen.getByRole("region", { name: "库存操作与批次详情" }),
+  );
+  fireEvent.click(detail.getByRole("button", { name: "查看该产品库存日志" }));
+  await detail.findByText("完整字段 #10");
+  fireEvent.click(detail.getByRole("button", { name: "下一页日志" }));
+  await detail.findByText("完整字段 #9");
+  fireEvent.click(screen.getByRole("button", { name: "面包" }));
+  await detail.findByText("完整字段 #10");
+  expect(
+    detail.getByRole("heading", { name: "面包 · 库存日志" }),
+  ).toBeInTheDocument();
+  expect(detail.queryByText("完整字段 #9")).not.toBeInTheDocument();
+  expect(
+    fetcher.mock.calls.filter(([p]) => p.includes("stock-log")).map(([p]) => p),
+  ).toEqual([
+    "/api/grocy/stock-log?product_id=1",
+    "/api/grocy/stock-log?product_id=1&before=10",
+    "/api/grocy/stock-log?product_id=2",
+  ]);
+  fireEvent.click(detail.getByRole("button", { name: "收起库存日志" }));
+  expect(
+    detail.queryByRole("region", { name: "服务端库存日志" }),
+  ).not.toBeInTheDocument();
+});
 
 it.each([true, false])(
   "人工结论保存后即使库存刷新失败仍显示新状态 applied=%s",

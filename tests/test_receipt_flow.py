@@ -1,9 +1,11 @@
+from datetime import date
 from uuid import uuid4
 
 import pytest
 from beancount_ui.fulfillment import Fulfillment
 from beancount_ui.fulfillment_models import ReceiptInput
 from beancount_ui.grocy import Grocy, GrocyError
+from beancount_ui.query import daily_view
 from beancount_ui.receipt_flow import ReceiptFlow
 from beancount_ui.writer import Writer
 from test_fulfillment import receipt
@@ -69,6 +71,9 @@ def test_receive_and_settle_then_retry_never_duplicates(ledger):
     assert ledger.refresh().revision == after
     order = Fulfillment(writer).list()[0]
     assert order["receipt_state"] == "received" and order["payment_state"] == "paid"
+    event = daily_view(ledger, date(2026, 9, 30), narration="订单付款结算")["transactions"][0]
+    assert event["related_order"]["key"] == order["id"]
+    assert event["related_order"]["raw"] == order["source"]["raw"]
 
 
 def test_settlement_failure_does_not_receive_or_enqueue_stock(ledger):

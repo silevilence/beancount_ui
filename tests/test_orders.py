@@ -114,6 +114,47 @@ def test_settlement_uses_selected_processing_date(ledger):
     )
     assert settlement["date"] == "2026-10-02"
     assert settlement["raw"].startswith("2026-10-02")
+    # The original purchase is outside both the visible day and narration filter.
+    view = daily_view(ledger, date(2026, 10, 2), narration="订单付款结算")
+    source = view["transactions"][0]["related_order"]
+    assert source["key"] == row["key"]
+    assert source["raw"] == row["raw"]
+    assert source["date"] == "2026-09-30"
+    assert source["note"] == "备注"
+    assert source["total"] == "100"
+
+
+def test_journal_order_links_distinguish_equal_orders_and_refunds(ledger):
+    first = purchase(ledger)
+    second = purchase(ledger)
+    process(ledger, first, "settle", "50")
+    process(ledger, second, "settle", "50")
+    process(ledger, second, "refund_paid", "10")
+    view = daily_view(ledger, date(2026, 9, 30))
+    events = [r for r in view["transactions"] if "order-ref" in r["metadata"]]
+    assert len(events) == 3
+    for event in events:
+        expected = first if event["metadata"]["order-ref"] == first["key"] else second
+        assert event["related_order"]["key"] == expected["key"]
+        assert event["related_order"]["raw"] == expected["raw"]
+    # Enrichment does not mutate the snapshot's cached transaction records.
+    assert all("related_order" not in r for r in transactions(ledger.refresh()))
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_journal_does_not_guess_missing_or_ambiguous_order_links(ledger, duplicate):
+    source = purchase(ledger)
+    process(ledger, source, "settle", "10")
+    path = ledger.settings.ledger_dir / source["file"]
+    content = path.read_text(encoding="utf-8")
+    if duplicate:
+        content += "\n" + source["raw"]
+    else:
+        content = content.replace(source["raw"], "")
+    path.write_text(content, encoding="utf-8")
+    view = daily_view(ledger, date(2026, 9, 30), narration="订单付款结算")
+    assert not view["errors"]
+    assert view["transactions"][0]["related_order"] is None
 
 
 def test_unpaid_refund_and_direct_paid_refund(ledger):

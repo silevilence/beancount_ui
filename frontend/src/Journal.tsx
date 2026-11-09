@@ -93,6 +93,31 @@ function EntryRow({
             ))}
           </tbody>
         </table>
+        {row.related_order ? (
+          <div className="entry-origin">
+            <p>
+              原购买：{row.related_order.payee} · {row.related_order.narration}
+            </p>
+            <p className="muted small">
+              {row.related_order.date} ·{" "}
+              {money(row.related_order.total, row.related_order.currency)}
+            </p>
+            {row.related_order.note && (
+              <p className="order-note">{row.related_order.note}</p>
+            )}
+            <details className="raw">
+              <summary>查看原始购买记录</summary>
+              <span className="src">
+                {row.related_order.file}:{row.related_order.line}
+              </span>
+              <pre>{row.related_order.raw}</pre>
+            </details>
+          </div>
+        ) : row.metadata?.["order-ref"] ? (
+          <p className="muted small" role="status">
+            无法唯一定位原购买记录，请核对关联编号：{row.metadata["order-ref"]}
+          </p>
+        ) : null}
         <div className="entry-meta">
           <span className="src">
             {row.file}:{row.line}
@@ -134,7 +159,10 @@ function EntryRow({
       </div>
       <div className="entry-figure">
         <span className="figure-label">{AMOUNT_LABEL[row.kind] ?? "金额"}</span>
-        <Amounts lines={transactionTotals(row.kind, row.postings)} tone={tone} />
+        <Amounts
+          lines={transactionTotals(row.kind, row.postings)}
+          tone={tone}
+        />
       </div>
     </article>
   );

@@ -620,8 +620,20 @@ export default function OrderPage({
                   <p className="muted">选择订单查看商品、实收数量和历史。</p>
                 ) : (
                   <>
+                    <p>
+                      {detail.source.payee} · {detail.source.narration}
+                    </p>
+                    <p className="muted small">
+                      原购买：{detail.source.date} · {detail.source.total}{" "}
+                      {detail.source.currency}
+                    </p>
                     <details>
                       <summary>查看原始购买记录</summary>
+                      {detail.source.file && (
+                        <span className="src">
+                          {detail.source.file}:{detail.source.line}
+                        </span>
+                      )}
                       <pre className="changes">{detail.source.raw}</pre>
                     </details>
                     {detail.items.map((i) => (

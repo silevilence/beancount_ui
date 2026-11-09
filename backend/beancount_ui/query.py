@@ -129,6 +129,48 @@ def daily_view(ledger: Ledger, day: date | None = None, payee="", narration="", 
         and narration.casefold() in row["narration"].casefold()
         and any(account.casefold() in p["account"].casefold() for p in row["postings"])
     ]
+    references = {
+        row["metadata"]["order-ref"] for row in filtered if "order-ref" in row["metadata"]
+    }
+    if references:
+        # Resolve against the whole ledger, not the selected day or visible filters.
+        from .orders import orders
+
+        sources = defaultdict(list)
+        for order in orders(snapshot):
+            if order["key"] in references:
+                sources[order["key"]].append(order)
+        linked = []
+        for row in filtered:
+            reference = row["metadata"].get("order-ref")
+            if reference is None:
+                linked.append(row)
+                continue
+            matches = sources[reference]
+            source = matches[0] if len(matches) == 1 else None
+            linked.append(
+                row
+                | {
+                    "related_order": {
+                        key: source[key]
+                        for key in (
+                            "key",
+                            "date",
+                            "payee",
+                            "narration",
+                            "note",
+                            "total",
+                            "currency",
+                            "file",
+                            "line",
+                            "raw",
+                        )
+                    }
+                    if source
+                    else None,
+                }
+            )
+        filtered = linked
     return {
         "identity": hashlib.sha256(str(ledger.settings.ledger_dir.resolve()).encode()).hexdigest(),
         "date": str(day),
