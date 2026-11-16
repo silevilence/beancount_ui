@@ -1,5 +1,6 @@
 import AccountSelect from "./AccountSelect";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ManagedOrder } from "./OrderPage";
 import { api, type Journal } from "./api";
 import { Chip, Empty, Notice, Segmented, Toolbar } from "./ui";
 import { money, ORDER_KIND } from "./format";
@@ -37,7 +38,8 @@ const KIND_OPTIONS = KIND_ORDER.map((kind) => ({
 
 /** 每种处理方式的一句话语义，帮助用户确认入账方向。 */
 const KIND_NOTE: Record<string, string> = {
-  settle: "结算只结转负债、不再生成消费。",
+  settle:
+    "单独付款只结转负债，不会确认实物收货或更新库存。实物已经到货时，请使用「确认收货」，按付款状态一并处理。",
   refund_paid: "已付款退款冲回原费用。",
   refund_unpaid: "未结算冲回减少原待付款负债。",
 };
@@ -48,12 +50,16 @@ export default function Orders({
   accounts,
   onAdd,
   actionLabel = "将处理加入草稿",
+  receiptOrders = [],
+  onReceive,
 }: {
   date: string;
   onDateChange: (day: string) => void;
   accounts: Journal["accounts"];
   onAdd: (item: DraftItem) => boolean | void;
   actionLabel?: string;
+  receiptOrders?: ManagedOrder[];
+  onReceive?: (id: string) => void;
 }) {
   const [rows, setRows] = useState<Order[]>([]);
   const [source, setSource] = useState("");
@@ -73,6 +79,19 @@ export default function Orders({
   const [filterAccount, setFilterAccount] = useState("");
   const [limit, setLimit] = useState(20);
   const row = rows.find((r) => r.id === source);
+  const formRef = useRef<HTMLFormElement>(null);
+  const managed =
+    row &&
+    receiptOrders.find((r) => r.id === row.key || r.source.id === row.id);
+  const kindOptions = KIND_OPTIONS.filter(
+    (option) =>
+      option.value !== "settle" ||
+      !row ||
+      (row.mode !== "paid" && Number(row.unpaid) > 0),
+  );
+  useEffect(() => {
+    if (source) formRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [source]);
   const funding = accounts.filter((a) => /^(Assets|Liabilities):/.test(a.name));
 
   async function refresh() {
@@ -98,7 +117,11 @@ export default function Orders({
   /** 选中订单：金额回落到未结清金额，类别回落到第一条原费用。 */
   function pick(next: Order) {
     setSource(next.id);
-    setAmount(next.mode === "paid" ? "" : next.unpaid);
+    const canSettle = next.mode !== "paid" && Number(next.unpaid) > 0;
+    setKind(canSettle ? "settle" : "refund_paid");
+    setAmount(canSettle ? next.unpaid : "");
+    setAccount("");
+    setNote("");
     setCategory(Object.keys(next.categories)[0] ?? "");
     setConfirmed(false);
   }
@@ -172,9 +195,9 @@ export default function Orders({
   return (
     <section className="file-card">
       <div className="work-head">
-        <h3>订单结算 / 退款</h3>
+        <h3>单独付款 / 退款</h3>
         <p>
-          先从历史订单里认领这一笔，再结算付款、退款或冲回负债。金额与账户始终由你核对，历史匹配不会自动入账。
+          用于提前付款、部分结算、退款或冲回负债。这里只处理账务，不改变收货和库存；商品到货请用「确认收货」。先选择原购买记录，再核对金额和账户。
         </p>
       </div>
       <div className="form-grid order-filters" aria-label="订单筛选">
@@ -297,7 +320,7 @@ export default function Orders({
               key={r.id}
               type="button"
               className="order-row"
-              aria-selected={r.id === source}
+              aria-pressed={r.id === source}
               onClick={() => pick(r)}
             >
               <span className="order-main">
@@ -348,6 +371,7 @@ export default function Orders({
         </button>
       )}
       <form
+        ref={formRef}
         onSubmit={(e) => {
           e.preventDefault();
           add();
@@ -380,6 +404,23 @@ export default function Orders({
                 </details>
               )}
             </div>
+            {managed &&
+              onReceive &&
+              ["pending", "partial"].includes(managed.receipt_state) && (
+                <Notice
+                  action={
+                    <button
+                      type="button"
+                      className="ghost small"
+                      onClick={() => onReceive(managed.id)}
+                    >
+                      去确认收货
+                    </button>
+                  }
+                >
+                  这笔订单还有商品待收货。实际到货后可在收货流程中一并处理待付款。
+                </Notice>
+              )}
             <p className="muted small">
               {KIND_NOTE[kind] ?? ""}
               赔偿等特殊收入请用高级分录。
@@ -402,9 +443,10 @@ export default function Orders({
                 <Segmented
                   label="处理方式"
                   value={kind}
-                  options={KIND_OPTIONS}
+                  options={kindOptions}
                   onChange={(value) => {
                     setKind(value);
+                    setAmount(value === "refund_paid" ? "" : row.unpaid);
                     setConfirmed(false);
                   }}
                 />

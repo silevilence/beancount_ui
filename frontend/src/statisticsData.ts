@@ -3,7 +3,15 @@ import { api, reasonOf, type Diagnostic } from "./api";
 import { shiftDay } from "./format";
 
 export type Grain = "day" | "week" | "month";
-export type Preset = "week" | "month" | "year" | "recent" | "custom";
+export type Preset =
+  | "week"
+  | "lastWeek"
+  | "month"
+  | "lastMonth"
+  | "year"
+  | "lastYear"
+  | "recent"
+  | "custom";
 export interface Totals {
   income: string;
   expenses: string;
@@ -61,6 +69,11 @@ export interface ReportDetails extends ReportStatus {
 }
 
 export function presetRange(preset: Exclude<Preset, "custom">, today: string) {
+  if (preset === "lastWeek") return presetRange("week", shiftDay(today, -7));
+  if (preset === "lastMonth")
+    return presetRange("month", shiftDay(`${today.slice(0, 7)}-01`, -1));
+  if (preset === "lastYear")
+    return presetRange("year", `${Number(today.slice(0, 4)) - 1}-01-01`);
   if (preset === "recent") return { start: shiftDay(today, -29), end: today };
   if (preset === "year")
     return {

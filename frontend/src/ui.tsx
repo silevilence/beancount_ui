@@ -11,7 +11,7 @@ export function Notice({
 }) {
   return (
     <div className={`notice ${tone}`} role={tone === "error" ? "alert" : "status"}>
-      <p>{children}</p>
+      <div className="notice-content">{children}</div>
       {action && <div className="notice-action">{action}</div>}
     </div>
   );

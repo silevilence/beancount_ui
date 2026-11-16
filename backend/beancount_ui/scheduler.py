@@ -77,6 +77,7 @@ class Scheduler:
             self.reason = state.get("schedule_reason", "等待下次检查")
             return
         interval, quiet = state.get("interval", 300), state.get("quiet", 60)
+        backup_started = False
         try:
             sync.writer.recover()
             revision = digest(read_files(sync.root))
@@ -95,12 +96,24 @@ class Scheduler:
             plan, _ = sync.plan()
             if not plan["files"] and sync.unpushed() == 0:
                 self.reason = "无账本变更，本轮跳过"
+                if state.get("schedule_reason") != self.reason:
+                    sync.record_event("check", "automatic", "skipped", self.reason)
                 sync.save(next_check=now + interval, schedule_reason=self.reason, failures=0)
                 return
-            sync.backup(BackupInput(revision=plan["revision"], head=plan["head"]))
+            backup_started = True
+            sync.backup(
+                BackupInput(revision=plan["revision"], head=plan["head"]), source="automatic"
+            )
             self.reason = "自动备份成功"
             sync.save(next_check=now + interval, failures=0, schedule_reason=self.reason)
         except (LedgerError, OSError) as exc:
+            if not backup_started:
+                sync.record_event(
+                    "check",
+                    "automatic",
+                    "failed",
+                    "自动备份检查失败；请核对账本校验、仓库状态及文件权限。",
+                )
             failures = min(state.get("failures", 0) + 1, 10)
             delay = min(3600, max(interval, 5) * 2 ** (failures - 1))
             self.reason = (

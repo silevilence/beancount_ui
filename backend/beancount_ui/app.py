@@ -281,6 +281,10 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
     def sync_schedule(request: ScheduleInput):
         return configure(get_sync(), request)
 
+    @app.get("/api/sync/history")
+    def sync_history():
+        return get_sync().history()
+
     @app.post("/api/sync/proxy")
     def sync_proxy(request: ProxyInput):
         return get_sync().configure_proxy(request)

@@ -15,6 +15,7 @@ import PurchaseItems, { blankItem, type PurchaseItem } from "./PurchaseItems";
 import { post } from "./api";
 import { requestId } from "./requestId";
 import { shanghaiToday } from "./format";
+import { presetRange } from "./statisticsData";
 import { confirmEntryDates } from "./confirmEntryDates";
 import Diff from "./Diff";
 import { Chip, Empty, Notice, Segmented } from "./ui";
@@ -99,8 +100,10 @@ export default function OrderPage({
   const [selected, setSelected] = useState(initialOrder || "");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState(initialOrder ? "all" : "pending");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [from, setFrom] = useState(() =>
+    initialOrder ? "" : presetRange("recent", shanghaiToday()).start,
+  );
+  const [to, setTo] = useState(() => (initialOrder ? "" : shanghaiToday()));
   const [tab, setTab] = useState("receipts");
   const [date, setDate] = useState(shanghaiToday);
   const [claim, setClaim] = useState("");
@@ -114,9 +117,13 @@ export default function OrderPage({
   const [message, setMessage] = useState("");
   const { confirm, actionDialog } = useActionDialog();
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const refreshId = useRef(0);
   const running = useRef(false);
   const pendingRef = useRef<HTMLElement>(null);
-  const detail = rows.find((r) => r.id === selected);
+  const detailRef = useRef<HTMLElement>(null);
+  const listRef = useRef<HTMLElement>(null);
+  const batchRef = useRef<HTMLDivElement>(null);
   const candidate = candidates.find((c) => c.id === claim);
   const claimCandidates = useMemo(() => {
     const managed = new Set(rows.map((r) => r.id));
@@ -145,36 +152,74 @@ export default function OrderPage({
     currentClaimPage * claimPageSize,
     (currentClaimPage + 1) * claimPageSize,
   );
-  const visibleOrders = rows.filter(
+  const visibleOrders = rows
+    .filter(
+      (r) =>
+        (!from || r.source.date >= from) &&
+        (!to || r.source.date <= to) &&
+        `${r.source.payee} ${r.source.narration} ${r.source.note ?? ""} ${r.id}`
+          .toLocaleLowerCase()
+          .includes(query.trim().toLocaleLowerCase()) &&
+        (filter === "all" ||
+          (filter === "pending"
+            ? ["pending", "partial"].includes(r.receipt_state)
+            : filter === "sync"
+              ? r.operations?.some((o) => needsSyncReview(o.status))
+              : r.receipt_state === filter)),
+    )
+    .sort(
+      (a, b) =>
+        b.source.date.localeCompare(a.source.date) || a.id.localeCompare(b.id),
+    );
+  const detail = visibleOrders.find((r) => r.id === selected);
+  const invalidDates = !!from && !!to && from > to;
+  const olderPending = rows.filter(
     (r) =>
-      (!from || r.source.date >= from) &&
-      (!to || r.source.date <= to) &&
-      `${r.source.payee} ${r.source.narration} ${r.source.note ?? ""} ${r.id}`
-        .toLocaleLowerCase()
-        .includes(query.toLocaleLowerCase()) &&
-      (filter === "all" ||
-        (filter === "pending"
-          ? ["pending", "partial"].includes(r.receipt_state)
-          : filter === "sync"
-            ? r.operations?.some((o) => needsSyncReview(o.status))
-            : r.receipt_state === filter)),
-  );
+      from &&
+      r.source.date < from &&
+      ["pending", "partial"].includes(r.receipt_state),
+  ).length;
+  function openReceipt(id: string) {
+    setQuery("");
+    setFilter("all");
+    setFrom("");
+    setTo("");
+    setSelected(id);
+    setTab("receipts");
+    if (id === selected && tab === "receipts") revealDetail();
+  }
+  function revealDetail() {
+    if (detailRef.current) detailRef.current.scrollTop = 0;
+    if (window.matchMedia?.("(max-width: 760px)").matches) {
+      detailRef.current?.scrollIntoView?.({ block: "start" });
+      detailRef.current?.focus({ preventScroll: true });
+    }
+  }
+  useEffect(() => {
+    if (tab !== "receipts" || !detail) return;
+    revealDetail();
+  }, [selected, tab, !!detail]);
   function persist(p: Pending | null) {
     if (p) localStorage.setItem(key, JSON.stringify(p));
     else localStorage.removeItem(key);
     setPending(p as Pending);
   }
   async function refresh() {
+    const id = ++refreshId.current;
+    setLoading(true);
     try {
       const [r, c] = await Promise.all([
         api<ManagedOrder[]>("/fulfillment/orders"),
         api<Order[]>("/orders"),
       ]);
+      if (id !== refreshId.current) return;
       setRows(r);
       setCandidates(c);
       setError("");
     } catch (e) {
-      setError(reasonOf(e));
+      if (id === refreshId.current) setError(reasonOf(e));
+    } finally {
+      if (id === refreshId.current) setLoading(false);
     }
   }
   useEffect(() => {
@@ -239,37 +284,35 @@ export default function OrderPage({
             value={tab}
             options={[
               { value: "receipts", label: "确认收货" },
-              { value: "finance", label: "结算与退款" },
+              { value: "finance", label: "单独付款 / 退款" },
               { value: "claim", label: "认领历史购买" },
             ]}
             onChange={setTab}
           />
           <button
             className="ghost"
-            disabled={busy}
+            disabled={busy || loading}
             onClick={() => void refresh()}
           >
-            刷新订单
+            {loading ? "正在读取订单…" : "刷新订单"}
           </button>
         </div>
       </header>
       {error && <Notice tone="error">{error}</Notice>}
       {message && <Notice>{message}</Notice>}
-      <ReceiptBatch
-        journal={journal}
-        drafts={receiptDrafts}
-        onDraftsChange={saveReceiptDrafts}
-        onEdit={(id) => {
-          setSelected(id);
-          setTab("receipts");
-          setFilter("all");
-        }}
-        onChanged={async () => {
-          await refresh();
-          await onChanged();
-        }}
-        onLockChange={setBatchLocked}
-      />
+      <div ref={batchRef}>
+        <ReceiptBatch
+          journal={journal}
+          drafts={receiptDrafts}
+          onDraftsChange={saveReceiptDrafts}
+          onEdit={openReceipt}
+          onChanged={async () => {
+            await refresh();
+            await onChanged();
+          }}
+          onLockChange={setBatchLocked}
+        />
+      </div>
       {pending && (
         <section className="panel card" ref={pendingRef}>
           <h2>确认账务处理</h2>
@@ -376,6 +419,8 @@ export default function OrderPage({
             accounts={journal.accounts}
             onAdd={financial}
             actionLabel="预览账务处理"
+            receiptOrders={rows}
+            onReceive={openReceipt}
           />
         )}
         {tab === "claim" && (
@@ -560,10 +605,40 @@ export default function OrderPage({
               <button
                 className="ghost small"
                 onClick={() => {
-                  setQuery("");
-                  setFilter(initialOrder ? "all" : "pending");
+                  const range = presetRange("recent", shanghaiToday());
+                  setFrom(range.start);
+                  setTo(range.end);
+                }}
+              >
+                近 30 天
+              </button>
+              <button
+                className="ghost small"
+                onClick={() => {
+                  const range = presetRange("lastMonth", shanghaiToday());
+                  setFrom(range.start);
+                  setTo(range.end);
+                }}
+              >
+                上月
+              </button>
+              <button
+                className="ghost small"
+                onClick={() => {
                   setFrom("");
                   setTo("");
+                }}
+              >
+                全部日期
+              </button>
+              <button
+                className="ghost small"
+                onClick={() => {
+                  setQuery("");
+                  setFilter("pending");
+                  const range = presetRange("recent", shanghaiToday());
+                  setFrom(range.start);
+                  setTo(range.end);
                 }}
               >
                 重置筛选
@@ -572,22 +647,58 @@ export default function OrderPage({
                 匹配 {visibleOrders.length} / {rows.length} 个订单
               </span>
             </div>
-            <div className="inventory-grid">
-              <section className="panel card">
+            {invalidDates && (
+              <Notice tone="error">购买起始日期不能晚于结束日期。</Notice>
+            )}
+            {olderPending > 0 && (
+              <Notice
+                action={
+                  <button
+                    className="ghost small"
+                    onClick={() => {
+                      setFrom("");
+                      setTo("");
+                      setQuery("");
+                      setFilter("pending");
+                    }}
+                  >
+                    查看全部待收货
+                  </button>
+                }
+              >
+                所选日期之前还有 {olderPending} 个待收货订单。
+              </Notice>
+            )}
+            <div className="inventory-grid receipt-workspace">
+              <section
+                className="panel card receipt-list"
+                ref={listRef}
+                aria-label="订单列表"
+                tabIndex={0}
+              >
                 <h2>订单列表</h2>
-                {!rows.length ? (
+                {loading && !rows.length ? (
+                  <Empty>正在读取订单…</Empty>
+                ) : error && !rows.length ? (
+                  <Empty>订单读取失败，请点击「刷新订单」重试。</Empty>
+                ) : !rows.length ? (
                   <Empty>
                     尚无收货订单。新建购物订单，或在「认领历史购买」中明确认领。
                   </Empty>
                 ) : !visibleOrders.length ? (
-                  <p className="muted">没有匹配筛选条件的订单，可重置筛选。</p>
+                  <p className="muted">
+                    没有匹配的订单。可调整收货状态、搜索文字，或点击「全部日期」查找较早订单。
+                  </p>
                 ) : (
                   visibleOrders.map((r) => (
                     <article className="inventory-row" key={r.id}>
                       <button
                         className="ghost"
                         aria-pressed={selected === r.id}
-                        onClick={() => setSelected(r.id)}
+                        onClick={() => {
+                          setSelected(r.id);
+                          if (selected === r.id) revealDetail();
+                        }}
                       >
                         {r.source.payee || "购买"} · {r.source.narration}
                       </button>
@@ -614,8 +725,21 @@ export default function OrderPage({
                   ))
                 )}
               </section>
-              <section className="panel card">
+              <section
+                className="panel card receipt-detail"
+                ref={detailRef}
+                aria-label="订单详情"
+                tabIndex={0}
+              >
                 <h2>订单详情</h2>
+                <button
+                  className="ghost small receipt-back"
+                  onClick={() =>
+                    listRef.current?.scrollIntoView?.({ block: "start" })
+                  }
+                >
+                  返回订单列表
+                </button>
                 {!detail ? (
                   <p className="muted">选择订单查看商品、实收数量和历史。</p>
                 ) : (
@@ -627,6 +751,10 @@ export default function OrderPage({
                       原购买：{detail.source.date} · {detail.source.total}{" "}
                       {detail.source.currency}
                     </p>
+                    <div className="inventory-alerts">
+                      <Chip>{receiptLabel[detail.receipt_state]}</Chip>
+                      <Chip>{paymentLabel[detail.payment_state]}</Chip>
+                    </div>
                     <details>
                       <summary>查看原始购买记录</summary>
                       {detail.source.file && (
@@ -678,6 +806,24 @@ export default function OrderPage({
                         await onChanged();
                       }}
                     />
+                    {receiptDrafts.some((d) => d.order.id === detail.id) && (
+                      <Notice
+                        action={
+                          <button
+                            className="ghost small"
+                            onClick={() =>
+                              batchRef.current?.scrollIntoView?.({
+                                block: "start",
+                              })
+                            }
+                          >
+                            查看本批并预览
+                          </button>
+                        }
+                      >
+                        本单已加入收货草稿，尚未提交。可继续选择订单，或预览后统一确认。
+                      </Notice>
+                    )}
                     <h3>收货历史</h3>
                     <OrderCorrections
                       key={detail.id}

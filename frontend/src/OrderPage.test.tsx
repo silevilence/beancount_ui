@@ -3,6 +3,131 @@ import { expect, it, vi } from "vitest";
 import OrderPage from "./OrderPage";
 import type { Journal } from "./api";
 
+vi.mock("./format", async (original) => ({
+  ...(await original<typeof import("./format")>()),
+  shanghaiToday: () => "2026-10-25",
+}));
+
+it("默认近30天且提示较早待收货，支持全部日期、重置与深链接", async () => {
+  const rows = ["2026-09-25", "2026-09-26", "2026-10-25"].map((date) => ({
+    id: date,
+    source: {
+      date,
+      payee: "商店",
+      narration: date,
+      total: "20",
+      currency: "CNY",
+    },
+    items: [],
+    receipts: [],
+    receipt_state: "pending",
+    payment_state: "paid",
+  }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => ({
+      ok: true,
+      json: async () => (url.endsWith("fulfillment/orders") ? rows : []),
+    })),
+  );
+  const props = {
+    journal: {
+      identity: "date-range",
+      revision: "a",
+      accounts: [],
+    } as unknown as Journal,
+    onChanged: async () => {},
+  };
+  const view = render(<OrderPage {...props} />);
+  await screen.findByText("商店 · 2026-10-25");
+  expect(screen.getByLabelText("购买起始日期")).toHaveValue("2026-09-26");
+  fireEvent.click(screen.getByRole("button", { name: "上月" }));
+  expect(screen.getByLabelText("购买起始日期")).toHaveValue("2026-09-01");
+  expect(screen.getByLabelText("购买结束日期")).toHaveValue("2026-09-30");
+  fireEvent.click(screen.getByRole("button", { name: "全部日期" }));
+  expect(
+    screen.getByRole("button", { name: "商店 · 2026-09-25" }),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "近 30 天" }));
+  expect(
+    screen.queryByRole("button", { name: "商店 · 2026-09-25" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByText(/之前还有 1 个待收货/)).toBeInTheDocument();
+  fireEvent.click(screen.getByText("查看全部待收货"));
+  fireEvent.click(screen.getByRole("button", { name: "商店 · 2026-09-25" }));
+  expect(screen.getByText(/原购买：2026-09-25/)).toBeInTheDocument();
+  fireEvent.click(screen.getByText("重置筛选"));
+  expect(screen.queryByText(/原购买：2026-09-25/)).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("购买结束日期"), {
+    target: { value: "2026-09-01" },
+  });
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "起始日期不能晚于结束日期",
+  );
+  view.unmount();
+  render(<OrderPage {...props} initialOrder="2026-09-25" />);
+  expect(await screen.findByText(/原购买：2026-09-25/)).toBeInTheDocument();
+  expect(screen.getByLabelText("购买起始日期")).toHaveValue("");
+});
+
+it("窄屏重复选择同一订单仍定位详情", async () => {
+  const scroll = vi.fn();
+  const original = HTMLElement.prototype.scrollIntoView;
+  HTMLElement.prototype.scrollIntoView = scroll;
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: true })),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => ({
+      ok: true,
+      json: async () =>
+        url.endsWith("fulfillment/orders")
+          ? [
+              {
+                id: "one",
+                source: {
+                  date: "2026-10-25",
+                  payee: "商店",
+                  narration: "重复选择",
+                  total: "2",
+                  currency: "CNY",
+                },
+                items: [],
+                receipts: [],
+                receipt_state: "pending",
+                payment_state: "paid",
+              },
+            ]
+          : [],
+    })),
+  );
+  try {
+    render(
+      <OrderPage
+        journal={
+          {
+            identity: "mobile",
+            revision: "a",
+            accounts: [],
+          } as unknown as Journal
+        }
+        onChanged={async () => {}}
+      />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "商店 · 重复选择" }),
+    );
+    expect(screen.getByRole("region", { name: "订单详情" })).toHaveFocus();
+    scroll.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "商店 · 重复选择" }));
+    expect(scroll).toHaveBeenCalledWith({ block: "start" });
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original;
+  }
+});
+
 it("列表显示备注并可搜索，多订单填写后统一预览提交且草稿可恢复", async () => {
   const rows = ["paid", "deferred"].map((mode, index) => ({
     id: mode,
@@ -265,7 +390,7 @@ it("独立页面保留收货和付款状态，结算预览后直接保存", asyn
   expect(screen.getAllByText("待收货").length).toBeGreaterThan(0);
   fireEvent.click(screen.getByText("商户 · 采购"));
   expect(screen.getByText("原购买")).toBeInTheDocument();
-  fireEvent.click(screen.getByText("结算与退款"));
+  fireEvent.click(screen.getByText("单独付款 / 退款"));
   fireEvent.click(screen.getByText("预览账务处理"));
   fireEvent.click(await screen.findByText("确认保存账务"));
   if (screen.queryByRole("button", { name: "按这些日期入账" }))
@@ -317,7 +442,7 @@ it("过期账务原请求经后端核对取消后可继续操作", async () => {
   fireEvent.click(screen.getByRole("button", { name: "确认继续" }));
   await screen.findByText("原预览已取消，可重新处理账务");
   expect(localStorage.getItem(key)).toBeNull();
-  fireEvent.click(screen.getByText("结算与退款"));
+  fireEvent.click(screen.getByText("单独付款 / 退款"));
   expect(screen.getByText("预览账务处理")).toBeEnabled();
 });
 it("历史购买认领可预览取消，筛选分别读取付款与收货状态", async () => {

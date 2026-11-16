@@ -66,7 +66,7 @@ it("配置收货页入口后仍可在补记工作台单独处理账单和退款"
   const onOpenOrders = vi.fn();
   render(<BatchEditor {...props} onOpenOrders={onOpenOrders} />);
   fireEvent.click(screen.getByRole("button", { name: /淘宝订单/ }));
-  expect(await screen.findByText("订单结算 / 退款")).toBeInTheDocument();
+  expect(await screen.findByText("单独付款 / 退款")).toBeInTheDocument();
   expect(screen.getByText("将处理加入草稿")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "打开订单与收货" }));
   expect(onOpenOrders).toHaveBeenCalledOnce();
@@ -610,7 +610,7 @@ it("作业分区切换、模板快捷入口与草稿计数", async () => {
   );
   expect(await screen.findByText("核对日期")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /淘宝订单/ }));
-  expect(await screen.findByText("订单结算 / 退款")).toBeInTheDocument();
+  expect(await screen.findByText("单独付款 / 退款")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /模板与推荐/ }));
   expect(screen.getByText("将当前组合固定为模板")).toBeInTheDocument();
   expect(requests.some((call) => call.url.includes("/templates"))).toBe(true);

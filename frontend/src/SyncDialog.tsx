@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { post as postJson, api, reasonOf } from "./api";
 import Diff from "./Diff";
 import GithubAuth from "./GithubAuth";
+import BackupHistory from "./BackupHistory";
 import {
   changeLabel,
   refreshSync,
@@ -216,6 +217,9 @@ export default function SyncDialog({
           </button>
         </div>
       </header>
+      <BackupHistory
+        revision={`${done}:${error}:${status?.last_success ?? ""}:${status?.schedule_reason ?? ""}`}
+      />
       {status?.blocked && (
         <Notice tone="error">
           备份已暂停：

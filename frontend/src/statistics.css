@@ -120,9 +120,11 @@
   font-size: 12.5px;
 }
 
-.stats-filter-fields input:hover:not(:focus),
-.stats-filter-fields select:hover:not(:focus) {
-  border-color: var(--amber-soft);
+@media (hover: hover) {
+  .stats-filter-fields input:hover:not(:focus),
+  .stats-filter-fields select:hover:not(:focus) {
+    border-color: var(--amber-soft);
+  }
 }
 
 /* ---------- 区间标注 ---------- */
@@ -318,7 +320,14 @@
   outline: none;
 }
 
-.stats-period:hover .stats-hit,
+@media (hover: hover) {
+  .stats-period:hover .stats-hit {
+    fill: #ffb4540d;
+    stroke: var(--amber-soft);
+    stroke-width: 1px;
+  }
+}
+
 .stats-period:focus .stats-hit,
 .stats-period:focus-visible .stats-hit {
   fill: #ffb4540d;
@@ -326,7 +335,12 @@
   stroke-width: 1px;
 }
 
-.stats-period:hover .stats-bar,
+@media (hover: hover) {
+  .stats-period:hover .stats-bar {
+    filter: brightness(1.18);
+  }
+}
+
 .stats-period:focus .stats-bar {
   filter: brightness(1.18);
 }
@@ -394,8 +408,10 @@
   transition: background 0.15s ease;
 }
 
-.stats-rank-item:hover:not(:disabled) {
-  background: #ffffff05;
+@media (hover: hover) {
+  .stats-rank-item:hover:not(:disabled) {
+    background: #ffffff05;
+  }
 }
 
 .stats-rank-label {
@@ -416,8 +432,10 @@
   color: var(--ink-2);
 }
 
-.stats-rank-item:hover .stats-rank-label > span {
-  color: var(--ink);
+@media (hover: hover) {
+  .stats-rank-item:hover .stats-rank-label > span {
+    color: var(--ink);
+  }
 }
 
 .stats-rank-label strong {
@@ -460,8 +478,10 @@
     width 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.stats-rank-item:hover .stats-rank-track i {
-  opacity: 1;
+@media (hover: hover) {
+  .stats-rank-item:hover .stats-rank-track i {
+    opacity: 1;
+  }
 }
 
 .stats-rank-total {
@@ -501,8 +521,10 @@
   transition: border-color 0.15s ease;
 }
 
-.stats-transaction:hover {
-  border-color: var(--line);
+@media (hover: hover) {
+  .stats-transaction:hover {
+    border-color: var(--line);
+  }
 }
 
 .stats-transaction:first-of-type {
@@ -576,9 +598,11 @@
   list-style: none;
 }
 
-.stats-transaction summary:hover {
-  color: var(--ink);
-  border-color: var(--amber-soft);
+@media (hover: hover) {
+  .stats-transaction summary:hover {
+    color: var(--ink);
+    border-color: var(--amber-soft);
+  }
 }
 
 .stats-transaction details[open] summary {
@@ -629,7 +653,6 @@
     #ffffff08 58%
   );
   background-size: 220% 100%;
-  animation: skel-slide 1.3s linear infinite;
 }
 
 .skel-line.chart {
@@ -653,6 +676,7 @@
 /* ---------- 动效（尊重系统减弱动态设置） ---------- */
 
 @media (prefers-reduced-motion: no-preference) {
+  .skel-line { animation: skel-slide 1.3s linear infinite; }
   .statistics .panel,
   .statistics .stats-summary .stat {
     animation: stats-rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -674,6 +698,11 @@
   .stats-rank-track i {
     animation: rank-grow 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stats-rank-track i { transition: opacity 150ms ease-out; }
+  .stats-transaction summary::after { transition: opacity 150ms ease-out; }
 }
 
 @keyframes stats-rise {

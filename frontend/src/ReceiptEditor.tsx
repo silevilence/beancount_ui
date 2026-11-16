@@ -208,7 +208,7 @@ export default function ReceiptEditor({
   return (
     <section className="inventory-row">
       {actionDialog}
-      <h3>确认收货并入库</h3>
+      <h3>{linked ? "确认收货并入库" : "确认实物收货"}</h3>
       {error && <Notice tone="error">{error}</Notice>}
       {optionsError && (
         <Notice tone="error">
@@ -260,8 +260,11 @@ export default function ReceiptEditor({
           >
             <p className="muted small">
               {settle
-                ? "先用后付：本次确认将先记录账单，再将收到的商品入库。请核对账单金额和账户。"
-                : "已付款：本次确认直接将收到的商品入库，不重复记账。"}
+                ? "先用后付：本次确认将先记录账单，再保存实物收货。请核对账单金额和账户。"
+                : "已付款：本次只保存实物收货，不重复记账。"}
+              {linked
+                ? "关联 Grocy 的实收商品会同步入库。"
+                : "本单未关联 Grocy，不会更新库存。"}
             </p>
             <label>
               实际到货日期
@@ -272,8 +275,8 @@ export default function ReceiptEditor({
               />
             </label>
             <p className="muted small">
-              填写本次实际数量，未到货商品填
-              0。到期日期按到货日期和产品默认保质期计算，可手动修改。
+              填写本次实际数量，未到货商品填 0。
+              {linked && "到期日期按到货日期和产品默认保质期计算，可手动修改。"}
             </p>
             {lines.map((line, index) => {
               const item = order.items.find((i) => i.id === line.item_id)!;

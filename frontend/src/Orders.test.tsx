@@ -92,6 +92,29 @@ const ACCOUNTS: Journal["accounts"] = [
 const CONFIRM = "我已确认关联交易及负债 / 付款语义";
 const SUBMIT = "将处理加入草稿";
 
+it("已付款订单直接进入退款，切换原订单清空账户与备注", async () => {
+  stubOrders(ORDERS);
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: /老张百货/ }));
+  fireEvent.change(screen.getByLabelText("实际付款 / 收款账户"), {
+    target: { value: "Assets:Cash" },
+  });
+  fireEvent.change(screen.getByLabelText("处理备注"), {
+    target: { value: "仅本单" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /云记数码/ }));
+  expect(
+    screen.queryByRole("button", { name: "付款 / 部分结算" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "已付款退款" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(screen.getByLabelText("实际付款 / 收款账户")).toHaveValue("");
+  expect(screen.getByLabelText("处理备注")).toHaveValue("");
+  expect(screen.getByLabelText("本次处理金额")).toHaveValue("");
+});
+
 function stubOrders(data: unknown) {
   vi.stubGlobal(
     "fetch",
@@ -181,7 +204,7 @@ it("settle：deferred 订单金额默认未结清，账户必填并可加入草�
   mount(onAdd);
   fireEvent.click(await screen.findByText("老张百货 · 日用品"));
   expect(screen.getByLabelText("本次处理金额")).toHaveValue("268.00");
-  expect(screen.getByText(/结算只结转负债、不再生成消费/)).toBeInTheDocument();
+  expect(screen.getByText(/单独付款只结转负债/)).toBeInTheDocument();
   const submit = screen.getByRole("button", { name: SUBMIT });
   expect(submit).toBeDisabled();
   // 账户下拉只列资产 / 负债，费用与收入账户不出现
@@ -215,7 +238,7 @@ it("settle：deferred 订单金额默认未结清，账户必填并可加入草�
   expect(screen.getByRole("button", { name: SUBMIT })).toBeDisabled();
   expect(
     screen.getByText("老张百货 · 日用品").closest("button"),
-  ).toHaveAttribute("aria-selected", "true");
+  ).toHaveAttribute("aria-pressed", "true");
 });
 
 it("refund_unpaid：不选账户，入草稿时用原订单账户", async () => {
@@ -315,7 +338,7 @@ it("取消关联：清空选中、金额与勾选并回到初始禁用态", asyn
   expect(screen.getByText(/先在上方选择一个历史订单/)).toBeInTheDocument();
   expect(
     screen.getByText("老张百货 · 日用品").closest("button"),
-  ).toHaveAttribute("aria-selected", "false");
+  ).toHaveAttribute("aria-pressed", "false");
 });
 
 it("onAdd 返回 false 时保留表单内容", async () => {
@@ -343,12 +366,12 @@ it("切换订单会重置金额与勾选", async () => {
   expect(screen.getByLabelText("本次处理金额")).toHaveValue("88.50");
   expect(screen.getByLabelText(CONFIRM)).not.toBeChecked();
   expect(screen.getByText("菜市 · 生鲜").closest("button")).toHaveAttribute(
-    "aria-selected",
+    "aria-pressed",
     "true",
   );
   expect(
     screen.getByText("老张百货 · 日用品").closest("button"),
-  ).toHaveAttribute("aria-selected", "false");
+  ).toHaveAttribute("aria-pressed", "false");
 });
 
 it("没有历史订单时给出空态提示", async () => {

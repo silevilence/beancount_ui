@@ -12,11 +12,13 @@ import re
 import subprocess
 import tempfile
 import time
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from filelock import FileLock, Timeout
 from pydantic import BaseModel, Field
 
 from .git_network import ProxyInput, redact_diagnostic, validate_proxy
@@ -66,6 +68,55 @@ class Sync:
         self.settings = self.ledger.settings
         self.path = writer.state / "sync.json"
         self.github_auth = GithubAuth(writer.state)
+        self.history_path = writer.state / "backup-history.json"
+        self.history_lock = FileLock(str(self.history_path) + ".lock", timeout=5)
+
+    def history(self):
+        with self.history_lock:
+            if not self.history_path.exists():
+                return []
+            return json.loads(self.history_path.read_text(encoding="utf-8"))
+
+    def record_event(self, action, source, outcome, message, elapsed=0):
+        """Bounded operational history, outside the ledger; never persist Git output."""
+        try:
+            with self.history_lock:
+                events = self.history()
+                events.insert(
+                    0,
+                    {
+                        "time": datetime.now(UTC).isoformat(),
+                        "action": action,
+                        "source": source,
+                        "outcome": outcome,
+                        "message": redact_diagnostic(message),
+                        "elapsed": round(elapsed, 2),
+                    },
+                )
+                atomic_write(
+                    self.history_path,
+                    json.dumps(events[:200], ensure_ascii=False).encode(),
+                )
+        except (OSError, ValueError, Timeout):
+            # A successful remote push must never become a failed backup just because
+            # its ancillary history could not be written.
+            logger.warning("Backup history unavailable; operation result unchanged")
+
+    @contextmanager
+    def track(self, action, source, success):
+        started = time.monotonic()
+        try:
+            yield
+        except (LedgerError, OSError, Timeout) as exc:
+            message = (
+                str(exc)
+                if isinstance(exc, LedgerError)
+                else "无法完成操作，请检查服务端状态目录、文件权限或占用情况。"
+            )
+            self.record_event(action, source, "failed", message, time.monotonic() - started)
+            raise
+        else:
+            self.record_event(action, source, "success", success, time.monotonic() - started)
 
     def state(self):
         if not self.path.exists():
@@ -308,6 +359,10 @@ class Sync:
         }, snap
 
     def backup_preview(self):
+        with self.track("preview", "manual", "备份预览完成，尚未推送；请核对后确认同步。"):
+            return self._backup_preview()
+
+    def _backup_preview(self):
         with self.writer.guard():
             plan, _ = self.plan()
             base = self.state().get("remote_head")
@@ -420,7 +475,11 @@ class Sync:
             self.git("reset", "--quiet", commit, "--", *plan["files"])
             return commit
 
-    def backup(self, request: BackupInput):
+    def backup(self, request: BackupInput, *, source="manual"):
+        with self.track("backup", source, "账本已与远端同步。"):
+            return self._backup(request)
+
+    def _backup(self, request: BackupInput):
         try:
             with self.writer.guard():
                 remote = self.require_connected()

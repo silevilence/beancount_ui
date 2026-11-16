@@ -308,6 +308,7 @@ export default function App() {
             />
           ) : page === "inventory" ? (
             <Inventory
+              onSettings={() => openSettings("")}
               onOrder={(id) => {
                 setSelectedOrder(id);
                 setPage("orders");

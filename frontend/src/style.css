@@ -59,14 +59,15 @@ button {
   font-weight: 500;
   letter-spacing: 0.02em;
   transition:
-    transform 0.12s ease,
-    filter 0.12s ease,
-    background 0.12s ease;
+    background-color 150ms ease-out,
+    border-color 150ms ease-out,
+    color 150ms ease-out;
 }
 
-button:hover:not(:disabled) {
-  filter: brightness(1.08);
-  transform: translateY(-1px);
+@media (hover: hover) {
+  button:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
 }
 
 button:disabled {
@@ -80,10 +81,12 @@ button.ghost {
   color: var(--ink-2);
 }
 
-button.ghost:hover:not(:disabled) {
-  border-color: var(--amber-soft);
-  color: var(--ink);
-  filter: none;
+@media (hover: hover) {
+  button.ghost:hover:not(:disabled) {
+    border-color: var(--amber-soft);
+    color: var(--ink);
+    filter: none;
+  }
 }
 
 button.small {
@@ -100,9 +103,11 @@ button.square {
   line-height: 1;
 }
 
-button.danger:hover:not(:disabled) {
-  border-color: var(--expense);
-  color: var(--expense);
+@media (hover: hover) {
+  button.danger:hover:not(:disabled) {
+    border-color: var(--expense);
+    color: var(--expense);
+  }
 }
 
 input,
@@ -872,9 +877,11 @@ kbd {
   overflow-wrap: anywhere;
 }
 
-.route-item:hover {
-  background: #131c27;
-  color: var(--ink);
+@media (hover: hover) {
+  .route-item:hover {
+    background: #131c27;
+    color: var(--ink);
+  }
 }
 
 .route-item[aria-current="true"] {
@@ -1050,10 +1057,12 @@ kbd {
   cursor: pointer;
 }
 
-.preview-route:hover {
-  border-color: var(--amber-soft);
-  color: var(--ink);
-  transform: none;
+@media (hover: hover) {
+  .preview-route:hover {
+    border-color: var(--amber-soft);
+    color: var(--ink);
+    transform: none;
+  }
 }
 
 .preview-route strong {
@@ -1648,9 +1657,6 @@ kbd {
   .entry {
     animation: slide 0.26s ease-out both;
   }
-  .editor-dialog[open] {
-    animation: rise 0.22s ease-out both;
-  }
   @keyframes rise {
     from {
       opacity: 0;
@@ -1734,9 +1740,11 @@ kbd {
   cursor: pointer;
 }
 
-.segmented button:hover:not(:disabled) {
-  background: #16202c;
-  color: var(--ink);
+@media (hover: hover) {
+  .segmented button:hover:not(:disabled) {
+    background: #16202c;
+    color: var(--ink);
+  }
 }
 
 .segmented button[aria-pressed="true"] {
@@ -1761,9 +1769,11 @@ kbd {
   cursor: pointer;
 }
 
-.chip-btn:hover:not(:disabled) {
-  border-color: var(--amber);
-  color: var(--ink);
+@media (hover: hover) {
+  .chip-btn:hover:not(:disabled) {
+    border-color: var(--amber);
+    color: var(--ink);
+  }
 }
 
 .chip-btn[aria-pressed="true"] {
@@ -1825,9 +1835,11 @@ kbd {
   font-size: 10.5px;
 }
 
-.task:hover {
-  background: #131c27;
-  color: var(--ink);
+@media (hover: hover) {
+  .task:hover {
+    background: #131c27;
+    color: var(--ink);
+  }
 }
 
 .task[aria-current="true"] {
@@ -2058,8 +2070,13 @@ kbd {
   overflow-wrap: anywhere;
   cursor: pointer;
 }
-.account-options [aria-selected="true"],
-.account-options [role="option"]:hover {
+@media (hover: hover) {
+  .account-options [role="option"]:hover {
+    background: #263547;
+    color: var(--ink);
+  }
+}
+.account-options [aria-selected="true"] {
   background: #263547;
   color: var(--ink);
 }
@@ -2099,11 +2116,13 @@ kbd {
   cursor: pointer;
 }
 
-.order-row:hover {
-  background: #131c27;
+@media (hover: hover) {
+  .order-row:hover {
+    background: #131c27;
+  }
 }
 
-.order-row[aria-selected="true"] {
+.order-row[aria-pressed="true"] {
   border-color: #ffb45466;
   background: #16202c;
   color: var(--ink);
@@ -2707,6 +2726,41 @@ kbd {
 @media (max-width: 760px) { .order-filters { grid-template-columns: minmax(0, 1fr); } }
 
 .order-note { white-space: pre-wrap; overflow-wrap: anywhere; margin-block: 0.5rem; }
+
+/* Lists and detail panes keep their own positions while selecting orders. */
+.receipt-workspace { align-items: start; }
+.receipt-list, .receipt-detail { min-width: 0; scroll-margin-top: 16px; }
+.receipt-back { display: none; }
+@media (min-width: 761px) {
+  .receipt-list, .receipt-detail {
+    position: sticky;
+    top: 16px;
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+}
+@media (max-width: 760px) {
+  .receipt-list { max-height: 55dvh; overflow-y: auto; overscroll-behavior: contain; }
+  .receipt-back { display: inline-block; margin-bottom: 12px; }
+}
+.backup-history { margin: 16px 0; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); }
+.backup-history summary { cursor: pointer; color: var(--ink); }
+.backup-history-list { max-height: 360px; overflow-y: auto; overscroll-behavior: contain; }
+.backup-history-list p { margin: 0; white-space: pre-wrap; }
+.editor-dialog, .action-dialog, .account-options, .inventory-detail,
+.layout-dialog .layout-body, .layout-rail, .layout-detail { overscroll-behavior: contain; }
+@media (prefers-reduced-motion: no-preference) {
+  button:not(.static):not(.order-row):not(.stats-rank-item):not(.chip-btn):not(.segmented button):not(.inventory-row button) {
+    transition: scale 150ms ease-out, background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:not(.static):not(.order-row):not(.stats-rank-item):not(.chip-btn):not(.segmented button):not(.inventory-row button):not(:disabled):active { scale: 0.96; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .switch input::after { transition: background-color 150ms ease-out; }
+}
 
 /* Page-owned confirmations also sit above an already open editor dialog. */
 .action-dialog {

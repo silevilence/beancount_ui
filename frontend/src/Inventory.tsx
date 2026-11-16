@@ -186,9 +186,11 @@ export function inventoryTree(
 export default function Inventory({
   onPurchase,
   onOrder,
+  onSettings,
 }: {
   onPurchase?: (product: Product, inventory: InventoryData) => void;
   onOrder?: (id: string) => void;
+  onSettings?: () => void;
 }) {
   const [data, setData] = useState<InventoryData>();
   const [selected, setSelected] = useState<Product>();
@@ -204,8 +206,11 @@ export default function Inventory({
   const [operations, setOperations] = useState<StockOperation[]>([]);
   const sequence = useRef(0);
   const detailPanel = useRef<HTMLElement>(null);
+  const productList = useRef<HTMLElement>(null);
   useEffect(() => {
     if (detailPanel.current) detailPanel.current.scrollTop = 0;
+    if (selected && window.matchMedia?.("(max-width: 760px)").matches)
+      detailPanel.current?.scrollIntoView?.({ block: "start" });
   }, [selected?.id]);
   async function refresh() {
     setBusy(true);
@@ -227,6 +232,11 @@ export default function Inventory({
     };
   }, []);
   async function pick(product: Product) {
+    if (
+      product.id === selected?.id &&
+      window.matchMedia?.("(max-width: 760px)").matches
+    )
+      detailPanel.current?.scrollIntoView?.({ block: "start" });
     const seq = ++sequence.current;
     setSelected(product);
     setDetail(undefined);
@@ -272,7 +282,16 @@ export default function Inventory({
         {data && <small> · 更新于 {stampOf(data.updated_at)}</small>}
       </header>
       {error && (
-        <Notice tone="error">
+        <Notice
+          tone="error"
+          action={
+            onSettings && (
+              <button className="ghost small" onClick={onSettings}>
+                检查库存连接设置
+              </button>
+            )
+          }
+        >
           {error}
           {data && "。以下是旧数据，无法确认最新库存。"}
         </Notice>
@@ -310,7 +329,7 @@ export default function Inventory({
       </label>
       {data && (
         <div className="inventory-grid">
-          <section className="panel card">
+          <section className="panel card" ref={productList}>
             <h2>产品与告警</h2>
             {!data.products.length && (
               <p className="muted">暂无产品，请先建立产品资料。</p>
@@ -425,6 +444,14 @@ export default function Inventory({
             tabIndex={0}
           >
             <h2>{selected?.name ?? "批次详情"}</h2>
+            <button
+              className="ghost small receipt-back"
+              onClick={() =>
+                productList.current?.scrollIntoView?.({ block: "start" })
+              }
+            >
+              返回产品列表
+            </button>
             {selected && (
               <>
                 <button
@@ -448,7 +475,21 @@ export default function Inventory({
               </p>
             )}
             {detailError && (
-              <Notice tone="error">{detailError}。详情不可用，请重试。</Notice>
+              <Notice
+                tone="error"
+                action={
+                  selected && (
+                    <button
+                      className="ghost small"
+                      onClick={() => void pick(selected)}
+                    >
+                      重试产品详情
+                    </button>
+                  )
+                }
+              >
+                {detailError}。详情不可用，请重试。
+              </Notice>
             )}
             {selected && !detail && !detailError && <p>正在读取批次…</p>}
             {detail && (

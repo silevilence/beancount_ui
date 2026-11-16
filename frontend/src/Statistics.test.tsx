@@ -10,6 +10,25 @@ import { expect, it, vi } from "vitest";
 import Statistics from "./Statistics";
 import { presetRange, type Report, type ReportDetails } from "./statisticsData";
 
+it("历史快捷日期覆盖跨年周、闰年二月与去年", () => {
+  expect(presetRange("lastMonth", "2026-01-31")).toEqual({
+    start: "2025-12-01",
+    end: "2025-12-31",
+  });
+  expect(presetRange("lastMonth", "2024-03-31")).toEqual({
+    start: "2024-02-01",
+    end: "2024-02-29",
+  });
+  expect(presetRange("lastWeek", "2026-01-01")).toEqual({
+    start: "2025-12-22",
+    end: "2025-12-28",
+  });
+  expect(presetRange("lastYear", "2026-01-01")).toEqual({
+    start: "2025-01-01",
+    end: "2025-12-31",
+  });
+});
+
 export function report(over: Partial<Report> = {}): Report {
   return {
     categories: {

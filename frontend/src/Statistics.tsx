@@ -19,8 +19,11 @@ import "./statistics.css";
 const labels = { income: "收入", expenses: "支出", net: "净额" };
 const presets = [
   { value: "week", label: "本周" },
+  { value: "lastWeek", label: "上周" },
   { value: "month", label: "本月" },
+  { value: "lastMonth", label: "上月" },
   { value: "year", label: "今年" },
+  { value: "lastYear", label: "去年" },
   { value: "recent", label: "最近 30 天" },
   { value: "custom", label: "自定义" },
 ];
