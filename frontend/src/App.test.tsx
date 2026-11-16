@@ -157,6 +157,16 @@ it("侧栏进入统计页，账本版本变化刷新统计，返回工作台保�
       ).length,
     ).toBeGreaterThan(count),
   );
+  fireEvent.click(screen.getByRole("button", { name: "高级查询" }));
+  const queryEditor = await screen.findByRole("textbox", { name: "BQL 查询" });
+  const callsBeforeTyping = fetcher.mock.calls.length;
+  for (const key of ["n", "b", "s", "/", "r"]) {
+    // Syntax highlighting places spans inside contenteditable, unlike a textarea.
+    fireEvent.keyDown(queryEditor.querySelector("span")!, { key });
+  }
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(queryEditor).toBeInTheDocument();
+  expect(fetcher.mock.calls).toHaveLength(callsBeforeTyping);
   fireEvent.click(screen.getByRole("button", { name: "记账工作台" }));
   expect(screen.getByLabelText("记账日期")).toHaveValue("2026-09-29");
 });

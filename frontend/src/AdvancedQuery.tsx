@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { api, reasonOf } from "./api";
 import { Empty, Notice } from "./ui";
 import type { ReportStatus } from "./statisticsData";
+import BqlEditor, { type BqlEditorHandle } from "./BqlEditor";
+import BqlReference from "./BqlReference";
+import { bqlExamples as examples } from "./bql";
+import "./bql.css";
 
 interface QueryResult extends ReportStatus {
   columns: string[];
@@ -9,27 +13,18 @@ interface QueryResult extends ReportStatus {
   truncated: boolean;
   limit: number;
 }
-const examples = [
-  {
-    label: "按商家汇总支出",
-    query:
-      "SELECT payee, currency, sum(number) AS total\nWHERE account ~ '^Expenses:'\nGROUP BY payee, currency\nORDER BY total DESC",
-  },
-  {
-    label: "按摘要匹配流水",
-    query:
-      "SELECT date, payee, narration, account, position\nWHERE narration ~ '购物|餐饮'\nORDER BY date DESC\nLIMIT 100",
-  },
-  { label: "账户余额", query: "BALANCES" },
-];
 export default function AdvancedQuery({ revision }: { revision: string }) {
   const [query, setQuery] = useState(examples[0].query);
   const [result, setResult] = useState<{ data: QueryResult; query: string }>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showReference, setShowReference] = useState(false);
+  const editor = useRef<BqlEditorHandle>(null);
+  const tooLong = query.length > 20000;
   const request = useRef<AbortController | null>(null);
   useEffect(() => () => request.current?.abort(), []);
   async function run() {
+    if (busy || !query.trim() || tooLong) return;
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
@@ -57,7 +52,10 @@ export default function AdvancedQuery({ revision }: { revision: string }) {
         查询当前账本。支持 SELECT、BALANCES、JOURNAL，只读执行；最多显示 1000
         行，超过 10 秒会停止。金额保留原始精度。
       </p>
-      <div className="actions">
+      <p className="muted">
+        载入示例后可修改，再点击运行。日期示例中的年份也可自行调整。
+      </p>
+      <div className="actions" aria-label="查询示例">
         {examples.map((example) => (
           <button
             className="ghost small"
@@ -68,27 +66,58 @@ export default function AdvancedQuery({ revision }: { revision: string }) {
           </button>
         ))}
       </div>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void run();
-        }}
-      >
-        <label>
-          BQL 查询
-          <textarea
-            className="query-input"
+      <div className={`bql-workspace${showReference ? " with-reference" : ""}`}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run();
+          }}
+        >
+          <div className="bql-toolbar">
+            <strong>BQL 查询</strong>
+            <div className="actions">
+              <button
+                type="button"
+                className="ghost small"
+                onClick={() => editor.current?.complete()}
+              >
+                显示补全
+              </button>
+              <button
+                type="button"
+                className="ghost small"
+                aria-expanded={showReference}
+                aria-controls="bql-reference"
+                onClick={() => setShowReference(!showReference)}
+              >
+                {showReference ? "收起手册" : "手册速查"}
+              </button>
+            </div>
+          </div>
+          <BqlEditor
+            ref={editor}
             value={query}
-            required
-            maxLength={20000}
-            spellCheck={false}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={setQuery}
+            onRun={() => void run()}
           />
-        </label>
-        <button type="submit" disabled={busy || !query.trim()}>
-          {busy ? "正在查询…" : "运行查询"}
-        </button>
-      </form>
+          <p id="bql-editor-help" className="muted bql-help">
+            Ctrl / ⌘ + Enter 运行 · Ctrl + Space 补全 · ↑↓ 选择，Enter 插入，Esc
+            关闭 · Tab 离开编辑器（片段内切换参数）
+          </p>
+          {tooLong && (
+            <Notice tone="error">
+              查询超过 20,000 字符，请缩短后再运行（当前{" "}
+              {query.length.toLocaleString()} 字符）。
+            </Notice>
+          )}
+          <button type="submit" disabled={busy || !query.trim() || tooLong}>
+            {busy ? "正在查询…" : "运行查询"}
+          </button>
+        </form>
+        {showReference && (
+          <BqlReference onInsert={(text) => editor.current?.insert(text)} />
+        )}
+      </div>
       {error && <Notice tone="error">{error}</Notice>}
       {result && (
         <>

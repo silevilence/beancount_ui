@@ -1,10 +1,38 @@
+import json
+import re
 import subprocess
+from pathlib import Path
 
 import pytest
 from beancount_ui.advanced_query import QueryInput, advanced_query, execute_query
 from beancount_ui.app import create_app
 from beancount_ui.ledger import read_files
 from fastapi.testclient import TestClient
+
+REFERENCE = json.loads(
+    (Path(__file__).parents[1] / "frontend/src/bql-reference.json").read_text(encoding="utf-8")
+)
+
+
+@pytest.mark.parametrize("example", REFERENCE["examples"], ids=lambda item: item["label"])
+def test_editor_examples_execute(ledger, example):
+    snapshot = ledger.refresh()
+    result = execute_query(snapshot.entries, snapshot.options, example["query"])
+    assert result["columns"]
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [item for item in REFERENCE["entries"] if item["category"] in ("字段", "函数", "条件")],
+    ids=lambda item: item["label"],
+)
+def test_editor_reference_matches_installed_query_engine(ledger, entry):
+    text = re.sub(r"\$\{([^}]+)\}", r"\1", entry.get("insert", entry["label"]))
+    query = "SELECT " + text
+    if entry["category"] == "条件":
+        query = "SELECT date " + (text if text.startswith(";") else "WHERE " + text)
+    snapshot = ledger.refresh()
+    assert execute_query(snapshot.entries, snapshot.options, query)["columns"]
 
 
 def test_query_api_aggregation_precision_and_read_only(ledger):

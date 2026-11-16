@@ -1,9 +1,15 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { money } from "./format";
 import { Empty, Notice, Segmented } from "./ui";
 import { useToday } from "./useToday";
 import StatisticsRanking from "./StatisticsRanking";
-import AdvancedQuery from "./AdvancedQuery";
 import {
   presetRange,
   useReportResource,
@@ -15,6 +21,8 @@ import {
   type Totals,
 } from "./statisticsData";
 import "./statistics.css";
+
+const AdvancedQuery = lazy(() => import("./AdvancedQuery"));
 
 const labels = { income: "收入", expenses: "支出", net: "净额" };
 const presets = [
@@ -396,7 +404,9 @@ export default function Statistics({ revision = "" }: { revision?: string }) {
         ]}
       />
       {mode === "query" ? (
-        <AdvancedQuery revision={revision} />
+        <Suspense fallback={<p role="status">正在加载查询编辑器…</p>}>
+          <AdvancedQuery revision={revision} />
+        </Suspense>
       ) : (
         <StatisticsCharts revision={revision} />
       )}

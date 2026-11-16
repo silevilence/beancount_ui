@@ -1429,7 +1429,6 @@ kbd {
 .data-table-scroll th { color: var(--ink-2); }
 .data-table-scroll dd { margin: 0 0 8px; }
 .data-table-scroll dt { font-weight: 600; }
-.query-input { min-height: 190px; font-family: var(--mono); }
 .advanced-query, .stock-log { margin-top: 16px; min-width: 0; }
 .bean-token-comment {
   color: #9aaabd;

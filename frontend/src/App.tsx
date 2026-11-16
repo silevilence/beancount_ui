@@ -199,10 +199,17 @@ export default function App() {
   }, [canCreate]);
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null;
+      const target = event.target instanceof HTMLElement ? event.target : null;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (page === "settings" && event.key !== "r") return;
-      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        (target &&
+          (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+            target.isContentEditable ||
+            target.closest('[contenteditable="true"]')))
+      )
         return;
       if (event.key === "n") {
         event.preventDefault();

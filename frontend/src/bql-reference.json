@@ -1,0 +1,204 @@
+{
+  "examples": [
+    {
+      "label": "按商家汇总支出",
+      "query": "SELECT payee, currency, sum(number) AS total\nWHERE account ~ '^Expenses:'\nGROUP BY payee, currency\nORDER BY total DESC"
+    },
+    {
+      "label": "按摘要匹配流水",
+      "query": "SELECT date, payee, narration, account, position\nWHERE narration ~ '购物|餐饮'\nORDER BY date DESC\nLIMIT 100"
+    },
+    { "label": "账户余额", "query": "BALANCES" },
+    {
+      "label": "按月汇总支出",
+      "query": "SELECT year, month, currency, sum(number) AS total\nWHERE account ~ '^Expenses:'\nGROUP BY year, month, currency\nORDER BY year, month"
+    },
+    {
+      "label": "按日期查流水",
+      "query": "SELECT date, payee, narration, account, position\nWHERE date >= 2026-01-01 AND date < 2027-01-01\nORDER BY date DESC\nLIMIT 100"
+    },
+    { "label": "现金日记账", "query": "JOURNAL 'Assets:Cash'" }
+  ],
+  "entries": [
+    {
+      "category": "语句",
+      "label": "SELECT",
+      "detail": "选择返回的字段；默认逐条查询账本分录。"
+    },
+    {
+      "category": "语句",
+      "label": "WHERE",
+      "detail": "筛选分录；AND、OR 连接条件。"
+    },
+    {
+      "category": "语句",
+      "label": "GROUP BY",
+      "detail": "按字段分组，通常配合 sum 或 count。"
+    },
+    {
+      "category": "语句",
+      "label": "ORDER BY",
+      "detail": "按字段或别名排序；ASC 升序，DESC 降序。"
+    },
+    {
+      "category": "语句",
+      "label": "HAVING",
+      "detail": "分组后筛选聚合结果，例如 sum(number) > 100。"
+    },
+    {
+      "category": "语句",
+      "label": "LIMIT",
+      "detail": "限制返回行数，例如 LIMIT 100。"
+    },
+    {
+      "category": "语句",
+      "label": "AS",
+      "detail": "给结果列命名，例如 sum(number) AS total。"
+    },
+    {
+      "category": "语句",
+      "label": "DISTINCT",
+      "detail": "去除重复结果，例如 SELECT DISTINCT payee。"
+    },
+    {
+      "category": "语句",
+      "label": "BALANCES",
+      "detail": "查看账户余额；可直接作为完整查询运行。"
+    },
+    {
+      "category": "语句",
+      "label": "JOURNAL",
+      "detail": "查看日记账，例如 JOURNAL 'Assets:Cash'。"
+    },
+    {
+      "category": "字段",
+      "label": "date",
+      "detail": "交易日期；直接与 YYYY-MM-DD 日期字面量比较。"
+    },
+    {
+      "category": "字段",
+      "label": "payee",
+      "detail": "交易商家／收款人，可能为空。"
+    },
+    {
+      "category": "字段",
+      "label": "narration",
+      "detail": "交易摘要；可用 ~ 做正则匹配。"
+    },
+    {
+      "category": "字段",
+      "label": "account",
+      "detail": "当前分录的完整账户名称，如 Expenses:Food。"
+    },
+    {
+      "category": "字段",
+      "label": "number",
+      "detail": "分录数量；汇总时同时按 currency 分组，避免混合币种。"
+    },
+    {
+      "category": "字段",
+      "label": "currency",
+      "detail": "分录币种／商品代码，如 CNY。"
+    },
+    {
+      "category": "字段",
+      "label": "position",
+      "detail": "包含数量、币种和成本的持仓；sum(position) 保留币种信息。"
+    },
+    {
+      "category": "字段",
+      "label": "balance",
+      "detail": "逐条分录累加的持仓余额。"
+    },
+    { "category": "字段", "label": "year", "detail": "交易日期的年份。" },
+    {
+      "category": "字段",
+      "label": "month",
+      "detail": "交易日期的月份（1—12）；跨年时应同时按 year 分组。"
+    },
+    { "category": "字段", "label": "day", "detail": "交易日期在月内的天数。" },
+    {
+      "category": "字段",
+      "label": "tags",
+      "detail": "交易标签集合，例如 '旅行' IN tags。"
+    },
+    { "category": "字段", "label": "links", "detail": "交易链接集合。" },
+    {
+      "category": "字段",
+      "label": "flag",
+      "detail": "交易标记，例如 * 或 !。"
+    },
+    {
+      "category": "函数",
+      "label": "sum",
+      "detail": "求和，例如 sum(number) 或 sum(position)。",
+      "insert": "sum(${number})"
+    },
+    {
+      "category": "函数",
+      "label": "count",
+      "detail": "计数，例如 count(account) 统计非空账户分录数。",
+      "insert": "count(${account})"
+    },
+    {
+      "category": "函数",
+      "label": "min",
+      "detail": "最小值，例如 min(date)。",
+      "insert": "min(${date})"
+    },
+    {
+      "category": "函数",
+      "label": "max",
+      "detail": "最大值，例如 max(date)。",
+      "insert": "max(${date})"
+    },
+    {
+      "category": "函数",
+      "label": "first",
+      "detail": "聚合组内遇到的首个值。",
+      "insert": "first(${payee})"
+    },
+    {
+      "category": "函数",
+      "label": "last",
+      "detail": "聚合组内遇到的最后一个值。",
+      "insert": "last(${payee})"
+    },
+    {
+      "category": "条件",
+      "label": "正则匹配 ~",
+      "detail": "用单引号包住模式；^ 匹配开头，| 表示或者。",
+      "insert": "account ~ '${^Expenses:}'"
+    },
+    {
+      "category": "条件",
+      "label": "日期范围",
+      "detail": "起日包含、止日不包含；插入后修改日期。",
+      "insert": "date >= ${2026-01-01} AND date < ${2027-01-01}"
+    },
+    {
+      "category": "条件",
+      "label": "币种筛选",
+      "detail": "只看指定币种的分录。",
+      "insert": "currency = '${CNY}'"
+    },
+    {
+      "category": "条件",
+      "label": "IS NULL",
+      "detail": "判断缺失值；非空使用 IS NOT NULL。",
+      "insert": "payee IS NULL"
+    },
+    {
+      "category": "条件",
+      "label": "标签筛选",
+      "detail": "检查标签集合是否包含指定标签，不带 #。",
+      "insert": "'${旅行}' IN tags"
+    },
+    {
+      "category": "条件",
+      "label": "分号注释",
+      "detail": "分号开始行尾注释，不是多语句分隔符；也支持 /* 块注释 */。",
+      "insert": "; ${备注}"
+    }
+  ]
+}
