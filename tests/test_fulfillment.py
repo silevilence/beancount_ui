@@ -3,7 +3,7 @@ from uuid import uuid4
 import pytest
 from beancount_ui.fulfillment import Fulfillment
 from beancount_ui.fulfillment_models import ItemInput, ReceiptInput
-from beancount_ui.ledger import LedgerError
+from beancount_ui.ledger import Ledger, LedgerError
 from beancount_ui.models import Mutation
 from beancount_ui.orders import orders
 from beancount_ui.writer import Writer
@@ -89,6 +89,40 @@ def test_external_order_edit_is_reported_and_receipt_blocked(ledger):
     assert service.list()[0]["source_changed"]
     with pytest.raises(LedgerError, match="原订单"):
         service.receive(receipt(doc))
+
+
+def test_cached_preview_still_checks_orders_claimed_before_commit(ledger):
+    path = ledger.settings.ledger_dir / "txs/2026/08.bean"
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(
+            '\n2026-09-29 * "identified purchase"\n  order-id: "imported-order"\n'
+            '  order-action: "paid"\n  Expenses:Food 1 CNY\n  Assets:Cash -1 CNY\n'
+        )
+    snapshot = ledger.refresh()
+    order = next(row for row in orders(snapshot) if row["key"] == "imported-order")
+    edit = Mutation(
+        request_id=uuid4(),
+        revision=snapshot.revision,
+        operation="delete",
+        transaction_id=order["id"],
+    )
+    writer = Writer(ledger)
+    deletion = writer.preview(edit)
+
+    # Another worker claims the existing order ID without changing the ledger bytes.
+    other = Writer(Ledger(ledger.settings))
+    claim = edit.model_copy(
+        update={
+            "request_id": uuid4(),
+            "operation": "edit",
+            "raw": "",
+            "claim_order": "paid",
+        }
+    )
+    other.commit(other.preview(claim)["request_id"])
+    assert ledger.refresh().revision == snapshot.revision
+    with pytest.raises(LedgerError, match="预览后订单已关联"):
+        writer.commit(deletion["request_id"])
 
 
 def test_identical_price_orders_never_share_items(ledger):

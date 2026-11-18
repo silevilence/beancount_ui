@@ -198,6 +198,14 @@ class Ledger:
         self.latest: Snapshot | None = None
         self.last_valid: Snapshot | None = None
         self.layout_version: str | None = None
+        self.previewed: tuple[str, Snapshot] | None = None
+
+    def preview_for(self, revision: str, layout_version: str) -> Snapshot | None:
+        if self.previewed:
+            version, snapshot = self.previewed
+            if version == layout_version and snapshot.revision == revision:
+                return snapshot
+        return None
 
     @property
     def entry(self):
@@ -213,8 +221,9 @@ class Ledger:
             self.latest = self.last_valid = None
             self.layout_version = version
         files = read_files(self.settings.ledger_dir)
-        if self.latest is None or digest(files) != self.latest.revision:
-            self.latest = load_snapshot(files, layout.entry)
+        revision = digest(files)
+        if self.latest is None or revision != self.latest.revision:
+            self.latest = self.preview_for(revision, version) or load_snapshot(files, layout.entry)
             self.latest.business_files = business_files(history)
             # A writer outside this process must not turn a mixed snapshot into a valid view.
             if digest(read_files(self.settings.ledger_dir)) != self.latest.revision:

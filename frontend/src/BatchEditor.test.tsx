@@ -489,6 +489,43 @@ it.each([false, true])(
   },
 );
 
+it("整批入账成功即可关闭补记，即使日记账仍在刷新", async () => {
+  stubFetch({ form: base, items: [{ business: "ordinary", entry: base }] });
+  const respond = vi.mocked(fetch).getMockImplementation()!;
+  let finishCommit!: () => void;
+  vi.mocked(fetch).mockImplementation(async (url, options) => {
+    if (String(url).endsWith("/commit")) {
+      await new Promise<void>((resolve) => {
+        finishCommit = resolve;
+      });
+    }
+    return respond(url, options);
+  });
+  let finishRefresh!: () => void;
+  const onSaved = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finishRefresh = resolve;
+      }),
+  );
+  render(<BatchEditor {...props} onSaved={onSaved} />);
+  fireEvent.click(screen.getByText("整批预览并校验"));
+  fireEvent.click(await screen.findByText("确认整批入账"));
+  const confirm = screen.queryByRole("button", { name: "按这些日期入账" });
+  if (confirm) fireEvent.click(confirm);
+  const close = screen.getByRole("button", { name: "关闭补记" });
+  await waitFor(() => expect(finishCommit).toBeTypeOf("function"));
+  expect(close).toBeDisabled();
+  expect(onSaved).not.toHaveBeenCalled();
+  await act(async () => finishCommit());
+  await screen.findByText(/整批已入账/);
+  expect(onSaved).toHaveBeenCalledOnce();
+  expect(close).toBeEnabled();
+  fireEvent.click(close);
+  expect(props.onClose).toHaveBeenCalled();
+  await act(async () => finishRefresh());
+});
+
 it("十笔草稿恢复、固定日期、整批请求重试保持身份", async () => {
   vi.stubGlobal("crypto", {
     getRandomValues: crypto.getRandomValues.bind(crypto),

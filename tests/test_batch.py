@@ -72,3 +72,45 @@ def test_batch_checks_balance_assertions_on_final_snapshot(ledger):
     writer = Writer(ledger)
     writer.commit(writer.preview(request)["request_id"])
     assert not ledger.refresh().errors
+
+
+def test_batch_income_checks_earlier_items_before_writing(ledger):
+    writer = Writer(ledger)
+    request = batch(ledger, 4)
+    for item in (request.items[0], request.items[3]):
+        item.business = "yuebao"
+        item.raw = '2026-09-29 * "yield"\n  Assets:Yuebao 0.01 CNY\n  Income:Interest\n'
+    with pytest.raises(LedgerError, match="第 4 笔.*已有"):
+        writer.preview(request)
+    assert ledger.refresh().revision == request.revision
+
+
+def test_later_transfer_cannot_hide_an_unused_pad_in_an_earlier_prefix(ledger):
+    path = ledger.settings.ledger_dir / "txs/category/balance.bean"
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(
+            "\n2020-01-01 pad Assets:Yuebao Equity:Opening\n"
+            "2020-01-03 balance Assets:Yuebao 1 CNY\n"
+        )
+    request = batch(ledger, 2)
+    for item, amount in zip(request.items, (1, -1), strict=True):
+        item.raw = f'2020-01-02 * "transfer"\n  Assets:Yuebao {amount} CNY\n  Assets:Cash\n'
+    with pytest.raises(LedgerError, match="第 1 笔"):
+        Writer(ledger).preview(request)
+
+
+def test_committing_an_older_preview_uses_its_own_snapshot(ledger):
+    from test_orders import purchase
+
+    purchase(ledger)
+    writer = Writer(ledger)
+    first, second = batch(ledger, 2), batch(ledger, 3)
+    preview = writer.preview(first)
+    writer.preview(second)
+    assert ledger.refresh().revision == first.revision
+    writer.commit(preview["request_id"])
+    actual = ledger.refresh()
+    assert actual.revision == preview["revision"]
+    assert sum(r["narration"].startswith("batch-") for r in transactions(actual)) == 2
+    with pytest.raises(LedgerError, match="预览后账本已被修改"):
+        writer.commit(str(second.request_id))

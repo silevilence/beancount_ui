@@ -1,11 +1,13 @@
 """Representative large-ledger feedback loop; no private ledger data required."""
 
 from time import perf_counter
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 from beancount.core import data
 from beancount_ui.app import create_app
+from beancount_ui.writer import load_snapshot
 from fastapi.testclient import TestClient
 
 
@@ -42,8 +44,8 @@ def test_loaded_transactions_do_not_reparse_each_source(ledger, monkeypatch):
     assert any(row["posting_form"] for row in transactions(snapshot))
 
 
-@pytest.mark.parametrize("batch", [False, True], ids=["single", "backfill"])
-def test_large_ledger_preview_and_save(ledger, batch):
+@pytest.mark.parametrize("mode", ["single", "backfill", "mixed"])
+def test_large_ledger_preview_and_save(ledger, mode):
     root = ledger.settings.ledger_dir
     # Historical imports contain thousands of directives in one source file.
     with (root / "main.beancount").open("a", encoding="utf-8") as stream:
@@ -68,7 +70,7 @@ def test_large_ledger_preview_and_save(ledger, batch):
                 "payment": "Assets:Cash",
             },
         }
-        started = perf_counter()
+        batch = mode != "single"
         payload = (
             {
                 "request_id": request["request_id"],
@@ -78,23 +80,52 @@ def test_large_ledger_preview_and_save(ledger, batch):
             if batch
             else request
         )
-        preview = client.post("/api/batch/preview" if batch else "/api/preview", json=payload)
+        if mode == "mixed":
+            order = {
+                "kind": "paid",
+                "date": "2026-10-05",
+                "amount": "1",
+                "account": "Assets:Cash",
+                "purchase": request["entry"],
+            }
+            # An existing managed purchase exercises the commit-time order guard.
+            seed = {**payload, "request_id": str(uuid4()), "items": [{"order": order}]}
+            assert client.post("/api/batch/preview", json=seed).status_code == 200
+            assert client.post("/api/commit", json={"request_id": seed["request_id"]}).is_success
+            payload["revision"] = client.get("/api/journal?day=2026-10-05").json()["revision"]
+            payload["items"] = [
+                {"order": order},
+                {
+                    "business": "yuebao",
+                    "raw": '2026-10-05 * "yield"\n  Assets:Yuebao 0.01 CNY\n  Income:Interest\n',
+                },
+                {"entry": request["entry"]},
+                {"raw": '2026-10-05 * "transfer"\n  Assets:Bank 1 CNY\n  Assets:Cash -1 CNY\n'},
+            ]
+        started = perf_counter()
+        with patch("beancount_ui.writer.load_snapshot", wraps=load_snapshot) as loads:
+            preview = client.post("/api/batch/preview" if batch else "/api/preview", json=payload)
+        candidate_loads = loads.call_count
         preview_time = perf_counter() - started
         assert preview.status_code == 200, preview.text
         started = perf_counter()
-        saved = client.post("/api/commit", json={"request_id": request["request_id"]})
+        with patch("beancount_ui.writer.load_snapshot", wraps=load_snapshot) as commit_loads:
+            saved = client.post("/api/commit", json={"request_id": request["request_id"]})
         commit_time = perf_counter() - started
         assert saved.status_code == 200, saved.text
         started = perf_counter()
-        view = client.get("/api/journal?day=2026-10-05")
+        with patch("beancount_ui.ledger.load_snapshot", wraps=load_snapshot) as refresh_loads:
+            view = client.get("/api/journal?day=2026-10-05")
         refresh_time = perf_counter() - started
         assert view.status_code == 200
-        assert len(view.json()["transactions"]) == 1
+        assert len(view.json()["transactions"]) == (5 if mode == "mixed" else 1)
         print(
-            f"{'backfill' if batch else 'single'}: preview={preview_time:.3f}s "
+            f"{mode}: preview={preview_time:.3f}s loads={candidate_loads} "
             f"commit={commit_time:.3f}s refresh={refresh_time:.3f}s"
         )
         # Broad wall-clock ceiling tolerates coverage/CI overhead; the operation
         # count and no-reparse tests above provide deterministic regression gates.
+        assert candidate_loads <= (2 if mode == "mixed" else 1)
+        assert commit_loads.call_count == refresh_loads.call_count == 0
         assert preview_time < 10, "preview should not take tens of seconds"
         assert refresh_time < 10, "save refresh should not take tens of seconds"

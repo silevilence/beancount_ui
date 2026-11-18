@@ -457,7 +457,6 @@ export default function BatchEditor({
         templateVersion: undefined,
       });
       setMessage("整批已入账，等待备份；草稿已清空。可继续补记。");
-      await onSaved();
     } catch (e) {
       if (
         e instanceof ApiError &&
@@ -466,9 +465,15 @@ export default function BatchEditor({
       )
         persist({ ...draft, pending: { ...pending, uncertain: false } });
       setError(attempted ? `${String(e)} 请重试原请求核对结果。` : String(e));
+      return;
     } finally {
       running.current = false;
       setBusy(false);
+    }
+    try {
+      await onSaved();
+    } catch (e) {
+      setError(`整批已入账，刷新日记账失败：${String(e)}`);
     }
   }
   function applyTemplate(template: Template) {
