@@ -25,6 +25,23 @@ def source_span(snapshot: Snapshot, entry, lines: list[str]) -> tuple[str, int, 
     return name, start, end, "".join(lines[start:end])
 
 
+def transaction_kind(entry: data.Transaction) -> str:
+    debits = {p.account.split(":", 1)[0] for p in entry.postings if p.units.number > 0}
+    credits = {p.account.split(":", 1)[0] for p in entry.postings if p.units.number < 0}
+    # Cash pays down a liability; a fee or rebate can share the transaction.
+    if (
+        "order-ref" not in entry.meta
+        and {"Liabilities"} <= debits <= {"Liabilities", "Expenses"}
+        and {"Assets"} <= credits <= {"Assets", "Income"}
+    ):
+        return "还款"
+    if any(p.account.startswith("Expenses:") for p in entry.postings):
+        return "消费"
+    if any(p.account.startswith("Income:") for p in entry.postings):
+        return "收入"
+    return "转账 / 还款"
+
+
 def transactions(snapshot: Snapshot) -> list[dict]:
     if snapshot.records is not None:
         return snapshot.records
@@ -60,15 +77,6 @@ def transactions(snapshot: Snapshot) -> list[dict]:
             and entry.postings[0].account.startswith("Expenses:")
             and entry.postings[1].account.startswith(("Assets:", "Liabilities:"))
         )
-        kind = (
-            "消费"
-            if any(p.account.startswith("Expenses:") for p in entry.postings)
-            else (
-                "收入"
-                if any(p.account.startswith("Income:") for p in entry.postings)
-                else "转账 / 还款"
-            )
-        )
         result.append(
             {
                 "id": identity,
@@ -77,7 +85,7 @@ def transactions(snapshot: Snapshot) -> list[dict]:
                 "payee": entry.payee or "",
                 "narration": entry.narration,
                 "tags": sorted(entry.tags),
-                "kind": kind,
+                "kind": transaction_kind(entry),
                 "postings": postings,
                 "file": name,
                 "line": start + 1,

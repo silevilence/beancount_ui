@@ -27,6 +27,7 @@ const FILTER_FIELDS: {
 const AMOUNT_LABEL: Record<string, string> = {
   消费: "支出",
   收入: "收入",
+  还款: "还款",
   "转账 / 还款": "转出",
 };
 

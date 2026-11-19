@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import Journal from "./Journal";
 import type { Journal as JournalView, Transaction } from "./api";
@@ -43,6 +43,31 @@ function show(row: Transaction) {
     />,
   );
 }
+
+it("还款卡片展示冲减的负债金额，手续费和抵扣单列在分录中", () => {
+  show({
+    ...settlement,
+    kind: "还款",
+    payee: "",
+    narration: "信用账户还款",
+    related_order: undefined,
+    metadata: {},
+    postings: [
+      {
+        account: "Liabilities:Card",
+        amount: "4772.99",
+        currency: "CNY",
+        note: "",
+      },
+      { account: "Assets:Bank", amount: "-4773.81", currency: "CNY", note: "" },
+      { account: "Expenses:Fee", amount: "1.00", currency: "CNY", note: "" },
+      { account: "Income:Gift", amount: "-0.18", currency: "CNY", note: "" },
+    ],
+  });
+  expect(screen.getByTitle("还款")).toHaveTextContent("还");
+  const figure = screen.getByText("还款").parentElement!;
+  expect(within(figure).getByText("4,772.99 CNY")).toBeVisible();
+});
 
 it("结算流水直接展示原购买内容并可展开原文，与本条结算原文区分", () => {
   show(settlement);

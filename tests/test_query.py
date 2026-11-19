@@ -3,6 +3,23 @@ from datetime import date
 from beancount_ui.query import daily_view, transactions
 
 
+def test_daily_repayment_with_income_posting(ledger):
+    path = ledger.settings.ledger_dir / "main.beancount"
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(
+            "\n2020-01-01 open Income:Gift CNY\n"
+            '2026-11-19 * "信用账户还款"\n'
+            "  Liabilities:Card 4772.99 CNY\n"
+            "  Assets:Bank -4772.81 CNY\n"
+            "  Income:Gift -0.18 CNY\n"
+        )
+    view = daily_view(ledger, date(2026, 11, 19))
+    (row,) = view["transactions"]
+    assert row["kind"] == "还款"
+    assert view["income"] == {"CNY": "0.18"}
+    assert view["expenses"] == {}
+
+
 def test_daily_aggregation_and_filters(ledger):
     view = daily_view(ledger, date(2026, 9, 30))
     assert len(view["transactions"]) == 4

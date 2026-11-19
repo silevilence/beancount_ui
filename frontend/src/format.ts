@@ -183,6 +183,11 @@ export function transactionTotals(
   kind: string,
   postings: { account: string; amount: string; currency: string }[],
 ): AmountLine[] {
+  if (kind === "还款") {
+    return sumByCurrency(
+      postings.filter((p) => p.account.startsWith("Liabilities:")),
+    );
+  }
   if (kind === "消费" || kind === "收入") {
     const prefix = kind === "消费" ? "Expenses:" : "Income:";
     return sumByCurrency(
@@ -207,7 +212,11 @@ const KIND_TONE: Record<string, "expense" | "income" | "transfer"> = {
   收入: "income",
 };
 
-const KIND_MARK: Record<string, string> = { 消费: "支", 收入: "收" };
+const KIND_MARK: Record<string, string> = {
+  消费: "支",
+  收入: "收",
+  还款: "还",
+};
 
 export function kindTone(kind: string): "expense" | "income" | "transfer" {
   return KIND_TONE[kind] ?? "transfer";

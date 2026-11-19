@@ -31,7 +31,10 @@ def test_repayment_fee_and_balance_boundary(ledger):
     result = finance(ledger)
     preview = writer.preview(mutation(ledger, entry=None, **result))
     writer.commit(preview["request_id"])
-    assert daily_view(ledger, date(2026, 9, 30))["expenses"] == {"CNY": "26.50"}
+    view = daily_view(ledger, date(2026, 9, 30))
+    assert view["expenses"] == {"CNY": "26.50"}
+    repayment = next(row for row in view["transactions"] if row["narration"] == "信用账户还款")
+    assert repayment["kind"] == "还款"
     before = finance(ledger, kind="balance", date="2026-09-30", amount="0")
     after = finance(ledger, kind="balance", date="2026-10-01", amount="0")
     assert before["actual"] != after["actual"]
