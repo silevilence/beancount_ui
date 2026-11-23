@@ -35,7 +35,7 @@ from .manual_stock import ManualStock, StockAction
 from .models import BatchMutation, CommitInput, Mutation
 from .order_corrections import CorrectionInput, OrderCorrections
 from .orders import orders
-from .query import daily_view
+from .query import daily_view, search_transactions
 from .receipt_batch import ReceiptBatch
 from .receipt_flow import ReceiptFlow
 from .scheduler import ScheduleInput, Scheduler, configure
@@ -383,6 +383,14 @@ def create_app(settings: Settings | None = None, access: Access | None = None):
             result = daily_view(get_ledger(), day, payee, narration, account)
             result["sync"] = get_sync().status().get("sync", "已保存 · 尚未接入")
             return result
+
+    @app.get("/api/transactions/search")
+    def history_search(
+        q: Annotated[str, Query(max_length=200)] = "",
+        page: Annotated[int, Query(ge=1)] = 1,
+    ):
+        with get_writer().guard():
+            return search_transactions(get_ledger().refresh(), q, page)
 
     @app.get("/api/statistics")
     def report(

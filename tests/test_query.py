@@ -1,6 +1,53 @@
 from datetime import date
+from uuid import uuid4
 
+from beancount_ui.app import create_app
 from beancount_ui.query import daily_view, transactions
+from fastapi.testclient import TestClient
+
+
+def test_search_and_create_independent_copy(ledger):
+    client = TestClient(create_app(ledger.settings))
+    endpoint = "/api/transactions/search"
+    params = {"q": "套餐 assets:cash 2026-09"}
+    (source,) = client.get(endpoint, params=params).json()["transactions"]
+    assert source["narration"] == "午饭"
+    form = source["posting_form"]
+    form.update(date="2026-10-01", narration="晚饭")
+    for posting in form["postings"]:
+        posting.pop("source_index")
+    request = {
+        "request_id": str(uuid4()),
+        "revision": ledger.refresh().revision,
+        "operation": "create",
+        "business": "ordinary",
+        "posting_entry": form,
+    }
+    preview = client.post("/api/preview", json=request)
+    assert preview.status_code == 200, preview.text
+    assert client.post("/api/commit", json={"request_id": request["request_id"]}).is_success
+    (original,) = client.get(endpoint, params=params).json()["transactions"]
+    assert original["id"] == source["id"] and original["raw"] == source["raw"]
+    (copy,) = client.get(endpoint, params={"q": "晚饭 套餐"}).json()["transactions"]
+    assert copy["date"] == "2026-10-01" and copy["id"] != source["id"]
+
+
+def test_search_paging_and_empty_matches(ledger):
+    with (ledger.settings.ledger_dir / "main.beancount").open("a", encoding="utf-8") as stream:
+        for day in range(1, 15):
+            stream.write(
+                f'\n2026-10-{day:02d} * "重复消费"\n  Expenses:Food 1 CNY\n  Assets:Cash\n'
+            )
+    client = TestClient(create_app(ledger.settings))
+    endpoint = "/api/transactions/search"
+    first = client.get(endpoint, params={"q": "重复消费"}).json()
+    second = client.get(endpoint, params={"q": "重复消费", "page": 2}).json()
+    assert first["has_more"] and not second["has_more"]
+    rows = first["transactions"] + second["transactions"]
+    assert [r["date"] for r in rows] == [f"2026-10-{day:02d}" for day in range(14, 0, -1)]
+    assert client.get(endpoint, params={"q": "未匹配"}).json() == {
+        "transactions": [], "has_more": False,
+    }
 
 
 def test_daily_repayment_with_income_posting(ledger):

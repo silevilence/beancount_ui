@@ -4,11 +4,12 @@ import hashlib
 from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
+from itertools import islice
 from zoneinfo import ZoneInfo
 
 from beancount.core import data
 
-from .ledger import Ledger, Snapshot, git_info
+from .ledger import Ledger, LedgerError, Snapshot, git_info
 from .posting_form import read_form
 
 
@@ -99,6 +100,26 @@ def transactions(snapshot: Snapshot) -> list[dict]:
         )
     snapshot.records = result
     return result
+
+
+def search_transactions(snapshot: Snapshot, keyword: str, page: int) -> dict:
+    if snapshot.errors:
+        raise LedgerError("账本校验失败，暂时无法搜索历史记录")
+    terms = keyword.casefold().split()
+
+    def matches(row):
+        if not terms:
+            return True
+        content = f"{row['date']} {row['payee']} {row['narration']} {row['note']} {row['raw']}"
+        content = content.casefold()
+        return all(term in content for term in terms)
+
+    size = 12
+    records = transactions(snapshot)
+    offset = min((page - 1) * size, len(records))
+    history = filter(matches, reversed(records))
+    rows = list(islice(history, offset, offset + size + 1))
+    return {"transactions": rows[:size], "has_more": len(rows) > size}
 
 
 def accounts_at(snapshot: Snapshot, day: date) -> list[dict]:

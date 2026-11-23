@@ -82,9 +82,10 @@ export default function PostingFields({
               disabled={p.amount === null}
               value={p.amount ?? ""}
               onChange={(e) => update(i, { amount: e.target.value })}
-              onBlur={(e) =>
-                update(i, { amount: normalizeAmount(e.target.value) })
-              }
+              onBlur={(e) => {
+                const amount = normalizeAmount(e.target.value);
+                if (amount !== p.amount) update(i, { amount });
+              }}
             />
           </label>
           <label className="field">

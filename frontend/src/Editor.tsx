@@ -6,6 +6,7 @@ import RawEditor from "./RawEditor";
 import PurchaseItems, { type PurchaseItem } from "./PurchaseItems";
 import type { DraftItem } from "./BatchEditor";
 import QuickFill from "./QuickFill";
+import HistoryFill from "./HistoryFill";
 import { captureFill } from "./fillTemplates";
 import SplitFields from "./SplitFields";
 import PostingFields, { blankPosting } from "./PostingFields";
@@ -173,10 +174,22 @@ export default function Editor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [historyFill, setHistoryFill] = useState<{
+    label: string;
+    undo: () => void;
+  }>();
   const [keepOpen, setKeepOpen] = useState(true);
   const [log, setLog] = useState<{ label: string; amount: string }[]>([]);
   const busyRef = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!historyFill) return;
+    const target = dialog.current?.querySelector<
+      HTMLInputElement | HTMLTextAreaElement
+    >('fieldset textarea, fieldset input[inputmode="decimal"]:not(:disabled)');
+    target?.focus();
+    if (target instanceof HTMLInputElement) target.select();
+  }, [historyFill]);
   const [accounts, setAccounts] = useState(journal.accounts);
   const [accountError, setAccountError] = useState("");
   const op = pending.current?.request.operation || operation;
@@ -236,6 +249,7 @@ export default function Editor({
     setPreview(undefined);
     setError("");
     setMessage("");
+    setHistoryFill(undefined);
   }
   function change(key: keyof EntryFields, value: string) {
     try {
@@ -245,8 +259,62 @@ export default function Editor({
       setError(String(e));
     }
   }
+  function fillFromHistory(source: Transaction) {
+    const form = source.posting_form;
+    const date = fields.date || journal.date;
+    const basic =
+      !!form &&
+      !income &&
+      source.simple &&
+      form.postings.every((posting) => !posting.note);
+    invalidate();
+    setFields({
+      date,
+      payee: source.payee,
+      narration: source.narration,
+      note: form?.note ?? source.note,
+      amount: basic ? source.postings[0].amount : "",
+      currency: source.postings[0]?.currency || "CNY",
+      category: basic ? source.postings[0].account : "",
+      payment: basic ? source.postings[1].account : "",
+    });
+    setOrderMode("");
+    setPurchaseItems([]);
+    setMulti(!!form && !basic);
+    setPostings(
+      form && !basic
+        ? form.postings.map(({ source_index, ...posting }) => posting)
+        : [],
+    );
+    setAdvanced(!form);
+    setRaw(
+      form
+        ? ""
+        : source.raw.replace(/^\d{4}[-/]\d{1,2}[-/]\d{1,2}(?=\s)/, date),
+    );
+    setHistoryFill({
+      label: [source.date, source.payee, source.narration || source.kind]
+        .filter(Boolean)
+        .join(" · "),
+      undo() {
+        invalidate();
+        setFields(fields);
+        setOrderMode(orderMode);
+        setPurchaseItems(purchaseItems);
+        setPostings(postings);
+        setMulti(multi);
+        setAdvanced(advanced);
+        setRaw(raw);
+        setMessage("已恢复填入前的表单。");
+        dialog.current
+          ?.querySelector<HTMLButtonElement>(".history-fill > button")
+          ?.focus();
+      },
+    });
+  }
   async function makePreview() {
     if (busyRef.current) return;
+    setHistoryFill(undefined);
     busyRef.current = true;
     setBusy(true);
     setError("");
@@ -414,7 +482,10 @@ export default function Editor({
           inputMode={key === "amount" ? "decimal" : undefined}
           onBlur={
             key === "amount"
-              ? (e) => change(key, normalizeAmount(e.target.value))
+              ? (e) => {
+                  const normalized = normalizeAmount(e.target.value);
+                  if (normalized !== fields[key]) change(key, normalized);
+                }
               : undefined
           }
           value={String(fields[key] ?? "")}
@@ -540,6 +611,12 @@ export default function Editor({
             )}
             {op === "create" &&
               businessConfig &&
+              !recordTemplate &&
+              !rawOnly && (
+                <HistoryFill key={business} onApply={fillFromHistory} />
+              )}
+            {op === "create" &&
+              businessConfig &&
               (!rawOnly || recordTemplate) && (
                 <QuickFill
                   key={`${journal.identity}.${business}.${JSON.stringify(recordTemplate)}`}
@@ -642,6 +719,21 @@ export default function Editor({
                 />
                 多行分录表单（含预算权益）
               </label>
+            )}
+            {historyFill && (
+              <Notice
+                action={
+                  <button
+                    type="button"
+                    className="ghost small"
+                    onClick={historyFill.undo}
+                  >
+                    撤销填入
+                  </button>
+                }
+              >
+                已填入「{historyFill.label}」，本次日期为 {fields.date}。
+              </Notice>
             )}
             {recordTemplate ? (
               <RecordFields

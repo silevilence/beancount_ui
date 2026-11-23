@@ -2673,6 +2673,31 @@ kbd {
 }
 .quick-fill details { margin-top: 0.75rem; }
 .quick-fill summary { cursor: pointer; }
+.history-fill { margin-block: .75rem; }
+.history-fill .field { margin-top: .5rem; }
+.history-results {
+  list-style: none;
+  padding: 0;
+  margin: .5rem 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.history-results li + li { margin-top: 4px; }
+.history-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .25rem .75rem;
+  width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.history-result small { grid-column: 1 / -1; }
+.history-amount { font-variant-numeric: tabular-nums; color: var(--ink); }
+@media (max-width: 560px) {
+  .history-result { grid-template-columns: minmax(0, 1fr); }
+  .history-fill button { min-height: 44px; }
+}
 /* Settings and inventory use the ledger's paper, ink and ruled card vocabulary. */
 .settings-page { padding: 24px; max-width: 1200px; margin: auto; }
 .page-heading { margin-bottom: 24px; }

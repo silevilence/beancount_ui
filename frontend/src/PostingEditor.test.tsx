@@ -56,7 +56,7 @@ const row: Transaction = {
   raw: '2026-10-01 * "游戏商户" "预算" #game\n',
 };
 
-function setup() {
+function setup(history?: (url: URL) => Transaction[]) {
   const requests: { url: string; body: Record<string, unknown> }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -64,6 +64,11 @@ function setup() {
       const body = options?.body ? JSON.parse(String(options.body)) : {};
       requests.push({ url, body });
       let data: unknown = journal;
+      if (url.includes("/transactions/search"))
+        data = {
+          transactions: history?.(new URL(url, "http://localhost")) ?? [],
+          has_more: false,
+        };
       if (url.includes("/layout"))
         data = {
           version: "v1",
@@ -93,6 +98,119 @@ function setup() {
 function change(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
+
+it("搜索旧交易填入当前日期，修改金额后按新记录保存", async () => {
+  const postings = [
+    { account: "Expenses:Games", amount: "30", currency: "CNY", note: "" },
+    { account: "Assets:Cash", amount: "-30", currency: "CNY", note: "" },
+  ];
+  const source = {
+    ...row,
+    date: "2026-05-01",
+    simple: true,
+    postings,
+    posting_form: { ...form, postings },
+    metadata: { "order-id": "old" },
+  };
+  const requests = setup((url) =>
+    url.searchParams.get("q") === "预算" ? [source] : [],
+  );
+  render(<Editor {...props} operation="create" />);
+  fireEvent.click(await screen.findByText("从历史记录填入"));
+  await screen.findByText("没有找到匹配的记录。");
+  change("搜索历史记录", "预算");
+  fireEvent.click(
+    await screen.findByRole("button", { name: /游戏商户 · 预算/ }),
+  );
+  expect(screen.getByLabelText("交易日期")).toHaveValue(journal.date);
+  expect(screen.getByLabelText("金额")).toHaveValue("30");
+  expect(screen.getByLabelText("金额")).toHaveFocus();
+  change("金额", "42");
+  expect(screen.queryByText("撤销填入")).toBeNull();
+  fireEvent.click(screen.getByText("预览并校验"));
+  fireEvent.click(await screen.findByText("确认保存"));
+  const confirm = screen.queryByRole("button", { name: "按这些日期入账" });
+  if (confirm) fireEvent.click(confirm);
+  await waitFor(() =>
+    expect(requests.some((r) => r.url.endsWith("/commit"))).toBe(true),
+  );
+  const preview = requests.find((r) => r.url.endsWith("/preview"))!.body;
+  expect(preview).toMatchObject({
+    operation: "create",
+    entry: {
+      date: journal.date,
+      payee: form.payee,
+      narration: form.narration,
+      note: form.note,
+      amount: "42",
+      category: "Expenses:Games",
+      payment: "Assets:Cash",
+    },
+  });
+  expect(preview).not.toHaveProperty("transaction_id");
+  expect(preview).not.toHaveProperty("order");
+});
+
+it("Esc 收起历史搜索，选错后可恢复原有商品和手填内容", async () => {
+  setup(() => [row]);
+  render(<Editor {...props} operation="create" />);
+  change("摘要", "手填采购");
+  change("金额", "56");
+  fireEvent.click(screen.getByText("添加商品明细"));
+  change("商品名称", "洗发水");
+  const trigger = await screen.findByText("从历史记录填入");
+  fireEvent.click(trigger);
+  fireEvent.keyDown(screen.getByLabelText("搜索历史记录"), { key: "Escape" });
+  expect(trigger).toHaveFocus();
+  expect(screen.queryByLabelText("搜索历史记录")).toBeNull();
+  fireEvent.click(trigger);
+  fireEvent.click(
+    await screen.findByRole("button", { name: /游戏商户 · 预算/ }),
+  );
+  const amount = screen.getByLabelText("分录金额 1");
+  expect(amount).toHaveFocus();
+  fireEvent.blur(amount);
+  fireEvent.click(screen.getByText("撤销填入"));
+  expect(screen.getByLabelText("摘要")).toHaveValue("手填采购");
+  expect(screen.getByLabelText("商品名称")).toHaveValue("洗发水");
+  expect(screen.getByLabelText("金额")).toHaveValue("56");
+  expect(trigger).toHaveFocus();
+});
+
+it("多行回填保留逐行备注和价格，重新选择后旧预览失效", async () => {
+  const price = { kind: "total" as const, amount: "8", currency: "CNY" };
+  const postings = form.postings.map((p, i) => (i === 0 ? { ...p, price } : p));
+  const requests = setup(() => [
+    { ...row, posting_form: { ...form, postings } },
+    {
+      ...row,
+      id: "cost",
+      narration: "证券成本",
+      posting_form: null,
+      raw: '2026-08-30 * "证券成本"\n  Assets:Shares 1 HOOL {10 USD}\n  Assets:Bank -10 USD',
+    },
+  ]);
+  render(<Editor {...props} operation="create" />);
+  fireEvent.click(await screen.findByText("从历史记录填入"));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /游戏商户 · 预算/ }),
+  );
+  expect(screen.getByLabelText("分录备注 1")).toHaveValue("备注0");
+  fireEvent.click(screen.getByText("预览并校验"));
+  await screen.findByText("确认保存");
+  const preview = requests.find((r) => r.url.endsWith("/preview"))!.body;
+  expect(preview.posting_entry).toEqual({
+    ...form,
+    postings: postings.map(({ source_index, ...posting }) => posting),
+  });
+  fireEvent.click(screen.getByText("从历史记录填入"));
+  fireEvent.click(await screen.findByRole("button", { name: /证券成本/ }));
+  expect(screen.getByLabelText("Beancount 原文")).toHaveFocus();
+  expect(screen.queryByText("确认保存")).toBeNull();
+  expect(screen.getByLabelText("Beancount 原文")).toHaveValue(
+    `${journal.date} * "证券成本"\n  Assets:Shares 1 HOOL {10 USD}\n  Assets:Bank -10 USD`,
+  );
+});
 
 it.each(["single", "batch"])(
   "%s 商户摘要支持历史候选并可自由填写",
