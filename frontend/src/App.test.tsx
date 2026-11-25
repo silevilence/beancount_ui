@@ -9,6 +9,7 @@ import {
 import { expect, it, vi } from "vitest";
 import App from "./App";
 import { PENDING_KEY } from "./Editor";
+import { shanghaiToday } from "./format";
 
 vi.mock("./SyncPanel", () => ({ default: () => null }));
 
@@ -472,6 +473,7 @@ it("待确认请求可恢复，恢复期间暂停记录操作", async () => {
   );
   render(<App />);
   expect(await screen.findByText(PENDING_NOTICE)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "复制记一笔" })).toBeDisabled();
   expect(screen.getByText("修改")).toBeDisabled();
   fireEvent.click(screen.getByText("恢复原请求"));
   expect(await screen.findByLabelText("Beancount 原文")).toHaveValue(row.raw);
@@ -618,16 +620,92 @@ it("原文可复制，剪贴板不可用时保持原提示", async () => {
   });
   render(<App />);
   fireEvent.click(await screen.findByText("查看原文"));
-  fireEvent.click(screen.getByText("复制"));
+  fireEvent.click(screen.getByText("复制原文"));
   expect(screen.queryByText("已复制")).not.toBeInTheDocument();
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", {
     value: { writeText },
     configurable: true,
   });
-  fireEvent.click(screen.getByText("复制"));
+  fireEvent.click(screen.getByText("复制原文"));
   expect(await screen.findByText("已复制")).toBeInTheDocument();
   expect(writeText).toHaveBeenCalledWith(row.raw);
+});
+
+it("从只读历史流水复制到今天，关闭可放弃，确认后按新增保存", async () => {
+  const today = shanghaiToday();
+  const source = {
+    ...row,
+    readonly: true,
+    note: "工作餐",
+    tags: [],
+    posting_form: { ...row, note: "工作餐" },
+  };
+  const writes: { path: string; body: Payload }[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path: string, options?: RequestInit) => {
+      const url = new URL(path, "http://local");
+      if (url.pathname === "/api/ledger") return ok(status());
+      if (url.pathname === "/api/sync") return ok(sync());
+      if (url.pathname === "/api/layout")
+        return ok({ version: "v1", layout: { routes: {} } });
+      if (url.pathname === "/api/journal") {
+        const day = url.searchParams.get("day")!;
+        return ok(
+          view(day, {
+            transactions: day === source.date ? [source] : [],
+            accounts: row.postings.map((p) => ({
+              name: p.account,
+              currencies: ["CNY"],
+            })),
+          }),
+        );
+      }
+      if (!options?.body) return ok([]);
+      const body = JSON.parse(String(options.body));
+      writes.push({ path, body });
+      return ok({
+        request_id: body.request_id,
+        revision: "r2",
+        items: [{ raw: row.raw.replace(row.date, today) }],
+        diffs: {},
+      });
+    }),
+  );
+  render(<App />);
+  fireEvent.change(screen.getByLabelText("记账日期"), {
+    target: { value: source.date },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "复制记一笔" }));
+  const dialog = within(
+    await screen.findByRole("dialog", { name: "随手记一笔" }),
+  );
+  expect(dialog.getByLabelText("交易日期")).toHaveValue(today);
+  expect(dialog.getByLabelText("商户")).toHaveValue(source.payee);
+  expect(dialog.getByLabelText("摘要")).toHaveValue(source.narration);
+  expect(dialog.getByLabelText("备注")).toHaveValue(source.note);
+  expect(dialog.getByLabelText("金额")).toHaveValue("25.50");
+  fireEvent.click(dialog.getByLabelText("关闭编辑"));
+  expect(writes).toEqual([]);
+  fireEvent.click(screen.getByRole("button", { name: "复制记一笔" }));
+  fireEvent.change(screen.getByLabelText("金额"), { target: { value: "28" } });
+  fireEvent.click(screen.getByText("预览并校验"));
+  fireEvent.click(await screen.findByText("确认保存"));
+  await screen.findByText("本次已录入");
+  expect(writes.map((w) => w.path)).toEqual(["/api/preview", "/api/commit"]);
+  expect(writes[0].body).toMatchObject({
+    operation: "create",
+    entry: {
+      date: today,
+      amount: "28",
+      category: "Expenses:Food",
+      payment: "Assets:Cash",
+      currency: "CNY",
+    },
+  });
+  expect(writes[0].body).not.toHaveProperty("transaction_id");
+  expect(screen.getByLabelText("记账日期")).toHaveValue(source.date);
 });
 
 it("从工作台完成一笔录入并刷新当日视图", async () => {

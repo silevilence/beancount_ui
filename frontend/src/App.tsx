@@ -145,6 +145,7 @@ export default function App() {
     row?: Transaction;
     operation: "create" | "edit" | "delete";
     initialPurchase?: PurchaseItem;
+    copyFrom?: Transaction;
   }>();
   const [hasPending, setHasPending] = useState(() => !!readPending());
   const [drafts, setDrafts] = useState(0);
@@ -512,6 +513,9 @@ export default function App() {
                   onFilter={setDraftFilters}
                   searchRef={search}
                   canEdit={canEditRow}
+                  onCopy={(copyFrom) =>
+                    setEditor({ operation: "create", copyFrom })
+                  }
                   onEdit={(row) => setEditor({ row, operation: "edit" })}
                   onDelete={(row) => setEditor({ row, operation: "delete" })}
                 />
@@ -675,6 +679,7 @@ export default function App() {
           row={editor.row}
           operation={editor.operation}
           initialPurchase={editor.initialPurchase}
+          copyFrom={editor.copyFrom}
           onSaved={async () => {
             setHasPending(false);
             await refresh();

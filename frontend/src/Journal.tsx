@@ -1,5 +1,6 @@
 import { useState, type RefObject } from "react";
 import type { Journal as JournalView, Transaction } from "./api";
+import { copyRestriction } from "./HistoryFill";
 import {
   kindMark,
   kindTone,
@@ -48,17 +49,20 @@ function EntryRow({
   row,
   sync,
   canEdit,
+  onCopy,
   onEdit,
   onDelete,
 }: {
   row: Transaction;
   sync: string;
   canEdit: boolean;
+  onCopy: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const tone = kindTone(row.kind);
+  const restriction = copyRestriction(row);
   async function copyRaw() {
     try {
       await navigator.clipboard.writeText(row.raw);
@@ -134,29 +138,39 @@ function EntryRow({
           <div className="raw-head">
             <span>Beancount 原文</span>
             <button className="ghost small" onClick={() => void copyRaw()}>
-              {copied ? "已复制" : "复制"}
+              {copied ? "已复制" : "复制原文"}
             </button>
           </div>
           <pre>{row.raw}</pre>
         </details>
-        {!row.readonly && (
-          <div className="row-actions">
-            <button
-              className="ghost small"
-              disabled={!canEdit}
-              onClick={onEdit}
-            >
-              {row.simple || row.posting_form ? "修改" : "高级编辑"}
-            </button>
-            <button
-              className="ghost small danger"
-              disabled={!canEdit}
-              onClick={onDelete}
-            >
-              删除
-            </button>
-          </div>
-        )}
+        <div className="row-actions">
+          <button
+            className="ghost small"
+            disabled={!canEdit || !!restriction}
+            onClick={onCopy}
+          >
+            复制记一笔
+          </button>
+          {!row.readonly && (
+            <>
+              <button
+                className="ghost small"
+                disabled={!canEdit}
+                onClick={onEdit}
+              >
+                {row.simple || row.posting_form ? "修改" : "高级编辑"}
+              </button>
+              <button
+                className="ghost small danger"
+                disabled={!canEdit}
+                onClick={onDelete}
+              >
+                删除
+              </button>
+            </>
+          )}
+        </div>
+        {restriction && <small className="muted">{restriction}</small>}
       </div>
       <div className="entry-figure">
         <span className="figure-label">{AMOUNT_LABEL[row.kind] ?? "金额"}</span>
@@ -175,6 +189,7 @@ export default function Journal({
   onFilter,
   searchRef,
   canEdit,
+  onCopy,
   onEdit,
   onDelete,
 }: {
@@ -183,6 +198,7 @@ export default function Journal({
   onFilter: (next: Filters) => void;
   searchRef?: RefObject<HTMLInputElement | null>;
   canEdit: boolean;
+  onCopy: (row: Transaction) => void;
   onEdit: (row: Transaction) => void;
   onDelete: (row: Transaction) => void;
 }) {
@@ -232,6 +248,7 @@ export default function Journal({
           row={row}
           sync={journal.sync}
           canEdit={canEdit}
+          onCopy={() => onCopy(row)}
           onEdit={() => onEdit(row)}
           onDelete={() => onDelete(row)}
         />

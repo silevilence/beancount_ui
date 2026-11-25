@@ -38,6 +38,7 @@ function show(row: Transaction) {
       filters={{ payee: "", narration: "", account: "" }}
       onFilter={() => {}}
       canEdit
+      onCopy={() => {}}
       onEdit={() => {}}
       onDelete={() => {}}
     />,
@@ -71,6 +72,8 @@ it("还款卡片展示冲减的负债金额，手续费和抵扣单列在分录�
 
 it("结算流水直接展示原购买内容并可展开原文，与本条结算原文区分", () => {
   show(settlement);
+  expect(screen.getByRole("button", { name: "复制记一笔" })).toBeDisabled();
+  expect(screen.getByText("含订单关联的复杂原文，无法套用")).toBeVisible();
   expect(screen.getByText("原购买：淘宝 · 洗碗块")).toBeInTheDocument();
   expect(screen.getByText("2026-10-01 · 155.86 CNY")).toBeInTheDocument();
   expect(screen.getByText("24块装")).toBeInTheDocument();

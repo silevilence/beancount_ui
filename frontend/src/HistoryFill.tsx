@@ -8,6 +8,12 @@ interface Results {
   has_more: boolean;
 }
 
+export function copyRestriction(row: Transaction) {
+  return !row.posting_form && Object.keys(row.metadata || {}).length > 0
+    ? "含订单关联的复杂原文，无法套用"
+    : "";
+}
+
 function HistorySearch({ onApply }: { onApply: (row: Transaction) => void }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -92,15 +98,14 @@ function HistorySearch({ onApply }: { onApply: (row: Transaction) => void }) {
           )}
           <ul className="history-results">
             {result.transactions.map((row) => {
-              const managedRaw =
-                !row.posting_form && Object.keys(row.metadata || {}).length > 0;
+              const restriction = copyRestriction(row);
               const totals = transactionTotals(row.kind, row.postings);
               return (
                 <li key={row.id}>
                   <button
                     type="button"
                     className="ghost history-result"
-                    disabled={managedRaw}
+                    disabled={!!restriction}
                     onClick={() => onApply(row)}
                   >
                     <strong>
@@ -123,8 +128,8 @@ function HistorySearch({ onApply }: { onApply: (row: Transaction) => void }) {
                         .join(" · ")}
                     </small>
                     {row.note && <small>{row.note}</small>}
-                    {managedRaw ? (
-                      <small>含订单关联的复杂原文，无法套用</small>
+                    {restriction ? (
+                      <small>{restriction}</small>
                     ) : (
                       !row.posting_form && <small>使用原文编辑</small>
                     )}

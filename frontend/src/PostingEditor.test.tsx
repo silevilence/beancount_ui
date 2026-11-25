@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import Editor, { PENDING_KEY } from "./Editor";
+import { shanghaiToday } from "./format";
 import BatchEditor, { draftKey } from "./BatchEditor";
 import type { Journal, PostingEntry, Transaction } from "./api";
 
@@ -56,7 +57,7 @@ const row: Transaction = {
   raw: '2026-10-01 * "游戏商户" "预算" #game\n',
 };
 
-function setup(history?: (url: URL) => Transaction[]) {
+function setup(history?: (url: URL) => Transaction[], routes = {}) {
   const requests: { url: string; body: Record<string, unknown> }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -73,7 +74,7 @@ function setup(history?: (url: URL) => Transaction[]) {
         data = {
           version: "v1",
           write_day: journal.date,
-          layout: { routes: {} },
+          layout: { routes },
         };
       if (url.includes("/templates") || url.includes("/orders")) data = [];
       if (url.includes("preview"))
@@ -98,6 +99,54 @@ function setup(history?: (url: URL) => Transaction[]) {
 function change(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
+
+it("固定业务模板无法套用时提示切换业务，保留待复制的内容", async () => {
+  setup(undefined, { ordinary: { template: { source: "", fields: {} } } });
+  render(<Editor {...props} operation="create" copyFrom={row} />);
+  expect(await screen.findByText(/此业务使用固定模板/)).toBeVisible();
+  expect(screen.getByText("预览并校验")).toBeDisabled();
+  change("业务类型", "phone");
+  expect(screen.getByLabelText("Beancount 原文")).toHaveValue(
+    row.raw.replace(journal.date, shanghaiToday()),
+  );
+});
+
+it("复制带标签或附加元数据的流水时保留原文，只更新首行日期", async () => {
+  setup();
+  const source = { ...row, raw: row.raw + '  receipt: "2026-10-01"\n' };
+  render(<Editor {...props} operation="create" copyFrom={source} />);
+  expect(await screen.findByLabelText("Beancount 原文")).toHaveValue(
+    source.raw.replace(journal.date, shanghaiToday()),
+  );
+});
+
+it("从流水复制多行分录，保留备注和价格并移除旧分录位置", async () => {
+  const requests = setup();
+  const price = { kind: "total" as const, amount: "8", currency: "CNY" };
+  const postings = form.postings.map((p, i) => (i === 0 ? { ...p, price } : p));
+  render(
+    <Editor
+      {...props}
+      operation="create"
+      copyFrom={{
+        ...row,
+        tags: [],
+        raw: row.raw.replace(" #game", ""),
+        posting_form: { ...form, postings },
+      }}
+    />,
+  );
+  expect(screen.getByLabelText("交易日期")).toHaveValue(shanghaiToday());
+  fireEvent.click(screen.getByText("预览并校验"));
+  await screen.findByText("确认保存");
+  expect(
+    requests.find((r) => r.url.endsWith("/preview"))!.body.posting_entry,
+  ).toEqual({
+    ...form,
+    date: shanghaiToday(),
+    postings: postings.map(({ source_index, ...p }) => p),
+  });
+});
 
 it("搜索旧交易填入当前日期，修改金额后按新记录保存", async () => {
   const postings = [

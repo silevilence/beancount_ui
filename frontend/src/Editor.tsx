@@ -49,6 +49,58 @@ export interface EntryFields {
   note: string;
 }
 
+function copyForm(source: Transaction) {
+  // Linked orders can only contribute editable fields to a new transaction.
+  if (!source.posting_form || Object.keys(source.metadata || {}).length)
+    return source.posting_form;
+  // A new form cannot carry tags, links, flags, comments or extra metadata.
+  // Ignore quoted text so punctuation inside a merchant or memo stays ordinary.
+  const [header, ...lines] = source.raw
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .trimEnd()
+    .split(/\r?\n/);
+  const plain =
+    /^\S+\s+\*\s+""(?:\s+"")?\s*$/.test(header) &&
+    lines.every(
+      (line) =>
+        !line.trim() ||
+        (!line.includes(";") && /^\s+(?:[A-Z][\w-]*:|memo:)/.test(line)),
+    );
+  return plain ? source.posting_form : null;
+}
+
+function historyDraft(
+  source: Transaction,
+  date: string,
+  income: boolean,
+  form = source.posting_form,
+) {
+  const basic =
+    !!form && !income && source.simple && form.postings.every((p) => !p.note);
+  const fields: EntryFields = {
+    date,
+    payee: source.payee,
+    narration: source.narration,
+    note: form?.note ?? source.note,
+    amount: basic ? source.postings[0].amount : "",
+    currency: source.postings[0]?.currency || "CNY",
+    category: basic ? source.postings[0].account : "",
+    payment: basic ? source.postings[1].account : "",
+  };
+  return {
+    fields,
+    multi: !!form && !basic,
+    postings:
+      form && !basic
+        ? form.postings.map(({ source_index, ...posting }) => posting)
+        : [],
+    advanced: !form,
+    raw: form
+      ? ""
+      : source.raw.replace(/^\d{4}[-/]\d{1,2}[-/]\d{1,2}(?=\s)/, date),
+  };
+}
+
 interface Preview {
   items: { raw: string }[];
   warnings?: string[];
@@ -103,6 +155,7 @@ export default function Editor({
   onClose,
   onSaved,
   initialPurchase,
+  copyFrom,
 }: {
   journal: Journal;
   row?: Transaction;
@@ -110,10 +163,16 @@ export default function Editor({
   onClose: () => void;
   onSaved: () => Promise<void>;
   initialPurchase?: PurchaseItem;
+  copyFrom?: Transaction;
 }) {
   const pending = useRef(readPending());
   const restored = useRef(!!pending.current);
   const baseRevision = useRef(journal.revision);
+  const [copied] = useState(() =>
+    copyFrom && !pending.current
+      ? historyDraft(copyFrom, shanghaiToday(), false, copyForm(copyFrom))
+      : undefined,
+  );
   const defaults = (): EntryFields => ({
     date: row?.date || (initialPurchase ? shanghaiToday() : journal.date),
     payee: row?.payee || "",
@@ -128,7 +187,8 @@ export default function Editor({
     const saved = pending.current?.request.posting_entry;
     return (
       pending.current?.request.order?.purchase ||
-      pending.current?.request.entry || {
+      pending.current?.request.entry ||
+      copied?.fields || {
         ...defaults(),
         ...(saved
           ? {
@@ -152,18 +212,20 @@ export default function Editor({
   const rawRequired = !!row && !row.simple && !formSupported;
   const [multi, setMulti] = useState(
     !!pending.current?.request.posting_entry ||
+      !!copied?.multi ||
       (!!row && !row.simple && formSupported),
   );
   const [postings, setPostings] = useState<PostingLine[]>(
     pending.current?.request.posting_entry?.postings ||
+      copied?.postings ||
       row?.posting_form?.postings ||
       [],
   );
   const [raw, setRaw] = useState(
-    pending.current?.request.raw || row?.raw || "",
+    pending.current?.request.raw || copied?.raw || row?.raw || "",
   );
   const [advanced, setAdvanced] = useState(
-    !!pending.current?.request.raw || rawRequired,
+    !!pending.current?.request.raw || !!copied?.advanced || rawRequired,
   );
   const [business, setBusiness] = useState(
     pending.current?.request.business || "ordinary",
@@ -198,6 +260,8 @@ export default function Editor({
   );
   const recordTemplate =
     op === "create" ? businessConfig?.layout.routes[business]?.template : null;
+  const copyBlockedByTemplate =
+    !!copied && log.length === 0 && !!recordTemplate;
   const entryMode = defaultEntryMode(
     businessKind(business, businessConfig?.layout.routes[business]),
   );
@@ -260,38 +324,15 @@ export default function Editor({
     }
   }
   function fillFromHistory(source: Transaction) {
-    const form = source.posting_form;
-    const date = fields.date || journal.date;
-    const basic =
-      !!form &&
-      !income &&
-      source.simple &&
-      form.postings.every((posting) => !posting.note);
+    const draft = historyDraft(source, fields.date || journal.date, income);
     invalidate();
-    setFields({
-      date,
-      payee: source.payee,
-      narration: source.narration,
-      note: form?.note ?? source.note,
-      amount: basic ? source.postings[0].amount : "",
-      currency: source.postings[0]?.currency || "CNY",
-      category: basic ? source.postings[0].account : "",
-      payment: basic ? source.postings[1].account : "",
-    });
+    setFields(draft.fields);
     setOrderMode("");
     setPurchaseItems([]);
-    setMulti(!!form && !basic);
-    setPostings(
-      form && !basic
-        ? form.postings.map(({ source_index, ...posting }) => posting)
-        : [],
-    );
-    setAdvanced(!form);
-    setRaw(
-      form
-        ? ""
-        : source.raw.replace(/^\d{4}[-/]\d{1,2}[-/]\d{1,2}(?=\s)/, date),
-    );
+    setMulti(draft.multi);
+    setPostings(draft.postings);
+    setAdvanced(draft.advanced);
+    setRaw(draft.raw);
     setHistoryFill({
       label: [source.date, source.payee, source.narration || source.kind]
         .filter(Boolean)
@@ -313,7 +354,7 @@ export default function Editor({
     });
   }
   async function makePreview() {
-    if (busyRef.current) return;
+    if (busyRef.current || copyBlockedByTemplate) return;
     setHistoryFill(undefined);
     busyRef.current = true;
     setBusy(true);
@@ -617,6 +658,7 @@ export default function Editor({
               )}
             {op === "create" &&
               businessConfig &&
+              !copyBlockedByTemplate &&
               (!rawOnly || recordTemplate) && (
                 <QuickFill
                   key={`${journal.identity}.${business}.${JSON.stringify(recordTemplate)}`}
@@ -735,7 +777,11 @@ export default function Editor({
                 已填入「{historyFill.label}」，本次日期为 {fields.date}。
               </Notice>
             )}
-            {recordTemplate ? (
+            {copyBlockedByTemplate ? (
+              <Notice>
+                此业务使用固定模板。请选择使用内置表单的业务类型，继续编辑复制的内容。
+              </Notice>
+            ) : recordTemplate ? (
               <RecordFields
                 completions={journal.completions}
                 template={recordTemplate}
@@ -895,7 +941,10 @@ export default function Editor({
             <Notice tone="error">账户加载失败：{accountError}</Notice>
           )}
           {!uncertain && (
-            <button type="submit" disabled={busy || !!accountError}>
+            <button
+              type="submit"
+              disabled={busy || !!accountError || copyBlockedByTemplate}
+            >
               {busy ? "正在校验…" : "预览并校验"}
             </button>
           )}
